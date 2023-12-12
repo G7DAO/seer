@@ -18,6 +18,7 @@ type Enum struct {
 type StructMember struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
+	Kind string `json:"kind,omitempty"`
 }
 
 type Struct struct {
@@ -26,8 +27,16 @@ type Struct struct {
 	Members []*StructMember `json:"members"`
 }
 
+type EventStruct struct {
+	Type    string          `json:"type"`
+	Name    string          `json:"name"`
+	Kind    string          `json:"kind"`
+	Members []*StructMember `json:"members"`
+}
+
 type ABIItemType struct {
 	Type string `json:"type,omitempty"`
+	Kind string `json:"kind,omitempty"`
 }
 
 type ParsedABI struct {
@@ -36,6 +45,7 @@ type ParsedABI struct {
 	Messages []json.RawMessage `json:"messages"`
 	Enums    []*Enum           `json:"enums"`
 	Structs  []*Struct         `json:"structs"`
+	Events   []*EventStruct    `json:"events"`
 }
 
 func ParseABI(rawABI []byte) (*ParsedABI, error) {
@@ -64,7 +74,9 @@ func ParseABI(rawABI []byte) (*ParsedABI, error) {
 		case "struct":
 			numStructs++
 		case "event":
-			numEvents++
+			if item.Kind == "struct" {
+				numEvents++
+			}
 		}
 	}
 
@@ -101,6 +113,21 @@ func ParseABI(rawABI []byte) (*ParsedABI, error) {
 
 			parsedABI.Structs[currentStruct] = structItem
 			currentStruct++
+		}
+	}
+
+	parsedABI.Events = make([]*EventStruct, numEvents)
+	currentEvent := 0
+	for i, item := range itemTypes {
+		if item.Type == "event" && item.Kind == "struct" {
+			var event *EventStruct
+			eventUnmarshalErr := json.Unmarshal(rawMessages[i], &event)
+			if eventUnmarshalErr != nil {
+				return parsedABI, eventUnmarshalErr
+			}
+
+			parsedABI.Events[currentEvent] = event
+			currentEvent++
 		}
 	}
 
