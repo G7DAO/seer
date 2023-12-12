@@ -1,6 +1,5 @@
 .PHONY: build clean
 
-
 build: seer
 
 seer:
@@ -8,3 +7,5 @@ seer:
 
 clean:
 	rm -f seer
+
+rebuild: clean build

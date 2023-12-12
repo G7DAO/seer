@@ -1,10 +1,14 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/moonstream-to/seer/starknet"
 	"github.com/moonstream-to/seer/version"
 )
 
@@ -20,7 +24,8 @@ func CreateRootCommand() *cobra.Command {
 
 	completionCmd := CreateCompletionCommand(rootCmd)
 	versionCmd := CreateVersionCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd)
+	starknetCmd := CreateStarknetCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, starknetCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -93,4 +98,84 @@ func CreateVersionCommand() *cobra.Command {
 	}
 
 	return versionCmd
+}
+
+func CreateStarknetCommand() *cobra.Command {
+	starknetCmd := &cobra.Command{
+		Use:   "starknet",
+		Short: "Generate interfaces and crawlers for Starknet",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	starknetABIParseCmd := CreateStarknetABIParseCommand()
+	starknetABIGenGoCmd := CreateStarknetABIGenGoCommand()
+	starknetCmd.AddCommand(starknetABIParseCmd, starknetABIGenGoCmd)
+
+	return starknetCmd
+}
+
+func CreateStarknetABIParseCommand() *cobra.Command {
+	var infile string
+	var rawABI []byte
+	var readErr error
+
+	starknetABIParseCommand := &cobra.Command{
+		Use:   "abiparse",
+		Short: "Parse a Starknet contract's ABI",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if infile != "" {
+				rawABI, readErr = os.ReadFile(infile)
+			} else {
+				rawABI, readErr = io.ReadAll(os.Stdin)
+			}
+
+			return readErr
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			parsedABI, parseErr := starknet.ParseABI(rawABI)
+			if parseErr != nil {
+				return parseErr
+			}
+
+			content, marshalErr := json.Marshal(parsedABI)
+			if marshalErr != nil {
+				return marshalErr
+			}
+
+			cmd.Println(string(content))
+			return nil
+		},
+	}
+
+	starknetABIParseCommand.Flags().StringVarP(&infile, "abi", "a", "", "Path to contract ABI (default stdin)")
+
+	return starknetABIParseCommand
+}
+
+func CreateStarknetABIGenGoCommand() *cobra.Command {
+	var packageName string
+
+	starknetABIGenGoCommand := &cobra.Command{
+		Use:   "abigengo",
+		Short: "Generate Go bindings for a Starknet contract from its ABI",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			// If we need to generalize this validator for other subcommands, use `cmd.Flag("package").Value.String()`
+			// Or make a higher order function which takes the packageName as an argument and produces a validator as an output.
+
+			if packageName == "" {
+				return errors.New("you must provide a package name using --package/-p")
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+	}
+
+	starknetABIGenGoCommand.Flags().StringVarP(&packageName, "package", "p", "", "The name of the package to generate")
+
+	return starknetABIGenGoCommand
 }
