@@ -2,6 +2,7 @@ package starknet
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"text/template"
 
@@ -17,8 +18,9 @@ type GenerationParameters struct {
 // The output of the code generation process for enum items in a Starknet ABI.
 type GeneratedEnum struct {
 	GenerationParameters
-	Definition *Enum
-	Code       string
+	ParseFunctionName string
+	Definition        *Enum
+	Code              string
 }
 
 // The output of the code generation process for struct items in a Starknet ABI.
@@ -33,6 +35,19 @@ type GeneratedStruct struct {
 // Qualified names for Starknet ABI items are of the form:
 // `core::starknet::contract_address::ContractAddress`
 func GenerateGoNameForType(qualifiedName string) string {
+	if qualifiedName == "core::integer::u8" || qualifiedName == "core::integer::u16" || qualifiedName == "core::integer::u32" || qualifiedName == "core::integer::u64" {
+		return "uint64"
+	} else if strings.HasPrefix(qualifiedName, "core::integer::") {
+		return "lol"
+	} else if qualifiedName == "core::starknet::contract_address::ContractAddress" {
+		return "string"
+	} else if qualifiedName == "core::felt252" {
+		return "string"
+	} else if strings.HasPrefix(qualifiedName, "core::array::Array::<") {
+		s1, _ := strings.CutPrefix(qualifiedName, "core::array::Array::<")
+		s2, _ := strings.CutSuffix(s1, ">")
+		return fmt.Sprintf("[]%s", GenerateGoNameForType(s2))
+	}
 	return strcase.ToCamel(strings.Replace(qualifiedName, "::", "_", -1))
 }
 
@@ -67,14 +82,16 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 
 	for _, enum := range parsed.Enums {
 		goName := GenerateGoNameForType(enum.Name)
+		parseFunctionName := fmt.Sprintf("Parse%s", goName)
 
 		generated := GeneratedEnum{
 			GenerationParameters: GenerationParameters{
 				OriginalName: enum.Name,
 				GoName:       goName,
 			},
-			Definition: enum,
-			Code:       "",
+			ParseFunctionName: parseFunctionName,
+			Definition:        enum,
+			Code:              "",
 		}
 
 		var b bytes.Buffer
@@ -134,9 +151,12 @@ func Generate(parsed *ParsedABI) (string, error) {
 
 // This is the Go template which is used to generate the function corresponding to an Enum.
 // This template should be applied to a GeneratedEnum struct.
-var EnumTemplate string = `// {{.OriginalName}}
+var EnumTemplate string = `// {{.GoName}} is an alias for string
+type {{.GoName}} = string
+
+// {{.OriginalName}}
 // This function maps a Felt corresponding to the index of an enum variant to the name of that variant.
-func {{.GoName}}(parameter *felt.Felt) string {
+func {{.ParseFunctionName}}(parameter *felt.Felt) {{.GoName}} {
 	parameterInt := parameter.Uint64()
 	switch parameterInt {
 	{{range .Definition.Variants}}case {{.Index}}:
