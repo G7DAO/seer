@@ -40,29 +40,30 @@ type ABIItemType struct {
 }
 
 type ParsedABI struct {
-	RawABI   []byte            `json:"raw_abi"`
-	Types    []ABIItemType     `json:"types"`
-	Messages []json.RawMessage `json:"messages"`
-	Enums    []*Enum           `json:"enums"`
-	Structs  []*Struct         `json:"structs"`
-	Events   []*EventStruct    `json:"events"`
+	Enums   []*Enum        `json:"enums"`
+	Structs []*Struct      `json:"structs"`
+	Events  []*EventStruct `json:"events"`
+}
+
+type IntermediateABI struct {
+	Types    []ABIItemType
+	Messages []json.RawMessage
 }
 
 func ParseABI(rawABI []byte) (*ParsedABI, error) {
-	parsedABI := &ParsedABI{RawABI: rawABI}
+	parsedABI := &ParsedABI{}
+
 	var itemTypes []ABIItemType
 	var rawMessages []json.RawMessage
 	intermediateUnmarshalErr := json.Unmarshal(rawABI, &itemTypes)
 	if intermediateUnmarshalErr != nil {
 		return parsedABI, intermediateUnmarshalErr
 	}
-	parsedABI.Types = itemTypes
 
 	messagesUnmarshalErr := json.Unmarshal(rawABI, &rawMessages)
 	if messagesUnmarshalErr != nil {
 		return parsedABI, messagesUnmarshalErr
 	}
-	parsedABI.Messages = rawMessages
 
 	numEnums := 0
 	numStructs := 0
