@@ -1,32 +1,42 @@
 package starknet
 
 import (
+	"encoding/hex"
 	"encoding/json"
+	"math/big"
+	"strings"
+
+	"golang.org/x/crypto/sha3"
 )
 
+// Represents a particular value in a Starknet ABI enum.
 type EnumVariant struct {
 	Name  string `json:"name"`
 	Index int    `json:"index"`
 }
 
+// Represents an enum in a Starknet ABI.
 type Enum struct {
 	Type     string         `json:"type"`
 	Name     string         `json:"name"`
 	Variants []*EnumVariant `json:"variants"`
 }
 
+// Represents a member of a Starknet ABI struct.
 type StructMember struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
 	Kind string `json:"kind,omitempty"`
 }
 
+// Represents a struct in a Starknet ABI.
 type Struct struct {
 	Type    string          `json:"type"`
 	Name    string          `json:"name"`
 	Members []*StructMember `json:"members"`
 }
 
+// Represents a struct in a Starknet ABI which is used as an event.
 type EventStruct struct {
 	Type    string          `json:"type"`
 	Name    string          `json:"name"`
@@ -34,22 +44,27 @@ type EventStruct struct {
 	Members []*StructMember `json:"members"`
 }
 
+// Represents a single item in a Starknet ABI.
 type ABIItemType struct {
 	Type string `json:"type,omitempty"`
 	Kind string `json:"kind,omitempty"`
 }
 
+// Represents a parsed Starknet ABI.
 type ParsedABI struct {
 	Enums   []*Enum        `json:"enums"`
 	Structs []*Struct      `json:"structs"`
 	Events  []*EventStruct `json:"events"`
 }
 
+// Internal representation of a Starknet ABI used while parsing the ABI into its Go representation as a
+// ParsedABI.
 type IntermediateABI struct {
 	Types    []ABIItemType
 	Messages []json.RawMessage
 }
 
+// Parses a Starknet ABI from a JSON byte array.
 func ParseABI(rawABI []byte) (*ParsedABI, error) {
 	parsedABI := &ParsedABI{}
 
@@ -133,4 +148,33 @@ func ParseABI(rawABI []byte) (*ParsedABI, error) {
 	}
 
 	return parsedABI, nil
+}
+
+// Calculates the Starknet hash corresponding to the name of a Starknet ABI event. This hash is how
+// the event is represented in Starknet event logs.
+func HashFromName(name string) (string, error) {
+	x := big.NewInt(0)
+	mask := big.NewInt(0)
+
+	x.Exp(big.NewInt(2), big.NewInt(250), nil)
+	mask.Sub(x, big.NewInt(1))
+
+	components := strings.Split(name, "::")
+	eventName := components[len(components)-1]
+
+	// Very important to use the LegacyKeccak256 here - to match Ethereum:
+	// https://pkg.go.dev/golang.org/x/crypto/sha3#NewLegacyKeccak256
+	hash := sha3.NewLegacyKeccak256()
+	_, hashErr := hash.Write([]byte(eventName))
+	if hashErr != nil {
+		return "", hashErr
+	}
+
+	b := make([]byte, 0)
+	hashedNameBytes := hash.Sum(b)
+
+	hashedEncodedName := big.NewInt(0).SetBytes(hashedNameBytes)
+
+	starknetHashedEncodedName := big.NewInt(0).And(hashedEncodedName, mask)
+	return hex.EncodeToString(starknetHashedEncodedName.Bytes()), nil
 }
