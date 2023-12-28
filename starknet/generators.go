@@ -32,6 +32,14 @@ type GeneratedStruct struct {
 	Code         string
 }
 
+type GeneratedEvent struct {
+	GenerationParameters
+	Definition       *EventStruct
+	EventHash        string
+	ParamFeltLengths map[string]int
+	Code             string
+}
+
 // Defines the parameters used to create the header information for the generated code.
 type HeaderParameters struct {
 	Version     string
@@ -45,7 +53,7 @@ func GenerateGoNameForType(qualifiedName string) string {
 	if qualifiedName == "core::integer::u8" || qualifiedName == "core::integer::u16" || qualifiedName == "core::integer::u32" || qualifiedName == "core::integer::u64" {
 		return "uint64"
 	} else if strings.HasPrefix(qualifiedName, "core::integer::") {
-		return "lol"
+		return `*big.Int`
 	} else if qualifiedName == "core::starknet::contract_address::ContractAddress" {
 		return "string"
 	} else if qualifiedName == "core::felt252" {
@@ -56,6 +64,13 @@ func GenerateGoNameForType(qualifiedName string) string {
 		return fmt.Sprintf("[]%s", GenerateGoNameForType(s2))
 	}
 	return strcase.ToCamel(strings.Replace(qualifiedName, "::", "_", -1))
+}
+
+func ShouldGenerateStructType(goName string) bool {
+	if goName == "uint64" || goName == "*big.Int" || goName == "string" || strings.HasPrefix(goName, "[]") {
+		return false
+	}
+	return true
 }
 
 // Generate generates Go code for each of the items in a Starknet contract ABI.
@@ -87,6 +102,11 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 		return result, structTemplateParseErr
 	}
 
+	eventTemplate, eventTemplateParseErr := template.New("event").Parse(EventTemplate)
+	if structTemplateParseErr != nil {
+		return result, eventTemplateParseErr
+	}
+
 	for _, enum := range parsed.Enums {
 		goName := GenerateGoNameForType(enum.Name)
 		parseFunctionName := fmt.Sprintf("Parse%s", goName)
@@ -114,26 +134,56 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 
 	for _, structItem := range parsed.Structs {
 		goName := GenerateGoNameForType(structItem.Name)
+		if ShouldGenerateStructType(goName) {
+			generated := GeneratedStruct{
+				GenerationParameters: GenerationParameters{
+					OriginalName: structItem.Name,
+					GoName:       goName,
+				},
+				Definition:   structItem,
+				ParamsLength: len(structItem.Members),
+				Code:         "",
+			}
 
-		generated := GeneratedStruct{
+			var b bytes.Buffer
+			templateErr := structTemplate.Execute(&b, generated)
+			if templateErr != nil {
+				return result, templateErr
+			}
+
+			generated.Code = b.String()
+
+			result[structItem.Name] = generated.Code
+		}
+	}
+
+	for _, event := range parsed.Events {
+		goName := GenerateGoNameForType(event.Name)
+
+		eventHash, hashErr := HashFromName(event.Name)
+		if hashErr != nil {
+			return result, hashErr
+		}
+
+		generated := GeneratedEvent{
 			GenerationParameters: GenerationParameters{
-				OriginalName: structItem.Name,
+				OriginalName: event.Name,
 				GoName:       goName,
 			},
-			Definition:   structItem,
-			ParamsLength: len(structItem.Members),
-			Code:         "",
+			Definition: event,
+			EventHash:  eventHash,
+			Code:       "",
 		}
 
 		var b bytes.Buffer
-		templateErr := structTemplate.Execute(&b, generated)
+		templateErr := eventTemplate.Execute(&b, generated)
 		if templateErr != nil {
 			return result, templateErr
 		}
 
 		generated.Code = b.String()
 
-		result[structItem.Name] = generated.Code
+		result[event.Name] = generated.Code
 	}
 
 	return result, nil
@@ -167,6 +217,12 @@ func Generate(parsed *ParsedABI) (string, error) {
 		return "", snippetsErr
 	}
 
+	commonCode := ""
+
+	if len(parsed.Events) > 0 {
+		commonCode = EventsCommonCode
+	}
+
 	sections := make([]string, len(snippets))
 	currentSection := 0
 	for _, section := range snippets {
@@ -174,7 +230,9 @@ func Generate(parsed *ParsedABI) (string, error) {
 		currentSection++
 	}
 
-	return strings.Join(sections, "\n\n"), nil
+	snippetsCat := strings.Join(sections, "\n\n")
+
+	return fmt.Sprintf("%s%s", commonCode, snippetsCat), nil
 }
 
 // This is the Go template which is used to generate the function corresponding to an Enum.
@@ -194,7 +252,7 @@ func {{.ParseFunctionName}}(parameter *felt.Felt) {{.GoName}} {
 	return "UNKNOWN"
 }`
 
-// This is the Go template which is used to generate the struct.
+// This is the Go template which is used to generate the Go definition of a Starknet ABI struct.
 // This template should be applied to a GeneratedStruct struct.
 var StructTemplate string = `// {{.OriginalName}}
 // {{.GoName}} is the Go struct corresponding to the {{.OriginalName}} struct.
@@ -205,12 +263,54 @@ type {{.GoName}} struct {
 }
 `
 
+// Common code used in the code generated for events.
+var EventsCommonCode string = `var ErrIncorrectEventKey error = errors.New("incorrect event key")
+var ErrIncorrectParameters error = errors.New("incorrect parameters")
+
+type RawEvent struct {
+	BlockNumber     uint64
+	BlockHash       *felt.Felt
+	TransactionHash *felt.Felt
+	FromAddress     *felt.Felt
+	PrimaryKey      *felt.Felt
+	Keys            []*felt.Felt
+	Parameters      []*felt.Felt
+}
+
+
+`
+
+// This is the Go template which is used to generate the Go bindings to a Starknet ABI event.
+// This template should be applied to a GeneratedEvent struct.
+var EventTemplate string = `
+// {{.OriginalName}}
+
+// ABI name for event
+var Event{{.GoName}} string = "{{.OriginalName}}"
+
+// Starknet nash for the event, as it appears in Starknet event logs.
+var Hash{{.GoName}} string = "{{.EventHash}}"
+
+// {{.GoName}} is the Go struct corresponding to the {{.OriginalName}} event.
+type {{.GoName}} struct {
+
+}
+`
+
 // This is the Go template used to create header information at the top of the generated code.
 // At a bare minimum, the header specifies the version of seer that was used to generate the code.
+// This template should be applied to a HeaderParameters struct.
 var HeaderTemplate string = `// This file was generated by seer: https://github.com/moonstream-to/seer.
 // seer version: {{.Version}}
 // seer command: seer starknet abigentypes {{if .PackageName}}--package {{.PackageName}}{{end}}
 // Warning: Edit at your own risk. Any edits you make will NOT survive the next code generation.
 
 {{if .PackageName}}package {{.PackageName}}{{end}}
+
+import (
+	"errors"
+	"math/big"
+
+	"github.com/NethermindEth/juno/core/felt"
+)
 `
