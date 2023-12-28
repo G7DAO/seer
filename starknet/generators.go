@@ -139,23 +139,7 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 	return result, nil
 }
 
-// Generates a single string consisting of the Go code for all the artifacts in a parsed Starknet ABI.
-func Generate(parsed *ParsedABI) (string, error) {
-	snippets, snippetsErr := GenerateSnippets(parsed)
-	if snippetsErr != nil {
-		return "", snippetsErr
-	}
-
-	sections := make([]string, len(snippets))
-	currentSection := 0
-	for _, section := range snippets {
-		sections[currentSection] = section
-		currentSection++
-	}
-
-	return strings.Join(sections, "\n\n"), nil
-}
-
+// Generates the header for the output code.
 func GenerateHeader(packageName string) (string, error) {
 	headerTemplate, headerTemplateParseErr := template.New("struct").Parse(HeaderTemplate)
 	if headerTemplateParseErr != nil {
@@ -174,6 +158,23 @@ func GenerateHeader(packageName string) (string, error) {
 	}
 
 	return b.String(), nil
+}
+
+// Generates a single string consisting of the Go code for all the artifacts in a parsed Starknet ABI.
+func Generate(parsed *ParsedABI) (string, error) {
+	snippets, snippetsErr := GenerateSnippets(parsed)
+	if snippetsErr != nil {
+		return "", snippetsErr
+	}
+
+	sections := make([]string, len(snippets))
+	currentSection := 0
+	for _, section := range snippets {
+		sections[currentSection] = section
+		currentSection++
+	}
+
+	return strings.Join(sections, "\n\n"), nil
 }
 
 // This is the Go template which is used to generate the function corresponding to an Enum.
