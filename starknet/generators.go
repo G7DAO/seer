@@ -35,6 +35,8 @@ type GeneratedStruct struct {
 type GeneratedEvent struct {
 	GenerationParameters
 	Definition       *EventStruct
+	EventNameVar     string
+	EventHashVar     string
 	EventHash        string
 	ParamFeltLengths map[string]int
 	Code             string
@@ -63,7 +65,13 @@ func GenerateGoNameForType(qualifiedName string) string {
 		s2, _ := strings.CutSuffix(s1, ">")
 		return fmt.Sprintf("[]%s", GenerateGoNameForType(s2))
 	}
-	return strcase.ToCamel(strings.Replace(qualifiedName, "::", "_", -1))
+
+	components := strings.Split(qualifiedName, "::")
+	camelComponents := make([]string, len(components))
+	for i, component := range components {
+		camelComponents[i] = strcase.ToCamel(component)
+	}
+	return strings.Join(camelComponents, "_")
 }
 
 func ShouldGenerateStructType(goName string) bool {
@@ -92,17 +100,17 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 		return result, enumTemplateParseErr
 	}
 
-	structTemplateFuncs := map[string]any{
+	templateFuncs := map[string]any{
 		"CamelCase":             strcase.ToCamel,
 		"GenerateGoNameForType": GenerateGoNameForType,
 	}
 
-	structTemplate, structTemplateParseErr := template.New("struct").Funcs(structTemplateFuncs).Parse(StructTemplate)
+	structTemplate, structTemplateParseErr := template.New("struct").Funcs(templateFuncs).Parse(StructTemplate)
 	if structTemplateParseErr != nil {
 		return result, structTemplateParseErr
 	}
 
-	eventTemplate, eventTemplateParseErr := template.New("event").Parse(EventTemplate)
+	eventTemplate, eventTemplateParseErr := template.New("event").Funcs(templateFuncs).Parse(EventTemplate)
 	if structTemplateParseErr != nil {
 		return result, eventTemplateParseErr
 	}
@@ -158,32 +166,36 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 	}
 
 	for _, event := range parsed.Events {
-		goName := GenerateGoNameForType(event.Name)
+		if event.Kind == "struct" {
+			goName := GenerateGoNameForType(event.Name)
 
-		eventHash, hashErr := HashFromName(event.Name)
-		if hashErr != nil {
-			return result, hashErr
+			eventHash, hashErr := HashFromName(event.Name)
+			if hashErr != nil {
+				return result, hashErr
+			}
+
+			generated := GeneratedEvent{
+				GenerationParameters: GenerationParameters{
+					OriginalName: event.Name,
+					GoName:       goName,
+				},
+				Definition:   event,
+				EventNameVar: fmt.Sprintf("Event_%s", goName),
+				EventHashVar: fmt.Sprintf("Hash_%s", goName),
+				EventHash:    eventHash,
+				Code:         "",
+			}
+
+			var b bytes.Buffer
+			templateErr := eventTemplate.Execute(&b, generated)
+			if templateErr != nil {
+				return result, templateErr
+			}
+
+			generated.Code = b.String()
+
+			result[event.Name] = generated.Code
 		}
-
-		generated := GeneratedEvent{
-			GenerationParameters: GenerationParameters{
-				OriginalName: event.Name,
-				GoName:       goName,
-			},
-			Definition: event,
-			EventHash:  eventHash,
-			Code:       "",
-		}
-
-		var b bytes.Buffer
-		templateErr := eventTemplate.Execute(&b, generated)
-		if templateErr != nil {
-			return result, templateErr
-		}
-
-		generated.Code = b.String()
-
-		result[event.Name] = generated.Code
 	}
 
 	return result, nil
@@ -237,10 +249,11 @@ func Generate(parsed *ParsedABI) (string, error) {
 
 // This is the Go template which is used to generate the function corresponding to an Enum.
 // This template should be applied to a GeneratedEnum struct.
-var EnumTemplate string = `// {{.GoName}} is an alias for string
+var EnumTemplate string = `// ABI: {{.OriginalName}}
+
+// {{.GoName}} is an alias for string
 type {{.GoName}} = string
 
-// {{.OriginalName}}
 // This function maps a Felt corresponding to the index of an enum variant to the name of that variant.
 func {{.ParseFunctionName}}(parameter *felt.Felt) {{.GoName}} {
 	parameterInt := parameter.Uint64()
@@ -254,7 +267,8 @@ func {{.ParseFunctionName}}(parameter *felt.Felt) {{.GoName}} {
 
 // This is the Go template which is used to generate the Go definition of a Starknet ABI struct.
 // This template should be applied to a GeneratedStruct struct.
-var StructTemplate string = `// {{.OriginalName}}
+var StructTemplate string = `// ABI: {{.OriginalName}}
+
 // {{.GoName}} is the Go struct corresponding to the {{.OriginalName}} struct.
 type {{.GoName}} struct {
 	{{range .Definition.Members}}
@@ -283,17 +297,19 @@ type RawEvent struct {
 // This is the Go template which is used to generate the Go bindings to a Starknet ABI event.
 // This template should be applied to a GeneratedEvent struct.
 var EventTemplate string = `
-// {{.OriginalName}}
+// ABI: {{.OriginalName}}
 
 // ABI name for event
-var Event{{.GoName}} string = "{{.OriginalName}}"
+var {{.EventNameVar}} string = "{{.OriginalName}}"
 
-// Starknet nash for the event, as it appears in Starknet event logs.
-var Hash{{.GoName}} string = "{{.EventHash}}"
+// Starknet hash for the event, as it appears in Starknet event logs.
+var {{.EventHashVar}} string = "{{.EventHash}}"
 
 // {{.GoName}} is the Go struct corresponding to the {{.OriginalName}} event.
 type {{.GoName}} struct {
-
+	{{range .Definition.Members}}
+	{{(CamelCase .Name)}} {{(GenerateGoNameForType .Type)}}
+	{{- end}}
 }
 `
 
