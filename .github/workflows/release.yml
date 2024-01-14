@@ -52,10 +52,9 @@ jobs:
           if [ "$GOOS" = "windows" ]; then
             EXTENSION=".exe"
           fi
-          make
           mkdir "$BUILD_DIR"
           cp README.md "$BUILD_DIR/README.md"
-          mv ./seer "$BUILD_DIR/seer${EXTENSION}"
+          go build -o "$BUILD_DIR/seer${EXTENSION}" ./...
           zip -r "$BUILD_DIR.zip" "$BUILD_DIR"
       - name: Upload release asset for each valid (GOOS, GOARH) pair
         uses: actions/upload-release-asset@v1
