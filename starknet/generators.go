@@ -77,7 +77,7 @@ func GenerateGoNameForType(qualifiedName string) string {
 
 // Returns the name of the function that parses the given Go type.
 func ParserFunction(goType string) string {
-	baseType := ""
+	baseType := goType
 	numWraps := 0
 	for strings.HasPrefix(baseType, "[]") {
 		baseType = strings.TrimPrefix(baseType, "[]")
@@ -99,8 +99,8 @@ func ParserFunction(goType string) string {
 		}
 	} else {
 		baseParser := ParserFunction(baseType)
-		parserFunction := ""
-		for i := numWraps; i > 0; i-- {
+		parserFunction = ""
+		for i := numWraps - 1; i >= 0; i-- {
 			arrayParser := fmt.Sprintf("ParseArray[%s%s](", strings.Repeat("[]", i), baseType)
 			parserFunction = fmt.Sprintf("%s%s", parserFunction, arrayParser)
 		}
@@ -432,6 +432,30 @@ type {{.GoName}} struct {
 	{{(CamelCase .Name)}} {{(GenerateGoNameForType .Type)}}
 	{{- end}}
 }
+
+{{if eq .Definition.Kind "struct"}}
+// {{.ParserName}} parses a {{.GoName}} event from a list of felts. This function returns a tuple of:
+// 1. The parsed {{.GoName}} struct representing the event
+// 2. The number of field elements consumed in the parse
+// 3. An error if the parse failed, nil otherwise
+func {{.ParserName}}(parameters []*felt.Felt) ({{.GoName}}, int, error) {
+	currentIndex := 0
+	result := {{.GoName}}{}
+
+	{{range $index, $element := .Definition.Members}}
+	value{{$index}}, consumed, err := {{(ParserFunction (GenerateGoNameForType .Type))}}(parameters[currentIndex:])
+	if err != nil {
+		return result, 0, err
+	}
+	result.{{(CamelCase .Name)}} = value{{$index}}
+	currentIndex += consumed
+
+	{{end}}
+
+	return result, currentIndex + 1, nil
+}
+{{end}}
+
 `
 
 // This is the Go template used to create header information at the top of the generated code.
