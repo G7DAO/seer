@@ -19,27 +19,28 @@ type GenerationParameters struct {
 // The output of the code generation process for enum items in a Starknet ABI.
 type GeneratedEnum struct {
 	GenerationParameters
-	ParseFunctionName string
-	Definition        *Enum
-	Code              string
+	ParserName    string
+	EvaluatorName string
+	Definition    *Enum
+	Code          string
 }
 
 // The output of the code generation process for struct items in a Starknet ABI.
 type GeneratedStruct struct {
 	GenerationParameters
-	Definition   *Struct
-	ParamsLength int
-	Code         string
+	ParserName string
+	Definition *Struct
+	Code       string
 }
 
 type GeneratedEvent struct {
 	GenerationParameters
-	Definition       *EventStruct
-	EventNameVar     string
-	EventHashVar     string
-	EventHash        string
-	ParamFeltLengths map[string]int
-	Code             string
+	ParserName   string
+	Definition   *EventStruct
+	EventNameVar string
+	EventHashVar string
+	EventHash    string
+	Code         string
 }
 
 // Defines the parameters used to create the header information for the generated code.
@@ -74,6 +75,41 @@ func GenerateGoNameForType(qualifiedName string) string {
 	return strings.Join(camelComponents, "_")
 }
 
+// Returns the name of the function that parses the given Go type.
+func ParserFunction(goType string) string {
+	baseType := ""
+	numWraps := 0
+	for strings.HasPrefix(baseType, "[]") {
+		baseType = strings.TrimPrefix(baseType, "[]")
+		numWraps++
+	}
+
+	var parserFunction string
+
+	if numWraps == 0 {
+		switch goType {
+		case "uint64":
+			parserFunction = "ParseUint64"
+		case "*big.Int":
+			parserFunction = "ParseBigInt"
+		case "string":
+			parserFunction = "ParseString"
+		default:
+			parserFunction = fmt.Sprintf("Parse%s", goType)
+		}
+	} else {
+		baseParser := ParserFunction(baseType)
+		parserFunction := ""
+		for i := numWraps; i > 0; i-- {
+			arrayParser := fmt.Sprintf("ParseArray[%s%s](", strings.Repeat("[]", i), baseType)
+			parserFunction = fmt.Sprintf("%s%s", parserFunction, arrayParser)
+		}
+		parserFunction = fmt.Sprintf("%s%s%s", parserFunction, baseParser, strings.Repeat(")", numWraps))
+	}
+
+	return parserFunction
+}
+
 func ShouldGenerateStructType(goName string) bool {
 	if goName == "uint64" || goName == "*big.Int" || goName == "string" || strings.HasPrefix(goName, "[]") {
 		return false
@@ -103,6 +139,7 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 	templateFuncs := map[string]any{
 		"CamelCase":             strcase.ToCamel,
 		"GenerateGoNameForType": GenerateGoNameForType,
+		"ParserFunction":        ParserFunction,
 	}
 
 	structTemplate, structTemplateParseErr := template.New("struct").Funcs(templateFuncs).Parse(StructTemplate)
@@ -117,16 +154,18 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 
 	for _, enum := range parsed.Enums {
 		goName := GenerateGoNameForType(enum.Name)
-		parseFunctionName := fmt.Sprintf("Parse%s", goName)
+		parseFunctionName := ParserFunction(goName)
+		evaluateFunctionName := fmt.Sprintf("Evaluate%s", goName)
 
 		generated := GeneratedEnum{
 			GenerationParameters: GenerationParameters{
 				OriginalName: enum.Name,
 				GoName:       goName,
 			},
-			ParseFunctionName: parseFunctionName,
-			Definition:        enum,
-			Code:              "",
+			ParserName:    parseFunctionName,
+			EvaluatorName: evaluateFunctionName,
+			Definition:    enum,
+			Code:          "",
 		}
 
 		var b bytes.Buffer
@@ -142,15 +181,16 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 
 	for _, structItem := range parsed.Structs {
 		goName := GenerateGoNameForType(structItem.Name)
+		parseFunctionName := ParserFunction(goName)
 		if ShouldGenerateStructType(goName) {
 			generated := GeneratedStruct{
 				GenerationParameters: GenerationParameters{
 					OriginalName: structItem.Name,
 					GoName:       goName,
 				},
-				Definition:   structItem,
-				ParamsLength: len(structItem.Members),
-				Code:         "",
+				ParserName: parseFunctionName,
+				Definition: structItem,
+				Code:       "",
 			}
 
 			var b bytes.Buffer
@@ -168,6 +208,7 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 	for _, event := range parsed.Events {
 		if event.Kind == "struct" {
 			goName := GenerateGoNameForType(event.Name)
+			parseFunctionName := ParserFunction(goName)
 
 			eventHash, hashErr := HashFromName(event.Name)
 			if hashErr != nil {
@@ -179,6 +220,7 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 					OriginalName: event.Name,
 					GoName:       goName,
 				},
+				ParserName:   parseFunctionName,
 				Definition:   event,
 				EventNameVar: fmt.Sprintf("Event_%s", goName),
 				EventHashVar: fmt.Sprintf("Hash_%s", goName),
@@ -229,11 +271,7 @@ func Generate(parsed *ParsedABI) (string, error) {
 		return "", snippetsErr
 	}
 
-	commonCode := ""
-
-	if len(parsed.Events) > 0 {
-		commonCode = EventsCommonCode
-	}
+	commonCode := strings.Join([]string{StructCommonCode, EventsCommonCode}, "\n\n")
 
 	sections := make([]string, len(snippets))
 	currentSection := 0
@@ -251,19 +289,82 @@ func Generate(parsed *ParsedABI) (string, error) {
 // This template should be applied to a GeneratedEnum struct.
 var EnumTemplate string = `// ABI: {{.OriginalName}}
 
-// {{.GoName}} is an alias for string
-type {{.GoName}} = string
+// {{.GoName}} is an alias for uint64
+type {{.GoName}} = uint64
 
-// This function maps a Felt corresponding to the index of an enum variant to the name of that variant.
-func {{.ParseFunctionName}}(parameter *felt.Felt) {{.GoName}} {
-	parameterInt := parameter.Uint64()
-	switch parameterInt {
+// {{.ParserName}} parses a {{.GoName}} from a list of felts. This function returns a tuple of:
+// 1. The parsed {{.GoName}}
+// 2. The number of field elements consumed in the parse
+// 3. An error if the parse failed, nil otherwise
+func {{.ParserName}} (parameters []*felt.Felt) ({{.GoName}}, int, error) {
+	if len(parameters) < 1 {
+		return 0, 0, ErrIncorrectParameters
+	}
+	return {{.GoName}}(parameters[0].Uint64()), 1, nil
+}
+
+// This function returns the string representation of a {{.GoName}} enum. This is the enum value from the ABI definition of the enum.
+func {{.EvaluatorName}}(raw {{.GoName}}) string {
+	switch raw {
 	{{range .Definition.Variants}}case {{.Index}}:
 		return "{{.Name}}"
-	{{end}}
+	{{end -}}
 	}
 	return "UNKNOWN"
 }`
+
+var StructCommonCode string = `var ErrIncorrectParameters error = errors.New("incorrect parameters")
+
+func ParseUint64(parameters []*felt.Felt) (uint64, int, error) {
+	if len(parameters) < 1 {
+		return 0, 0, ErrIncorrectParameters
+	}
+	return parameters[0].Uint64(), 1, nil
+}
+
+func ParseBigInt(parameters []*felt.Felt) (*big.Int, int, error) {
+	if len(parameters) < 1 {
+		return nil, 0, ErrIncorrectParameters
+	}
+	var result *big.Int
+	result = parameters[0].BigInt(result)
+	return result, 1, nil
+}
+
+func ParseString(parameters []*felt.Felt) (string, int, error) {
+	if len(parameters) < 1 {
+		return "", 0, ErrIncorrectParameters
+	}
+	return parameters[0].String(), 1, nil
+}
+
+func ParseArray[T any](parser func(parameters []*felt.Felt) (T, int, error)) func(parameters []*felt.Felt) ([]T, int, error) {
+	return func (parameters []*felt.Felt) ([]T, int, error) {
+		if len(parameters) < 1 {
+			return nil, 0, ErrIncorrectParameters
+		}
+
+		arrayLengthRaw := parameters[0].Uint64()
+		arrayLength := int(arrayLengthRaw)
+		if len(parameters) < arrayLength + 1 {
+			return nil, 0, ErrIncorrectParameters
+		}
+
+		result := make([]T, arrayLength)
+		currentIndex := 0
+		for i := 0; i < arrayLength; i++ {
+			parsed, consumed, err := parser(parameters[currentIndex + 1:])
+			if err != nil {
+				return nil, 0, err
+			}
+			result[i] = parsed
+			currentIndex += consumed
+		}
+
+		return result, currentIndex + 1, nil
+	}
+}
+`
 
 // This is the Go template which is used to generate the Go definition of a Starknet ABI struct.
 // This template should be applied to a GeneratedStruct struct.
@@ -275,11 +376,31 @@ type {{.GoName}} struct {
 	{{(CamelCase .Name)}} {{(GenerateGoNameForType .Type)}}
 	{{- end}}
 }
+
+// {{.ParserName}} parses a {{.GoName}} struct from a list of felts. This function returns a tuple of:
+// 1. The parsed {{.GoName}} struct
+// 2. The number of field elements consumed in the parse
+// 3. An error if the parse failed, nil otherwise
+func {{.ParserName}}(parameters []*felt.Felt) ({{.GoName}}, int, error) {
+	currentIndex := 0
+	result := {{.GoName}}{}
+
+	{{range $index, $element := .Definition.Members}}
+	value{{$index}}, consumed, err := {{(ParserFunction (GenerateGoNameForType .Type))}}(parameters[currentIndex:])
+	if err != nil {
+		return result, 0, err
+	}
+	result.{{(CamelCase .Name)}} = value{{$index}}
+	currentIndex += consumed
+
+	{{end}}
+
+	return result, currentIndex + 1, nil
+}
 `
 
 // Common code used in the code generated for events.
 var EventsCommonCode string = `var ErrIncorrectEventKey error = errors.New("incorrect event key")
-var ErrIncorrectParameters error = errors.New("incorrect parameters")
 
 type RawEvent struct {
 	BlockNumber     uint64
