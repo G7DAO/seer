@@ -50,6 +50,11 @@ type HeaderParameters struct {
 	PackageName string
 }
 
+func toCamelCase(s string) string {
+	t := strings.Replace(s, "-", "Dash", -1)
+	return strcase.ToCamel(t)
+}
+
 // Generates a Go name for a Starknet ABI item given its fully qualified ABI name.
 // Qualified names for Starknet ABI items are of the form:
 // `core::starknet::contract_address::ContractAddress`
@@ -143,7 +148,7 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 	}
 
 	templateFuncs := map[string]any{
-		"CamelCase":             strcase.ToCamel,
+		"CamelCase":             toCamelCase,
 		"GenerateGoNameForType": GenerateGoNameForType,
 		"ParserFunction":        ParserFunction,
 	}
