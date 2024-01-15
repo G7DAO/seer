@@ -3,6 +3,7 @@ package starknet
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -53,13 +54,18 @@ type HeaderParameters struct {
 // Qualified names for Starknet ABI items are of the form:
 // `core::starknet::contract_address::ContractAddress`
 func GenerateGoNameForType(qualifiedName string) string {
-	if qualifiedName == "core::integer::u8" || qualifiedName == "core::integer::u16" || qualifiedName == "core::integer::u32" || qualifiedName == "core::integer::u64" {
+	if strings.HasPrefix(qualifiedName, "core::integer::u") {
+		bitsRaw := strings.TrimPrefix(qualifiedName, "core::integer::u")
+		bits, bitsErr := strconv.Atoi(bitsRaw)
+		if bitsErr != nil || bits > 64 {
+			return `*big.Int`
+		}
 		return "uint64"
 	} else if strings.HasPrefix(qualifiedName, "core::integer::") {
 		return `*big.Int`
 	} else if qualifiedName == "core::starknet::contract_address::ContractAddress" {
 		return "string"
-	} else if qualifiedName == "core::felt252" {
+	} else if strings.HasPrefix(qualifiedName, "core::felt25") {
 		return "string"
 	} else if strings.HasPrefix(qualifiedName, "core::array::Array::<") {
 		s1, _ := strings.CutPrefix(qualifiedName, "core::array::Array::<")
