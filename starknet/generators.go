@@ -337,7 +337,7 @@ func ParseBigInt(parameters []*felt.Felt) (*big.Int, int, error) {
 	if len(parameters) < 1 {
 		return nil, 0, ErrIncorrectParameters
 	}
-	var result *big.Int
+	result := big.NewInt(0)
 	result = parameters[0].BigInt(result)
 	return result, 1, nil
 }
@@ -362,9 +362,9 @@ func ParseArray[T any](parser func(parameters []*felt.Felt) (T, int, error)) fun
 		}
 
 		result := make([]T, arrayLength)
-		currentIndex := 0
+		currentIndex := 1
 		for i := 0; i < arrayLength; i++ {
-			parsed, consumed, err := parser(parameters[currentIndex + 1:])
+			parsed, consumed, err := parser(parameters[currentIndex:])
 			if err != nil {
 				return nil, 0, err
 			}
@@ -372,7 +372,7 @@ func ParseArray[T any](parser func(parameters []*felt.Felt) (T, int, error)) fun
 			currentIndex += consumed
 		}
 
-		return result, currentIndex + 1, nil
+		return result, currentIndex, nil
 	}
 }
 `
@@ -406,7 +406,7 @@ func {{.ParserName}}(parameters []*felt.Felt) ({{.GoName}}, int, error) {
 
 	{{end}}
 
-	return result, currentIndex + 1, nil
+	return result, currentIndex, nil
 }
 `
 
