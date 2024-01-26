@@ -55,6 +55,8 @@ func toCamelCase(s string) string {
 	return strcase.ToCamel(t)
 }
 
+var resultEventParserKey string = "-eventparser"
+
 // Generates a Go name for a Starknet ABI item given its fully qualified ABI name.
 // Qualified names for Starknet ABI items are of the form:
 // `core::starknet::contract_address::ContractAddress`
@@ -159,8 +161,13 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 	}
 
 	eventTemplate, eventTemplateParseErr := template.New("event").Funcs(templateFuncs).Parse(EventTemplate)
-	if structTemplateParseErr != nil {
+	if eventTemplateParseErr != nil {
 		return result, eventTemplateParseErr
+	}
+
+	eventParserTemplate, eventParserTemplatErr := template.New("eventParser").Funcs(templateFuncs).Parse(EventParserTemplate)
+	if eventParserTemplatErr != nil {
+		return result, eventParserTemplatErr
 	}
 
 	for _, enum := range parsed.Enums {
@@ -216,6 +223,7 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 		}
 	}
 
+	generatedEvents := []GeneratedEvent{}
 	for _, event := range parsed.Events {
 		if event.Kind == "struct" {
 			goName := GenerateGoNameForType(event.Name)
@@ -248,7 +256,18 @@ func GenerateSnippets(parsed *ParsedABI) (map[string]string, error) {
 			generated.Code = b.String()
 
 			result[event.Name] = generated.Code
+			generatedEvents = append(generatedEvents, generated)
 		}
+	}
+
+	{
+		var b bytes.Buffer
+		templateErr := eventParserTemplate.Execute(&b, generatedEvents)
+		if templateErr != nil {
+			return result, templateErr
+		}
+
+		result[resultEventParserKey] = b.String()
 	}
 
 	return result, nil
@@ -423,7 +442,136 @@ type RawEvent struct {
 	Parameters      []*felt.Felt
 }
 
+func FeltFromHexString(hexString string) (*felt.Felt, error) {
+	fieldAdditiveIdentity := fp.NewElement(0)
 
+	if hexString[:2] == "0x" {
+		hexString = hexString[2:]
+	}
+	decodedString, decodeErr := hex.DecodeString(hexString)
+	if decodeErr != nil {
+		return nil, decodeErr
+	}
+	derivedFelt := felt.NewFelt(&fieldAdditiveIdentity)
+	derivedFelt.SetBytes(decodedString)
+
+	return derivedFelt, nil
+}
+
+func AllEventsFilter(fromBlock, toBlock uint64, contractAddress string) (*rpc.EventFilter, error) {
+	result := rpc.EventFilter{FromBlock: rpc.BlockID{Number: &fromBlock}, ToBlock: rpc.BlockID{Number: &toBlock}}
+
+	fieldAdditiveIdentity := fp.NewElement(0)
+
+	if contractAddress != "" {
+		if contractAddress[:2] == "0x" {
+			contractAddress = contractAddress[2:]
+		}
+		decodedAddress, decodeErr := hex.DecodeString(contractAddress)
+		if decodeErr != nil {
+			return &result, decodeErr
+		}
+		result.Address = felt.NewFelt(&fieldAdditiveIdentity)
+		result.Address.SetBytes(decodedAddress)
+	}
+
+	result.Keys = [][]*felt.Felt{{}}
+
+	return &result, nil
+}
+
+func ContractEvents(ctx context.Context, provider *rpc.Provider, contractAddress string, outChan chan<- RawEvent, hotThreshold int, hotInterval, coldInterval time.Duration, fromBlock, toBlock uint64, confirmations, batchSize int) error {
+	defer func() { close(outChan) }()
+
+	type CrawlCursor struct {
+		FromBlock         uint64
+		ToBlock           uint64
+		ContinuationToken string
+		Interval          time.Duration
+		Heat              int
+	}
+
+	cursor := CrawlCursor{FromBlock: fromBlock, ToBlock: toBlock, ContinuationToken: "", Interval: hotInterval, Heat: 0}
+
+	count := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(cursor.Interval):
+			count++
+			if cursor.ToBlock == 0 {
+				currentblock, blockErr := provider.BlockNumber(ctx)
+				if blockErr != nil {
+					return blockErr
+				}
+				cursor.ToBlock = currentblock - uint64(confirmations)
+			}
+
+			if cursor.ToBlock <= cursor.FromBlock {
+				// Crawl is cold, slow things down.
+				cursor.Interval = coldInterval
+
+				if toBlock == 0 {
+					// If the crawl is continuous, breaks out of select, not for loop.
+					// This effects a wait for the given interval.
+					break
+				} else {
+					// If crawl is not continuous, just ends the crawl.
+					return nil
+				}
+			}
+
+			filter, filterErr := AllEventsFilter(cursor.FromBlock, cursor.ToBlock, contractAddress)
+			if filterErr != nil {
+				return filterErr
+			}
+
+			eventsInput := rpc.EventsInput{
+				EventFilter:       *filter,
+				ResultPageRequest: rpc.ResultPageRequest{ChunkSize: batchSize, ContinuationToken: cursor.ContinuationToken},
+			}
+
+			eventsChunk, getEventsErr := provider.Events(ctx, eventsInput)
+			if getEventsErr != nil {
+				return getEventsErr
+			}
+
+			for _, event := range eventsChunk.Events {
+				crawledEvent := RawEvent{
+					BlockNumber:     event.BlockNumber,
+					BlockHash:       event.BlockHash,
+					TransactionHash: event.TransactionHash,
+					FromAddress:     event.FromAddress,
+					PrimaryKey:      event.Keys[0],
+					Keys:            event.Keys,
+					Parameters:      event.Data,
+				}
+
+				outChan <- crawledEvent
+			}
+
+			if eventsChunk.ContinuationToken != "" {
+				cursor.ContinuationToken = eventsChunk.ContinuationToken
+				cursor.Interval = hotInterval
+			} else {
+				cursor.FromBlock = cursor.ToBlock + 1
+				cursor.ToBlock = toBlock
+				cursor.ContinuationToken = ""
+				if len(eventsChunk.Events) > 0 {
+					cursor.Heat++
+					if cursor.Heat >= hotThreshold {
+						cursor.Interval = hotInterval
+					}
+				} else {
+					cursor.Heat = 0
+					cursor.Interval = coldInterval
+				}
+			}
+		}
+	}
+}
 `
 
 // This is the Go template which is used to generate the Go bindings to a Starknet ABI event.
@@ -469,6 +617,53 @@ func {{.ParserName}}(parameters []*felt.Felt) ({{.GoName}}, int, error) {
 
 `
 
+// This aggregates all event information to generate an event parser for the given ABI.
+// This template should be applied to a []GeneratedEvent list.
+var EventParserTemplate string = `var EVENT_UNKNOWN = "UNKNOWN"
+
+type ParsedEvent struct {
+	Name  string
+	Event interface{}
+}
+
+type PartialEvent struct {
+	Name  string
+	Event json.RawMessage
+}
+
+type EventParser struct {
+	{{range .}}
+	{{.EventNameVar}}_Felt *felt.Felt
+	{{- end}}
+}
+
+func NewEventParser() (*EventParser, error) {
+	var feltErr error
+	parser := &EventParser{}
+	{{range .}}
+	parser.{{.EventNameVar}}_Felt, feltErr = FeltFromHexString({{.EventHashVar}})
+	if feltErr != nil {
+		return parser, feltErr
+	}
+	{{end}}
+	return parser, nil
+}
+
+func (p *EventParser) Parse(event RawEvent) (ParsedEvent, error) {
+	defaultResult := ParsedEvent{Name: EVENT_UNKNOWN, Event: event}
+	{{range .}}
+	if p.{{.EventNameVar}}_Felt.Cmp(event.PrimaryKey) == 0 {
+		parsedEvent, _, parseErr := {{.ParserName}}(event.Parameters)
+		if parseErr != nil {
+			return defaultResult, parseErr
+		}
+		return ParsedEvent{Name: {{.EventNameVar}}, Event: parsedEvent}, nil
+	}
+	{{- end}}
+	return defaultResult, nil
+}
+`
+
 // This is the Go template used to create header information at the top of the generated code.
 // At a bare minimum, the header specifies the version of seer that was used to generate the code.
 // This template should be applied to a HeaderParameters struct.
@@ -480,9 +675,15 @@ var HeaderTemplate string = `// This file was generated by seer: https://github.
 {{if .PackageName}}package {{.PackageName}}{{end}}
 
 import (
+	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"math/big"
+	"time"
 
 	"github.com/NethermindEth/juno/core/felt"
+	"github.com/NethermindEth/starknet.go/rpc"
+	"github.com/consensys/gnark-crypto/ecc/stark-curve/fp"
 )
 `
