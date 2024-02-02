@@ -3,6 +3,7 @@ module github.com/moonstream-to/seer
 go 1.21
 
 require (
+	github.com/ethereum/go-ethereum v1.13.11
 	github.com/iancoleman/strcase v0.3.0
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/crypto v0.17.0
@@ -19,7 +20,6 @@ require (
 	github.com/deckarep/golang-set/v2 v2.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/ethereum/c-kzg-4844 v0.4.0 // indirect
-	github.com/ethereum/go-ethereum v1.13.11 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect

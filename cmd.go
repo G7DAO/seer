@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"go/format"
 	"io"
 	"os"
@@ -234,6 +235,13 @@ func CreateEVMGenerateCommand() *cobra.Command {
 		Use:   "generate",
 		Short: "Generate Go bindings for an EVM contract from its ABI",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if packageName == "" {
+				return errors.New("package name is required via --package/-p")
+			}
+			if structName == "" {
+				return errors.New("struct name is required via --struct/-s")
+			}
+
 			if infile != "" {
 				rawABI, readErr = os.ReadFile(infile)
 			} else {
@@ -264,9 +272,7 @@ func CreateEVMGenerateCommand() *cobra.Command {
 			if formattingErr != nil {
 				return formattingErr
 			}
-			return nil
-		},
-		PostRunE: func(cmd *cobra.Command, args []string) error {
+
 			if outfile != "" {
 				writeErr := os.WriteFile(outfile, generatedCode, 0644)
 				if writeErr != nil {
