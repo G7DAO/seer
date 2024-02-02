@@ -61,6 +61,7 @@ var resultEventParserKey string = "-eventparser"
 // Qualified names for Starknet ABI items are of the form:
 // `core::starknet::contract_address::ContractAddress`
 func GenerateGoNameForType(qualifiedName string) string {
+	qualifiedName = strings.TrimPrefix(qualifiedName, "@")
 	if strings.HasPrefix(qualifiedName, "core::integer::u") {
 		bitsRaw := strings.TrimPrefix(qualifiedName, "core::integer::u")
 		bits, bitsErr := strconv.Atoi(bitsRaw)
@@ -78,6 +79,8 @@ func GenerateGoNameForType(qualifiedName string) string {
 		s1, _ := strings.CutPrefix(qualifiedName, "core::array::Array::<")
 		s2, _ := strings.CutSuffix(s1, ">")
 		return fmt.Sprintf("[]%s", GenerateGoNameForType(s2))
+	} else if qualifiedName == "core::starknet::class_hash::ClassHash" {
+		return "string"
 	}
 
 	components := strings.Split(qualifiedName, "::")
