@@ -12,6 +12,7 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"strconv"
 	"text/template"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -19,6 +20,8 @@ import (
 )
 
 var ErrParsingCLIParams error = errors.New("error parsing CLI parameters")
+var ErrUnrecognizedType error = errors.New("unrecognized type")
+var ErrParameterUnnamed error = errors.New("parameter is unnamed")
 
 // GenerateTypes generates Go bindings to an Ethereum contract ABI (or union of such). This functionality
 // is roughly equivalent to that provided by the `abigen` tool provided by go-ethereum:
@@ -36,26 +39,46 @@ func GenerateTypes(structName string, abi []byte, bytecode []byte, packageName s
 	return bind.Bind([]string{structName}, []string{string(abi)}, []string{string(bytecode)}, []map[string]string{}, packageName, bind.LangGo, map[string]string{}, map[string]string{})
 }
 
-type MethodArgument struct {
-	Name                    string
-	ArgumentType            ast.Expr
-	InnerArgumentTypeString string
-	CLIVar                  string
-	CLIName                 string
-	CLIType                 string
-	PFlagHandler            string
-	Container               bool
+// ABIBoundParameter represents a Go type that is bound to an Ethereum contract ABI item.
+// The different types of types we need to deal with (based on https://github.com/ethereum/go-ethereum/blob/47d76c5f9508d3594bfc9aafa95c04edae71c5a1/accounts/abi/bind/bind.go#L338):
+// - uint8
+// - uint16
+// - uint32
+// - uint64
+// - int8
+// - int16
+// - int32
+// - int64
+// - *big.Int
+// - [n]byte
+// - []byte
+// - string
+// - bool
+// - array
+// - struct
+type ABIBoundParameter struct {
+	Name     string
+	GoType   string
+	Node     ast.Node
+	IsArray  bool
+	Length   int
+	Subtypes []ABIBoundParameter
 }
 
-type MethodReturnValue struct {
-	ReturnType string
+type MethodArgument struct {
+	Argument     ABIBoundParameter
+	CLIVar       string
+	CLIName      string
+	CLIType      string
+	PFlagHandler string
+	Container    bool
 }
 
 type HandlerDefinition struct {
 	MethodName    string
 	HandlerName   string
 	MethodArgs    []MethodArgument
-	MethodReturns []MethodReturnValue
+	MethodReturns []ABIBoundParameter
 }
 
 // Data structure that parametrizes CLI generation.
@@ -66,33 +89,80 @@ type CLIParams struct {
 	TransactHandlers []HandlerDefinition
 }
 
-// // This handles types which can be output by bind.bindBasicTypeGo:
-// // https://github.com/ethereum/go-ethereum/blob/eaac53ec383342fa6ef9c333659d40f7c5dac108/accounts/abi/bind/bind.go#L312
-// func CLITypeForBasicType(basicType string) string {
-// 	if basicType == "uint8" || basicType == "uint16" || basicType == "uint32" || basicType == "uint64" || basicType == "int8" || basicType == "int16" || basicType == "int32" || basicType == "int64" {
-// 		return basicType
-// 	} else if strings.HasSuffix(basicType, "]byte") {
-// 		return "[]byte"
-// 	}
-// 	return "string"
-// }
+// ParseBoundParameter parses an ast.Node representing a method parameter (or return value). It inspects
+// the ast.Node recursively to determine the information needed to parse that node to the user from command-line
+// input or to present an instance of that type to a user as command output.
+func ParseBoundParameter(arg ast.Node) (ABIBoundParameter, error) {
+	result := ABIBoundParameter{Node: arg}
 
-func ParseMethodArguments(method *ast.FuncDecl) ([]MethodArgument, error) {
-	result := make([]MethodArgument, len(method.Type.Params.List))
-	for i, param := range method.Type.Params.List {
-		if len(param.Names) != 1 {
-			return result, ErrParsingCLIParams
+	switch n := arg.(type) {
+
+	// Entrypoint of recursion - highest level of abstraction and we'll never see a field again in subsequent
+	// invocations.
+	case *ast.Field:
+		if len(n.Names) > 0 {
+			result.Name = n.Names[0].Name
 		}
-		result[i].Name = param.Names[0].Name
-		result[i].ArgumentType = param.Type
+		subresult, subresultErr := ParseBoundParameter(n.Type)
+		if subresultErr != nil {
+			return subresult, subresultErr
+		}
+		result.GoType = subresult.GoType
+		result.IsArray = subresult.IsArray
+		result.Length = subresult.Length
+		result.Subtypes = subresult.Subtypes
+
+	case *ast.ArrayType:
+		result.IsArray = true
+
+		// Check if the array is of fixed length. If so, extract the length into the result.Length field.
+		switch t1 := n.Elt.(type) {
+		case *ast.ArrayType:
+			if t1.Len != nil {
+				var conversionErr error
+				result.Length, conversionErr = strconv.Atoi(t1.Len.(*ast.BasicLit).Value)
+				if conversionErr != nil {
+					return result, conversionErr
+				}
+			}
+		}
+
+		// Set result.Subtypes to be the type of the array elements.
+		result.Subtypes = make([]ABIBoundParameter, 1)
+		subtype, subtypeErr := ParseBoundParameter(n.Elt)
+		if subtypeErr != nil {
+			return result, subtypeErr
+		}
+		result.Subtypes[0] = subtype
+
+		result.GoType = fmt.Sprintf("[]%s", subtype.GoType)
+
+	default:
+		var b bytes.Buffer
+		printer.Fprint(&b, token.NewFileSet(), n)
+		result.GoType = b.String()
 	}
+
 	return result, nil
+}
+
+// Fills in the information required to represent the given parameters as command-line argument. Takes
+// an array of ABIBoundParameter structs because it deduplicates flags.
+func DeriveMethodArguments(parameters []ABIBoundParameter) ([]MethodArgument, error) {
+	result := make([]MethodArgument, len(parameters))
+
+	for i, parameter := range parameters {
+		if parameter.Name == "" {
+			return result, ErrParameterUnnamed
+		}
+		result[i].Argument = parameter
+	}
 }
 
 func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods map[string]*ast.FuncDecl, transactMethods map[string]*ast.FuncDecl) (CLIParams, error) {
 	result := CLIParams{StructName: structName}
 
-	tempFileset := token.NewFileSet()
+	fset := token.NewFileSet()
 
 	result.DeployHandler = HandlerDefinition{
 		MethodName:  deployMethod.Name.Name,
@@ -107,37 +177,20 @@ func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods m
 		return result, ErrParsingCLIParams
 	}
 	result.DeployHandler.MethodArgs = make([]MethodArgument, len(deployMethod.Type.Params.List)-2)
-	for i := 0; i < len(deployMethod.Type.Params.List)-2; i++ {
-		methodArg := MethodArgument{
-			Name:         deployMethod.Type.Params.List[i+2].Names[0].Name,
-			ArgumentType: deployMethod.Type.Params.List[i+2].Type,
+
+	fmt.Println("PARAKEET")
+	for methodName, decl := range transactMethods {
+		fmt.Printf("Method: %s\n", methodName)
+		ast.Print(fset, decl)
+
+		for i, arg := range decl.Type.Params.List {
+			argType, argTypeErr := ParseBoundParameter(arg)
+			if argTypeErr != nil {
+				return result, argTypeErr
+			}
+
+			fmt.Printf("Argument %d: $%v\n", i, argType)
 		}
-
-		var b bytes.Buffer
-
-		switch methodArg.ArgumentType.(type) {
-		case *ast.ArrayType:
-			printer.Fprint(&b, tempFileset, methodArg.ArgumentType.(*ast.ArrayType).Elt)
-			methodArg.Container = true
-			methodArg.InnerArgumentTypeString = b.String()
-		default:
-			printer.Fprint(&b, tempFileset, methodArg.ArgumentType)
-			methodArg.InnerArgumentTypeString = b.String()
-		}
-
-		methodArg.CLIName = strcase.ToKebab(methodArg.Name)
-
-		switch methodArg.InnerArgumentTypeString {
-		case "common.Address":
-			methodArg.CLIType = "string"
-			methodArg.PFlagHandler = "StringVar"
-		case "*big.Int":
-
-		}
-
-		fmt.Printf("\t%v\n", methodArg)
-
-		methodArg.CLIVar = fmt.Sprintf("%sRaw", methodArg.Name)
 	}
 
 	return result, nil
@@ -206,7 +259,6 @@ func AddCLI(sourceCode, structName string) (string, error) {
 		return code, cliTemplateParseErr
 	}
 
-	fmt.Println("PARAKEET")
 	params, paramsErr := ParseCLIParams(structName, deployMethod, structViewMethods, structTransactionMethods)
 	if paramsErr != nil {
 		return code, paramsErr
@@ -353,4 +405,22 @@ func Create{{.StructName}}Command() *cobra.Command {
 
 	return cmd
 }
+`
+
+// This template generates the handler for smart contract deployment. It is intended to be used with a
+// HandlerDefinition struct.
+var DeployCommandTemplate string = `
+func {{.HandlerName}}
+`
+
+// This template generates the handler for smart contract methods that submit transactions. It is intended
+// to be used with a HandlerDefinition struct.
+var TransactMethodCommandTemplate string = `
+func {{.HandlerName}}
+`
+
+// This template generates the handler for smart contract call methods. It is intended to be used with
+// a HandlerDefinition struct.
+var ViewMethodCommandTemplate string = `
+func {{.HandlerName}}
 `
