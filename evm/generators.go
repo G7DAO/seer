@@ -71,7 +71,6 @@ type MethodArgument struct {
 	CLIName      string
 	CLIType      string
 	PFlagHandler string
-	Container    bool
 }
 
 type HandlerDefinition struct {
@@ -148,14 +147,29 @@ func ParseBoundParameter(arg ast.Node) (ABIBoundParameter, error) {
 
 // Fills in the information required to represent the given parameters as command-line argument. Takes
 // an array of ABIBoundParameter structs because it deduplicates flags.
+// This is where we map the Go types used in the methods to the Go types used to parse those arguments from the
+// command line.
 func DeriveMethodArguments(parameters []ABIBoundParameter) ([]MethodArgument, error) {
 	result := make([]MethodArgument, len(parameters))
 
+	assignedNames := make(map[string]bool)
+
 	for i, parameter := range parameters {
+		result[i].Argument = parameter
+
 		if parameter.Name == "" {
 			return result, ErrParameterUnnamed
 		}
-		result[i].Argument = parameter
+		j := 0
+		name := parameter.Name
+		for _, assigned := assignedNames[name]; assigned; {
+			name = fmt.Sprintf("%s%d", parameter.Name, j)
+			j++
+		}
+		assignedNames[name] = true
+
+		result[i].CLIVar = name
+		result[i].CLIName = strcase.ToKebab(parameter.Name)
 	}
 
 	return result, nil
@@ -163,8 +177,6 @@ func DeriveMethodArguments(parameters []ABIBoundParameter) ([]MethodArgument, er
 
 func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods map[string]*ast.FuncDecl, transactMethods map[string]*ast.FuncDecl) (CLIParams, error) {
 	result := CLIParams{StructName: structName}
-
-	fset := token.NewFileSet()
 
 	result.DeployHandler = HandlerDefinition{
 		MethodName:  deployMethod.Name.Name,
@@ -178,22 +190,22 @@ func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods m
 	if len(deployMethod.Type.Params.List) < 2 {
 		return result, ErrParsingCLIParams
 	}
-	result.DeployHandler.MethodArgs = make([]MethodArgument, len(deployMethod.Type.Params.List)-2)
-
-	fmt.Println("PARAKEET")
-	for methodName, decl := range transactMethods {
-		fmt.Printf("Method: %s\n", methodName)
-		ast.Print(fset, decl)
-
-		for i, arg := range decl.Type.Params.List {
-			argType, argTypeErr := ParseBoundParameter(arg)
-			if argTypeErr != nil {
-				return result, argTypeErr
-			}
-
-			fmt.Printf("Argument %d: $%v\n", i, argType)
+	parameters := make([]ABIBoundParameter, len(deployMethod.Type.Params.List)-2)
+	for i, arg := range deployMethod.Type.Params.List[2:] {
+		parameter, parameterErr := ParseBoundParameter(arg)
+		if parameterErr != nil {
+			return result, parameterErr
 		}
+		parameters[i] = parameter
 	}
+
+	methodArgs, methodArgsErr := DeriveMethodArguments(parameters)
+	if methodArgsErr != nil {
+		return result, methodArgsErr
+	}
+	result.DeployHandler.MethodArgs = methodArgs
+
+	fmt.Printf("Deployment method: %s\nArguments: %v\n", result.DeployHandler.MethodName, result.DeployHandler.MethodArgs)
 
 	return result, nil
 }
