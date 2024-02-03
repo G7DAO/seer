@@ -157,6 +157,8 @@ func DeriveMethodArguments(parameters []ABIBoundParameter) ([]MethodArgument, er
 		}
 		result[i].Argument = parameter
 	}
+
+	return result, nil
 }
 
 func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods map[string]*ast.FuncDecl, transactMethods map[string]*ast.FuncDecl) (CLIParams, error) {
