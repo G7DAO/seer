@@ -78,11 +78,19 @@ type MethodArgument struct {
 	PreRunE    string
 }
 
+type MethodReturnValue struct {
+	ReturnValue    ABIBoundParameter
+	CaptureName    string
+	CaptureType    string
+	InitializeCode string
+	PrintCode      string
+}
+
 type HandlerDefinition struct {
 	MethodName    string
 	HandlerName   string
 	MethodArgs    []MethodArgument
-	MethodReturns []ABIBoundParameter
+	MethodReturns []MethodReturnValue
 }
 
 // Data structure that parametrizes CLI generation.
@@ -120,14 +128,11 @@ func ParseBoundParameter(arg ast.Node) (ABIBoundParameter, error) {
 		result.IsArray = true
 
 		// Check if the array is of fixed length. If so, extract the length into the result.Length field.
-		switch t1 := n.Elt.(type) {
-		case *ast.ArrayType:
-			if t1.Len != nil {
-				var conversionErr error
-				result.Length, conversionErr = strconv.Atoi(t1.Len.(*ast.BasicLit).Value)
-				if conversionErr != nil {
-					return result, conversionErr
-				}
+		if n.Len != nil {
+			var conversionErr error
+			result.Length, conversionErr = strconv.Atoi(n.Len.(*ast.BasicLit).Value)
+			if conversionErr != nil {
+				return result, conversionErr
 			}
 		}
 
@@ -139,8 +144,11 @@ func ParseBoundParameter(arg ast.Node) (ABIBoundParameter, error) {
 		}
 		result.Subtypes[0] = subtype
 
-		result.GoType = fmt.Sprintf("[]%s", subtype.GoType)
-
+		if result.Length > 0 {
+			result.GoType = fmt.Sprintf("[%d]%s", result.Length, subtype.GoType)
+		} else {
+			result.GoType = fmt.Sprintf("[]%s", subtype.GoType)
+		}
 	default:
 		var b bytes.Buffer
 		printer.Fprint(&b, token.NewFileSet(), n)
@@ -314,6 +322,53 @@ if %s == "" {
 	return result, nil
 }
 
+// Fills in the information required to present the given return values to the user as output from a CLI.
+func DeriveMethodReturnValues(parameters []ABIBoundParameter) ([]MethodReturnValue, error) {
+	result := make([]MethodReturnValue, len(parameters))
+
+	for i, parameter := range parameters {
+		result[i].ReturnValue = parameter
+		result[i].CaptureName = fmt.Sprintf("capture%d", i)
+		result[i].CaptureType = parameter.GoType
+		result[i].InitializeCode = fmt.Sprintf("var %s %s", result[i].CaptureName, result[i].CaptureType)
+
+		switch parameter.GoType {
+		case "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64":
+			result[i].PrintCode = fmt.Sprintf("cmd.Printf(\"%d: %%d\\n\", %s)", i, result[i].CaptureName)
+
+		case "string":
+			result[i].PrintCode = fmt.Sprintf("cmd.Printf(\"%d: %%s\\n\", %s)", i, result[i].CaptureName)
+
+		case "*big.Int":
+			result[i].PrintCode = fmt.Sprintf("cmd.Printf(\"%d: %%s\\n\", %s.String())", i, result[i].CaptureName)
+
+		case "common.Address":
+			result[i].PrintCode = fmt.Sprintf("cmd.Printf(\"%d: %%s\\n\", %s.Hex())", i, result[i].CaptureName)
+
+		default:
+			PrintCodeFormat := `
+%sJSON, %sJSONMarshalErr := json.Marshal(%s)
+if %sJSONMarshalErr != nil {
+	return %sJSONMarshalErr
+}
+cmd.Printf("%d: %%s\\n", string(%sJSON))
+			`
+			result[i].PrintCode = fmt.Sprintf(
+				PrintCodeFormat,
+				result[i].CaptureName,
+				result[i].CaptureName,
+				result[i].CaptureName,
+				result[i].CaptureName,
+				result[i].CaptureName,
+				i,
+				result[i].CaptureName,
+			)
+		}
+	}
+
+	return result, nil
+}
+
 func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods map[string]*ast.FuncDecl, transactMethods map[string]*ast.FuncDecl) (CLISpecification, error) {
 	result := CLISpecification{StructName: structName}
 
@@ -347,8 +402,53 @@ func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods m
 		result.DeployHandler.MethodArgs = methodArgs
 	}
 
+	result.ViewHandlers = make([]HandlerDefinition, len(viewMethods))
+	currentViewHandler := 0
+	for methodName, methodNode := range viewMethods {
+		parameters := make([]ABIBoundParameter, len(methodNode.Type.Params.List))
+
+		// Every view method, when bound to Go, will retrun an error as its last return value.
+		returnParameters := make([]ABIBoundParameter, len(methodNode.Type.Results.List)-1)
+
+		for i, arg := range methodNode.Type.Params.List {
+			parameter, parameterErr := ParseBoundParameter(arg)
+			if parameterErr != nil {
+				return result, parameterErr
+			}
+			parameters[i] = parameter
+		}
+
+		methodArgs, methodArgsErr := DeriveMethodArguments(parameters)
+		if methodArgsErr != nil {
+			return result, methodArgsErr
+		}
+
+		for i, val := range methodNode.Type.Results.List[:len(methodNode.Type.Results.List)-1] {
+			returnParam, returnParamErr := ParseBoundParameter(val)
+			if returnParamErr != nil {
+				return result, returnParamErr
+			}
+			returnParameters[i] = returnParam
+		}
+
+		methodReturns, methodReturnsErr := DeriveMethodReturnValues(returnParameters)
+		if methodReturnsErr != nil {
+			return result, methodReturnsErr
+		}
+
+		handler := HandlerDefinition{
+			MethodName:    methodName,
+			HandlerName:   fmt.Sprintf("Create%sCommand", strcase.ToCamel(methodName)),
+			MethodArgs:    methodArgs,
+			MethodReturns: methodReturns,
+		}
+
+		result.ViewHandlers[currentViewHandler] = handler
+		currentViewHandler++
+	}
+
 	result.TransactHandlers = make([]HandlerDefinition, len(transactMethods))
-	currentHandler := 0
+	currentTransactHandler := 0
 	for methodName, methodNode := range transactMethods {
 		parameters := make([]ABIBoundParameter, len(methodNode.Type.Params.List))
 		for i, arg := range methodNode.Type.Params.List {
@@ -370,8 +470,8 @@ func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods m
 			MethodArgs:  methodArgs,
 		}
 
-		result.TransactHandlers[currentHandler] = handler
-		currentHandler++
+		result.TransactHandlers[currentTransactHandler] = handler
+		currentTransactHandler++
 	}
 
 	return result, nil
@@ -381,7 +481,7 @@ func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods m
 // GenerateTypes function. The output of this function *contains* the input, with enrichments (some of
 // then inline). It should not be concatenated with the output of GenerateTypes, but rather be used as
 // part of a chain.
-func AddCLI(sourceCode, structName string) (string, error) {
+func AddCLI(sourceCode, structName string, noformat bool) (string, error) {
 	fileset := token.NewFileSet()
 	filename := ""
 	sourceAST, sourceASTErr := parser.ParseFile(fileset, filename, sourceCode, parser.ParseComments)
@@ -403,6 +503,7 @@ func AddCLI(sourceCode, structName string) (string, error) {
 			// Add additional imports:
 			// - context
 			// - encoding/hex
+			// - encoding/json
 			// - fmt
 			// - os
 			// - time
@@ -415,6 +516,7 @@ func AddCLI(sourceCode, structName string) (string, error) {
 					t.Specs,
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"context"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"encoding/hex"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"encoding/json"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"fmt"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"os"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"time"`}},
@@ -463,6 +565,11 @@ func AddCLI(sourceCode, structName string) (string, error) {
 		return code, deployCommandTemplateErr
 	}
 
+	viewMethodsCommandTemplate, viewMethodsCommandTemplateErr := template.New("viewMethods").Funcs(templateFuncs).Parse(ViewMethodCommandTemplate)
+	if viewMethodsCommandTemplateErr != nil {
+		return code, viewMethodsCommandTemplateErr
+	}
+
 	transactionMethodsCommandTemplate, transactionMethodsCommandTemplateErr := template.New("transactionMethods").Funcs(templateFuncs).Parse(TransactMethodCommandTemplate)
 	if transactionMethodsCommandTemplateErr != nil {
 		return code, transactionMethodsCommandTemplateErr
@@ -482,6 +589,13 @@ func AddCLI(sourceCode, structName string) (string, error) {
 	code = code + "\n\n" + b.String()
 
 	b.Reset()
+	viewMethodsTemplateErr := viewMethodsCommandTemplate.Execute(&b, cliSpec)
+	if viewMethodsTemplateErr != nil {
+		return code, viewMethodsTemplateErr
+	}
+	code = code + "\n\n" + b.String()
+
+	b.Reset()
 	transactionMethodsTemplateErr := transactionMethodsCommandTemplate.Execute(&b, cliSpec)
 	if transactionMethodsTemplateErr != nil {
 		return code, transactionMethodsTemplateErr
@@ -495,20 +609,23 @@ func AddCLI(sourceCode, structName string) (string, error) {
 	}
 	code = code + "\n\n" + b.String()
 
-	// We use golang.org/x/tools/imports instead of go/format.
-	// imports.Process does what format.Source does AND it removes unused imports.
-	opts := &imports.Options{
-		Fragment:   false,
-		AllErrors:  true,
-		Comments:   true,
-		FormatOnly: false,
-	}
-	generatedCode, formattingErr := imports.Process("mem", []byte(code), opts)
-	if formattingErr != nil {
-		return code, formattingErr
+	if !noformat {
+		// We use golang.org/x/tools/imports instead of go/format.
+		// imports.Process does what format.Source does AND it removes unused imports.
+		opts := &imports.Options{
+			Fragment:   false,
+			AllErrors:  true,
+			Comments:   true,
+			FormatOnly: false,
+		}
+		generatedCode, formattingErr := imports.Process("mem", []byte(code), opts)
+		if formattingErr != nil {
+			return code, formattingErr
+		}
+		code = string(generatedCode)
 	}
 
-	return string(generatedCode), nil
+	return code, nil
 }
 
 var CLICodeTemplate string = `
@@ -650,6 +767,12 @@ func Create{{.StructName}}Command() *cobra.Command {
 	cmd.AddCommand(cmd{{.DeployHandler.MethodName}})
 	{{- end}}
 
+	{{range .ViewHandlers}}
+	cmdView{{.MethodName}} := {{.HandlerName}}()
+	cmdView{{.MethodName}}.GroupID = ViewGroup.ID
+	cmd.AddCommand(cmdView{{.MethodName}})
+	{{- end}}
+
 	{{range .TransactHandlers}}
 	cmdTransact{{.MethodName}} := {{.HandlerName}}()
 	cmdTransact{{.MethodName}}.GroupID = TransactGroup.ID
@@ -779,8 +902,89 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 
 // This template generates the handler for smart contract call methods. It is intended to be used with
 // a HandlerDefinition struct.
-var ViewMethodCommandTemplate string = `
-func {{.HandlerName}}
+var ViewMethodCommandTemplate string = `{{$structName := .StructName}}
+{{range .ViewHandlers}}
+func {{.HandlerName}}() *cobra.Command {
+	var contractAddressRaw, rpc string
+	var contractAddress common.Address
+	var timeout uint
+
+	var blockNumberRaw, fromAddressRaw string
+	var pending bool
+
+	{{range .MethodArgs}}
+	var {{.CLIVar}} {{.CLIType}}
+	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
+	{{- end}}
+
+	{{range .MethodReturns}}
+	{{.InitializeCode}}
+	{{- end}}
+
+	cmd := &cobra.Command{
+		Use: "{{(KebabCase .MethodName)}}",
+		Short: "Call the {{.MethodName}} view method on a {{$structName}} contract",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if contractAddressRaw == "" {
+				return fmt.Errorf("--contract not specified")
+			} else if !common.IsHexAddress(contractAddressRaw) {
+				return fmt.Errorf("--contract is not a valid Ethereum address")
+			}
+			contractAddress = common.HexToAddress(contractAddressRaw)
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, clientErr := NewClient(rpc)
+			if clientErr != nil {
+				return clientErr
+			}
+
+			contract, contractErr := New{{$structName}}(contractAddress, client)
+			if contractErr != nil {
+				return contractErr
+			}
+
+			callOpts := bind.CallOpts{}
+			SetCallParametersFromArgs(&callOpts, pending, fromAddressRaw, blockNumberRaw)
+
+			session := {{$structName}}CallerSession{
+				Contract: &contract.{{$structName}}Caller,
+				CallOpts: callOpts,
+			}
+
+			var callErr error
+			{{range .MethodReturns}}{{.CaptureName}}, {{end}}callErr = session.{{.MethodName}}(
+				{{- range .MethodArgs}}
+				{{.CLIVar}},
+				{{- end}}
+			)
+			if callErr != nil {
+				return callErr
+			}
+
+			{{range .MethodReturns}}
+			{{.PrintCode}}
+			{{- end}}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&rpc, "rpc", "", "URL of the JSONRPC API to use")
+	cmd.Flags().StringVar(&blockNumberRaw, "block", "", "Block number at which to call the view method")
+	cmd.Flags().BoolVar(&pending, "pending", false, "Set this flag if it's ok to call the view method against pending state")
+	cmd.Flags().UintVar(&timeout, "timeout", 60, "Timeout (in seconds) for interactions with the JSONRPC API")
+	cmd.Flags().StringVar(&contractAddressRaw, "contract", "", "Address of the contract to interact with")
+	cmd.Flags().StringVar(&fromAddressRaw, "from", "", "Optional address for caller of the view method")
+
+	{{range .MethodArgs}}
+	cmd.Flags().{{.Flag}}
+	{{- end}}
+
+	return cmd
+}
+{{- end}}
 `
 
 // This template generates the handler for smart contract methods that submit transactions. It is intended
@@ -798,7 +1002,6 @@ func {{.HandlerName}}() *cobra.Command {
 	var {{.CLIVar}} {{.CLIType}}
 	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
 	{{- end}}
-
 
 	cmd := &cobra.Command{
 		Use: "{{(KebabCase .MethodName)}}",
