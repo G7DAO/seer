@@ -18,6 +18,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/iancoleman/strcase"
+	"golang.org/x/tools/imports"
 )
 
 var ErrParsingCLIParams error = errors.New("error parsing CLI parameters")
@@ -317,31 +318,34 @@ func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods m
 	result := CLISpecification{StructName: structName}
 
 	result.DeployHandler = HandlerDefinition{
-		MethodName:  deployMethod.Name.Name,
 		HandlerName: fmt.Sprintf("Create%sDeploymentCommand", structName),
 	}
-	// Deploy methods always take the following two arguments at the beginning of their argument list:
-	// - auth *bind.TransactOpts
-	// - backend bind.ContractBackend
-	// We ignore these arguments here because they can all be handled uniformly when we run codegen for the
-	// deployment command.
-	if len(deployMethod.Type.Params.List) < 2 {
-		return result, ErrParsingCLIParams
-	}
-	parameters := make([]ABIBoundParameter, len(deployMethod.Type.Params.List)-2)
-	for i, arg := range deployMethod.Type.Params.List[2:] {
-		parameter, parameterErr := ParseBoundParameter(arg)
-		if parameterErr != nil {
-			return result, parameterErr
-		}
-		parameters[i] = parameter
-	}
+	if deployMethod != nil {
+		result.DeployHandler.MethodName = deployMethod.Name.Name
 
-	methodArgs, methodArgsErr := DeriveMethodArguments(parameters)
-	if methodArgsErr != nil {
-		return result, methodArgsErr
+		// Deploy methods always take the following two arguments at the beginning of their argument list:
+		// - auth *bind.TransactOpts
+		// - backend bind.ContractBackend
+		// We ignore these arguments here because they can all be handled uniformly when we run codegen for the
+		// deployment command.
+		if len(deployMethod.Type.Params.List) < 2 {
+			return result, ErrParsingCLIParams
+		}
+		parameters := make([]ABIBoundParameter, len(deployMethod.Type.Params.List)-2)
+		for i, arg := range deployMethod.Type.Params.List[2:] {
+			parameter, parameterErr := ParseBoundParameter(arg)
+			if parameterErr != nil {
+				return result, parameterErr
+			}
+			parameters[i] = parameter
+		}
+
+		methodArgs, methodArgsErr := DeriveMethodArguments(parameters)
+		if methodArgsErr != nil {
+			return result, methodArgsErr
+		}
+		result.DeployHandler.MethodArgs = methodArgs
 	}
-	result.DeployHandler.MethodArgs = methodArgs
 
 	return result, nil
 }
@@ -453,7 +457,20 @@ func AddCLI(sourceCode, structName string) (string, error) {
 	}
 	code = code + "\n\n" + b.String()
 
-	return code, nil
+	// We use golang.org/x/tools/imports instead of go/format.
+	// imports.Process does what format.Source does AND it removes unused imports.
+	opts := &imports.Options{
+		Fragment:   false,
+		AllErrors:  true,
+		Comments:   true,
+		FormatOnly: false,
+	}
+	generatedCode, formattingErr := imports.Process("mem", []byte(code), opts)
+	if formattingErr != nil {
+		return code, formattingErr
+	}
+
+	return string(generatedCode), nil
 }
 
 var CLICodeTemplate string = `
@@ -575,20 +592,25 @@ func Create{{.StructName}}Command() *cobra.Command {
 
 	cmd.SetOut(os.Stdout)
 
+	{{if .DeployHandler.MethodName}}
 	DeployGroup := &cobra.Group{
 		ID: "deploy", Title: "Commands which deploy contracts",
 	}
+	cmd.AddGroup(DeployGroup)
+	{{- end}}
 	ViewGroup := &cobra.Group{
 		ID: "view", Title: "Commands which view contract state",
 	}
 	TransactGroup := &cobra.Group{
 		ID: "transact", Title: "Commands which submit transactions",
 	}
-	cmd.AddGroup(DeployGroup, ViewGroup, TransactGroup)
+	cmd.AddGroup(ViewGroup, TransactGroup)
 
+	{{if .DeployHandler.MethodName}}
 	cmd{{.DeployHandler.MethodName}} := {{.DeployHandler.HandlerName}}()
 	cmd{{.DeployHandler.MethodName}}.GroupID = DeployGroup.ID
 	cmd.AddCommand(cmd{{.DeployHandler.MethodName}})
+	{{- end}}
 
 	return cmd
 }
@@ -597,6 +619,7 @@ func Create{{.StructName}}Command() *cobra.Command {
 // This template generates the handler for smart contract deployment. It is intended to be used with a
 // HandlerDefinition struct.
 var DeployCommandTemplate string = `
+{{if .DeployHandler.MethodName}}
 func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var keyfile, nonce, password, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, rpc string
 	var gasLimit uint64
@@ -707,6 +730,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 
 	return cmd
 }
+{{end}}
 `
 
 // This template generates the handler for smart contract methods that submit transactions. It is intended

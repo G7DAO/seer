@@ -228,7 +228,7 @@ func CreateEVMCommand() *cobra.Command {
 func CreateEVMGenerateCommand() *cobra.Command {
 	var cli bool
 	var infile, packageName, structName, bytecodefile, outfile string
-	var rawABI, bytecode, generatedCode []byte
+	var rawABI, bytecode []byte
 	var readErr error
 
 	evmGenerateCmd := &cobra.Command{
@@ -267,19 +267,13 @@ func CreateEVMGenerateCommand() *cobra.Command {
 				}
 			}
 
-			var formattingErr error
-			generatedCode, formattingErr = format.Source([]byte(code))
-			if formattingErr != nil {
-				return formattingErr
-			}
-
 			if outfile != "" {
-				writeErr := os.WriteFile(outfile, generatedCode, 0644)
+				writeErr := os.WriteFile(outfile, []byte(code), 0644)
 				if writeErr != nil {
 					return writeErr
 				}
 			} else {
-				cmd.Println(string(generatedCode))
+				cmd.Println(code)
 			}
 			return nil
 		},

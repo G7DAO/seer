@@ -79,7 +79,7 @@ seer evm generate \
 To run this code, first build it:
 
 ```bash
-go build examples/ownable-erc-721
+go build ./examples/ownable-erc-721
 ```
 
 This will create an executable file called `ownable-erc-721` (on Windows, you may want to rename it to `ownable-erc-721.exe` for convenience).

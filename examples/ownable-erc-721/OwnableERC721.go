@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"context"
+
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -19,12 +20,13 @@ import (
 	// Reference imports to suppress errors if they are not otherwise used.
 	"encoding/hex"
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-	"os"
-	"time"
 )
 
 var (
@@ -1526,13 +1528,14 @@ func CreateOwnableERC721Command() *cobra.Command {
 	DeployGroup := &cobra.Group{
 		ID: "deploy", Title: "Commands which deploy contracts",
 	}
+	cmd.AddGroup(DeployGroup)
 	ViewGroup := &cobra.Group{
 		ID: "view", Title: "Commands which view contract state",
 	}
 	TransactGroup := &cobra.Group{
 		ID: "transact", Title: "Commands which submit transactions",
 	}
-	cmd.AddGroup(DeployGroup, ViewGroup, TransactGroup)
+	cmd.AddGroup(ViewGroup, TransactGroup)
 
 	cmdDeployOwnableERC721 := CreateOwnableERC721DeploymentCommand()
 	cmdDeployOwnableERC721.GroupID = DeployGroup.ID
