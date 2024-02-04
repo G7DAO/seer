@@ -932,6 +932,10 @@ func {{.HandlerName}}() *cobra.Command {
 			}
 			contractAddress = common.HexToAddress(contractAddressRaw)
 
+			{{range .MethodArgs}}
+			{{.PreRunE}}
+			{{- end}}
+
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
