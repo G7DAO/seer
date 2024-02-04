@@ -371,6 +371,7 @@ func AddCLI(sourceCode, structName string) (string, error) {
 		case *ast.GenDecl:
 			// Add additional imports:
 			// - context
+			// - encoding/hex
 			// - fmt
 			// - os
 			// - time
@@ -382,6 +383,7 @@ func AddCLI(sourceCode, structName string) (string, error) {
 				t.Specs = append(
 					t.Specs,
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"context"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"encoding/hex"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"fmt"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"os"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"time"`}},
@@ -584,6 +586,10 @@ func Create{{.StructName}}Command() *cobra.Command {
 	}
 	cmd.AddGroup(DeployGroup, ViewGroup, TransactGroup)
 
+	cmd{{.DeployHandler.MethodName}} := {{.DeployHandler.HandlerName}}()
+	cmd{{.DeployHandler.MethodName}}.GroupID = DeployGroup.ID
+	cmd.AddCommand(cmd{{.DeployHandler.MethodName}})
+
 	return cmd
 }
 `
@@ -672,8 +678,9 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				if transactionBinaryErr != nil {
 					return transactionBinaryErr
 				}
+				transactionBinaryHex := hex.EncodeToString(transactionBinary)
 
-				cmd.Printf("Transaction: %s\nEstimated gas: %d\n", transactionBinary, gasEstimate)
+				cmd.Printf("Transaction: %s\nEstimated gas: %d\n", transactionBinaryHex, gasEstimate)
 			} else {
 				cmd.Println("Transaction submitted")
 			}
