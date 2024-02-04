@@ -13,6 +13,7 @@ import (
 	"go/printer"
 	"go/token"
 	"strconv"
+	"strings"
 	"text/template"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -66,11 +67,14 @@ type ABIBoundParameter struct {
 }
 
 type MethodArgument struct {
-	Argument     ABIBoundParameter
-	CLIVar       string
-	CLIName      string
-	CLIType      string
-	PFlagHandler string
+	Argument   ABIBoundParameter
+	CLIVar     string
+	CLIRawVar  string
+	CLIName    string
+	CLIType    string
+	CLIRawType string
+	Flag       string
+	PreRunE    string
 }
 
 type HandlerDefinition struct {
@@ -81,7 +85,7 @@ type HandlerDefinition struct {
 }
 
 // Data structure that parametrizes CLI generation.
-type CLIParams struct {
+type CLISpecification struct {
 	StructName       string
 	DeployHandler    HandlerDefinition
 	ViewHandlers     []HandlerDefinition
@@ -152,7 +156,35 @@ func ParseBoundParameter(arg ast.Node) (ABIBoundParameter, error) {
 func DeriveMethodArguments(parameters []ABIBoundParameter) ([]MethodArgument, error) {
 	result := make([]MethodArgument, len(parameters))
 
-	assignedNames := make(map[string]bool)
+	// assignedNames helps us ensure that there are no collisions in named arguments in our CLI.
+	// It contains reserved argument names and is populated with the name of every argument that gets added
+	// to a method's CLI.
+	assignedNames := map[string]bool{
+		"rpc":                  true,
+		"keystore":             true,
+		"value":                true,
+		"gasPrice":             true,
+		"nonce":                true,
+		"from":                 true,
+		"fromAddress":          true,
+		"to":                   true,
+		"toAddress":            true,
+		"block":                true,
+		"pending":              true,
+		"maxFeePerGas":         true,
+		"maxPriorityFeePerGas": true,
+		"gasLimit":             true,
+		"noSend":               true,
+		"timeout":              true,
+		"password":             true,
+		"contract":             true,
+		"method":               true,
+		"args":                 true,
+		"output":               true,
+		"chainId":              true,
+		"network":              true,
+		"simulate":             true,
+	}
 
 	for i, parameter := range parameters {
 		result[i].Argument = parameter
@@ -161,22 +193,128 @@ func DeriveMethodArguments(parameters []ABIBoundParameter) ([]MethodArgument, er
 			return result, ErrParameterUnnamed
 		}
 		j := 0
-		name := parameter.Name
-		for _, assigned := assignedNames[name]; assigned; {
+		name := strings.Trim(parameter.Name, "-_")
+		for {
+			_, assigned := assignedNames[name]
+			if !assigned {
+				break
+			}
 			name = fmt.Sprintf("%s%d", parameter.Name, j)
 			j++
 		}
 		assignedNames[name] = true
 
 		result[i].CLIVar = name
-		result[i].CLIName = strcase.ToKebab(parameter.Name)
+		// If CLIRawVar is different from CLIVar, that is a signal that we need to add parsing logic in
+		// PreRunE.
+		result[i].CLIRawVar = name
+		result[i].CLIType = parameter.GoType
+		result[i].CLIRawType = parameter.GoType
+		result[i].CLIName = strcase.ToKebab(name)
+
+		// Cases we need to handle
+		// - uint8
+		// - uint16
+		// - uint32
+		// - uint64
+		// - int8
+		// - int16
+		// - int32
+		// - int64
+		// - common.Address
+		// - *big.Int
+		// - anything else (structs, arrays, etc. will be parsed as JSON strings or strings of the form "@<filename>" containing JSON)
+		switch parameter.GoType {
+		case "uint8":
+			result[i].Flag = fmt.Sprintf("Uint8Var(&%s, \"%s\", 0, \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+		case "uint16":
+			result[i].Flag = fmt.Sprintf("Uint16Var(&%s, \"%s\", 0, \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+		case "uint32":
+			result[i].Flag = fmt.Sprintf("Uint32Var(&%s, \"%s\", 0, \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+		case "uint64":
+			result[i].Flag = fmt.Sprintf("Uint64Var(&%s, \"%s\", 0, \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+		case "int8":
+			result[i].Flag = fmt.Sprintf("Int8Var(&%s, \"%s\", 0, \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+		case "int16":
+			result[i].Flag = fmt.Sprintf("Int16Var(&%s, \"%s\", 0, \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+		case "int32":
+			result[i].Flag = fmt.Sprintf("Int32Var(&%s, \"%s\", 0, \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+		case "int64":
+			result[i].Flag = fmt.Sprintf("Int64Var(&%s, \"%s\", 0, \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+		case "string":
+			result[i].Flag = fmt.Sprintf("StringVar(&%s, \"%s\", \"\", \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+
+		case "*big.Int":
+			result[i].CLIRawVar = fmt.Sprintf("%sRaw", result[i].CLIVar)
+			result[i].CLIRawType = "string"
+			result[i].Flag = fmt.Sprintf("StringVar(&%s, \"%s\", \"\", \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+			preRunEFormat := `
+if %s == "" {
+	return fmt.Errorf("--%s argument not specified")
+}
+%s = new(big.Int)
+%s.SetString(%s, 0)
+`
+			result[i].PreRunE = fmt.Sprintf(
+				preRunEFormat,
+				result[i].CLIRawVar,
+				result[i].CLIName,
+				result[i].CLIVar,
+				result[i].CLIVar,
+				result[i].CLIRawVar,
+			)
+
+		case "common.Address":
+			result[i].CLIRawVar = fmt.Sprintf("%sRaw", result[i].CLIVar)
+			result[i].CLIRawType = "string"
+			result[i].Flag = fmt.Sprintf("StringVar(&%s, \"%s\", \"\", \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+			preRunEFormat := `
+if %s == "" {
+	return fmt.Errorf("--%s argument not specified")
+} else if !common.IsHexAddress(%s) {
+	return fmt.Errorf("--%s argument is not a valid Ethereum address")
+}
+%s = common.HexToAddress(%s)
+`
+			result[i].PreRunE = fmt.Sprintf(
+				preRunEFormat,
+				result[i].CLIRawVar,
+				result[i].CLIName,
+				result[i].CLIRawVar,
+				result[i].CLIName,
+				result[i].CLIVar,
+				result[i].CLIRawVar,
+			)
+
+		// In this case, we parse as JSON either directly from the command line or through a file if the argument as an "@" prefix (like curl)
+		default:
+			result[i].CLIRawVar = fmt.Sprintf("%sRaw", result[i].CLIVar)
+			result[i].CLIRawType = "string"
+			result[i].Flag = fmt.Sprintf("StringVar(&%s, \"%s\", \"\", \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+			preRunEFormat := `
+if %s == "" {
+	return fmt.Errorf("--%s argument not specified")
+} else if strings.HasPrefix(%s, "@") {
+	// TODO: Load JSON object from file
+} else {
+	// TODO: Load JSON object from string
+}
+`
+
+			result[i].PreRunE = fmt.Sprintf(
+				preRunEFormat,
+				result[i].CLIRawVar,
+				result[i].CLIName,
+				result[i].CLIRawVar,
+			)
+		}
 	}
 
 	return result, nil
 }
 
-func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods map[string]*ast.FuncDecl, transactMethods map[string]*ast.FuncDecl) (CLIParams, error) {
-	result := CLIParams{StructName: structName}
+func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods map[string]*ast.FuncDecl, transactMethods map[string]*ast.FuncDecl) (CLISpecification, error) {
+	result := CLISpecification{StructName: structName}
 
 	result.DeployHandler = HandlerDefinition{
 		MethodName:  deployMethod.Name.Name,
@@ -205,8 +343,6 @@ func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods m
 	}
 	result.DeployHandler.MethodArgs = methodArgs
 
-	fmt.Printf("Deployment method: %s\nArguments: %v\n", result.DeployHandler.MethodName, result.DeployHandler.MethodArgs)
-
 	return result, nil
 }
 
@@ -234,10 +370,26 @@ func AddCLI(sourceCode, structName string) (string, error) {
 		switch t := node.(type) {
 		case *ast.GenDecl:
 			// Add additional imports:
+			// - context
+			// - fmt
 			// - os
+			// - time
 			// - github.com/spf13/cobra
+			// - github.com/ethereum/go-ethereum/accounts/keystore
+			// - github.com/ethereum/go-ethereum/ethclient
+			// - golang.org/x/term
 			if t.Tok == token.IMPORT {
-				t.Specs = append(t.Specs, &ast.ImportSpec{Path: &ast.BasicLit{Value: `"os"`}}, &ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/spf13/cobra"`}})
+				t.Specs = append(
+					t.Specs,
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"context"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"fmt"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"os"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"time"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/spf13/cobra"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/ethereum/go-ethereum/accounts/keystore"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/ethereum/go-ethereum/ethclient"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"golang.org/x/term"`}},
+				)
 			}
 			return true
 		case *ast.FuncDecl:
@@ -273,18 +425,33 @@ func AddCLI(sourceCode, structName string) (string, error) {
 		return code, cliTemplateParseErr
 	}
 
-	params, paramsErr := ParseCLIParams(structName, deployMethod, structViewMethods, structTransactionMethods)
-	if paramsErr != nil {
-		return code, paramsErr
+	deployCommandTemplate, deployCommandTemplateErr := template.New("deploy").Funcs(templateFuncs).Parse(DeployCommandTemplate)
+	if deployCommandTemplateErr != nil {
+		return code, deployCommandTemplateErr
+	}
+
+	cliSpec, cliSpecErr := ParseCLIParams(structName, deployMethod, structViewMethods, structTransactionMethods)
+	if cliSpecErr != nil {
+		return code, cliSpecErr
 	}
 
 	var b bytes.Buffer
-	templateErr := cliTemplate.Execute(&b, params)
-	if templateErr != nil {
-		return code, templateErr
-	}
 
-	return code + "\n\n" + b.String(), nil
+	deployTemplateErr := deployCommandTemplate.Execute(&b, cliSpec)
+	if deployTemplateErr != nil {
+		return code, deployTemplateErr
+	}
+	code = code + "\n\n" + b.String()
+
+	b.Reset()
+
+	cliTemplateErr := cliTemplate.Execute(&b, cliSpec)
+	if cliTemplateErr != nil {
+		return code, cliTemplateErr
+	}
+	code = code + "\n\n" + b.String()
+
+	return code, nil
 }
 
 var CLICodeTemplate string = `
@@ -424,7 +591,115 @@ func Create{{.StructName}}Command() *cobra.Command {
 // This template generates the handler for smart contract deployment. It is intended to be used with a
 // HandlerDefinition struct.
 var DeployCommandTemplate string = `
-func {{.HandlerName}}
+func {{.DeployHandler.HandlerName}}() *cobra.Command {
+	var keyfile, nonce, password, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, rpc string
+	var gasLimit uint64
+	var simulate bool
+	var timeout uint
+
+	{{range .DeployHandler.MethodArgs}}
+	var {{.CLIVar}} {{.CLIType}}
+	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
+	{{- end}}
+
+	cmd := &cobra.Command{
+		Use:  "deploy",
+		Short: "Deploy a new {{.StructName}} contract",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if keyfile == "" {
+				return fmt.Errorf("--keystore not specified (this should be a path to an Ethereum account keystore file)")
+			}
+
+			{{range .DeployHandler.MethodArgs}}
+			{{.PreRunE}}
+			{{- end}}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, clientErr := NewClient(rpc)
+			if clientErr != nil {
+				return clientErr
+			}
+
+			key, keyErr := KeyFromFile(keyfile, password)
+			if keyErr != nil {
+				return keyErr
+			}
+
+			chainIDCtx, cancelChainIDCtx := NewChainContext(timeout)
+			defer cancelChainIDCtx()
+			chainID, chainIDErr := client.ChainID(chainIDCtx)
+			if chainIDErr != nil {
+				return chainIDErr
+			}
+
+			transactionOpts, transactionOptsErr := bind.NewKeyedTransactorWithChainID(key.PrivateKey, chainID)
+			if transactionOptsErr != nil {
+				return transactionOptsErr
+			}
+
+			SetTransactionParametersFromArgs(transactionOpts, nonce, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, gasLimit, simulate)
+
+			address, deploymentTransaction, _, deploymentErr := {{.DeployHandler.MethodName}}(
+				transactionOpts,
+				client,
+				{{- range .DeployHandler.MethodArgs}}
+				{{.CLIVar}},
+				{{- end}}
+			)
+			if deploymentErr != nil {
+				return deploymentErr
+			}
+
+
+			cmd.Printf("Transaction hash: %s\nContract address: %s\n", deploymentTransaction.Hash().Hex(), address.Hex())
+			if transactionOpts.NoSend {
+				estimationMessage := ethereum.CallMsg{
+					From: 		transactionOpts.From,
+					Data: 		deploymentTransaction.Data(),
+				}
+
+				gasEstimationCtx, cancelGasEstimationCtx := NewChainContext(timeout)
+				defer cancelGasEstimationCtx()
+
+				gasEstimate, gasEstimateErr := client.EstimateGas(gasEstimationCtx, estimationMessage)
+				if gasEstimateErr != nil {
+					return gasEstimateErr
+				}
+
+				transactionBinary, transactionBinaryErr := deploymentTransaction.MarshalBinary()
+				if transactionBinaryErr != nil {
+					return transactionBinaryErr
+				}
+
+				cmd.Printf("Transaction: %s\nEstimated gas: %d\n", transactionBinary, gasEstimate)
+			} else {
+				cmd.Println("Transaction submitted")
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&rpc, "rpc", "", "URL of the JSONRPC API to use")
+	cmd.Flags().StringVar(&keyfile, "keyfile", "", "Path to the keystore file to use for the transaction")
+	cmd.Flags().StringVar(&password, "password", "", "Password to use to unlock the keystore (if not specified, you will be prompted for the password when the command executes)")
+	cmd.Flags().StringVar(&nonce, "nonce", "", "Nonce to use for the transaction")
+	cmd.Flags().StringVar(&value, "value", "", "Value to send with the transaction")
+	cmd.Flags().StringVar(&gasPrice, "gas-price", "", "Gas price to use for the transaction")
+	cmd.Flags().StringVar(&maxFeePerGas, "max-fee-per-gas", "", "Maximum fee per gas to use for the (EIP-1559) transaction")
+	cmd.Flags().StringVar(&maxPriorityFeePerGas, "max-priority-fee-per-gas", "", "Maximum priority fee per gas to use for the (EIP-1559) transaction")
+	cmd.Flags().Uint64Var(&gasLimit, "gas-limit", 0, "Gas limit for the transaction")
+	cmd.Flags().BoolVar(&simulate, "simulate", false, "Simulate the transaction without sending it")
+	cmd.Flags().UintVar(&timeout, "timeout", 60, "Timeout (in seconds) for interactions with the JSONRPC API")
+
+	{{range .DeployHandler.MethodArgs}}
+	cmd.Flags().{{.Flag}}
+	{{- end}}
+
+	return cmd
+}
 `
 
 // This template generates the handler for smart contract methods that submit transactions. It is intended
