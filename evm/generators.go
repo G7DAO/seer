@@ -230,6 +230,8 @@ func DeriveMethodArguments(parameters []ABIBoundParameter) ([]MethodArgument, er
 		// - int16
 		// - int32
 		// - int64
+		// - string
+		// - bool
 		// - common.Address
 		// - *big.Int
 		// - anything else (structs, arrays, etc. will be parsed as JSON strings or strings of the form "@<filename>" containing JSON)
@@ -252,6 +254,32 @@ func DeriveMethodArguments(parameters []ABIBoundParameter) ([]MethodArgument, er
 			result[i].Flag = fmt.Sprintf("Int64Var(&%s, \"%s\", 0, \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
 		case "string":
 			result[i].Flag = fmt.Sprintf("StringVar(&%s, \"%s\", \"\", \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+
+		case "bool":
+			result[i].CLIRawVar = fmt.Sprintf("%sRaw", result[i].CLIVar)
+			result[i].CLIRawType = "string"
+			result[i].Flag = fmt.Sprintf("StringVar(&%s, \"%s\", \"\", \"%s argument (true, t, y, yes, 1 OR false, f, n, no, 0)\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+			preRunFormat := `
+%sLower := strings.ToLower(%s)
+switch %sLower {
+case "true", "t", "y", "yes", "1":
+	%s = true
+case "false", "f", "n", "no", "0":
+	%s = false
+default:
+	return fmt.Errorf("--%s argument is not valid (value: %%s)", %s)
+}
+`
+			result[i].PreRunE = fmt.Sprintf(
+				preRunFormat,
+				result[i].CLIRawVar,
+				result[i].CLIRawVar,
+				result[i].CLIRawVar,
+				result[i].CLIVar,
+				result[i].CLIVar,
+				result[i].CLIName,
+				result[i].CLIRawVar,
+			)
 
 		case "*big.Int":
 			result[i].CLIRawVar = fmt.Sprintf("%sRaw", result[i].CLIVar)
