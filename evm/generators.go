@@ -332,9 +332,20 @@ if %s == "" {
 if %s == "" {
 	return fmt.Errorf("--%s argument not specified")
 } else if strings.HasPrefix(%s, "@") {
-	// TODO: Load JSON object from file
+	filename := strings.TrimPrefix(%s, "@")
+	contents, readErr := os.ReadFile(filename)
+	if readErr != nil {
+		return readErr
+	}
+	unmarshalErr := json.Unmarshal(contents, &%s)
+	if unmarshalErr != nil {
+		return unmarshalErr
+	}
 } else {
-	// TODO: Load JSON object from string
+	unmarshalErr := json.Unmarshal([]byte(%s), &%s)
+	if unmarshalErr != nil {
+		return unmarshalErr
+	}
 }
 `
 
@@ -343,6 +354,10 @@ if %s == "" {
 				result[i].CLIRawVar,
 				result[i].CLIName,
 				result[i].CLIRawVar,
+				result[i].CLIRawVar,
+				result[i].CLIVar,
+				result[i].CLIRawVar,
+				result[i].CLIVar,
 			)
 		}
 	}
