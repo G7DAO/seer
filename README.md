@@ -61,3 +61,31 @@ the bindings are generated with no deployment method.
 4. `$GO_STRUCT_NAME` should be the name of the struct that you would like to represent an instance of the contract with the given ABI.
 
 If you want to write the output to a file, you can use the `--output` argument to do so. Or shell redirections.
+
+#### Example: `OwnableERC721`
+
+The code in [`examples/ownable-erc-721`](./examples/ownable-erc-721/OwnableERC721.go) was generated from the project root directory using:
+
+```bash
+seer evm generate \
+    --abi fixtures/OwnableERC721.json \
+    --bytecode fixtures/OwnableERC721.bin \
+    --cli \
+    --package main \
+    --struct OwnableERC721 \
+    --output examples/ownable-erc-721/OwnableERC721.go
+```
+
+To run this code, first build it:
+
+```bash
+go build examples/ownable-erc-721
+```
+
+This will create an executable file called `ownable-erc-721` (on Windows, you may want to rename it to `ownable-erc-721.exe` for convenience).
+
+Try running it:
+
+```bash
+./ownable-erc-721 -h
+```
