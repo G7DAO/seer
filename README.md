@@ -86,7 +86,7 @@ This will create an executable file called `ownable-erc-721` (on Windows, you ma
 
 Try running it:
 
-```bash
+```
 $ ./ownable-erc-721 -h
 
 Interact with the OwnableERC721 contract
