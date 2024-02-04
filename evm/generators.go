@@ -347,6 +347,33 @@ func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods m
 		result.DeployHandler.MethodArgs = methodArgs
 	}
 
+	result.TransactHandlers = make([]HandlerDefinition, len(transactMethods))
+	currentHandler := 0
+	for methodName, methodNode := range transactMethods {
+		parameters := make([]ABIBoundParameter, len(methodNode.Type.Params.List))
+		for i, arg := range methodNode.Type.Params.List {
+			parameter, parameterErr := ParseBoundParameter(arg)
+			if parameterErr != nil {
+				return result, parameterErr
+			}
+			parameters[i] = parameter
+		}
+
+		methodArgs, methodArgsErr := DeriveMethodArguments(parameters)
+		if methodArgsErr != nil {
+			return result, methodArgsErr
+		}
+
+		handler := HandlerDefinition{
+			MethodName:  methodName,
+			HandlerName: fmt.Sprintf("Create%sCommand", strcase.ToCamel(methodName)),
+			MethodArgs:  methodArgs,
+		}
+
+		result.TransactHandlers[currentHandler] = handler
+		currentHandler++
+	}
+
 	return result, nil
 }
 
@@ -436,6 +463,11 @@ func AddCLI(sourceCode, structName string) (string, error) {
 		return code, deployCommandTemplateErr
 	}
 
+	transactionMethodsCommandTemplate, transactionMethodsCommandTemplateErr := template.New("transactionMethods").Funcs(templateFuncs).Parse(TransactMethodCommandTemplate)
+	if transactionMethodsCommandTemplateErr != nil {
+		return code, transactionMethodsCommandTemplateErr
+	}
+
 	cliSpec, cliSpecErr := ParseCLIParams(structName, deployMethod, structViewMethods, structTransactionMethods)
 	if cliSpecErr != nil {
 		return code, cliSpecErr
@@ -450,7 +482,13 @@ func AddCLI(sourceCode, structName string) (string, error) {
 	code = code + "\n\n" + b.String()
 
 	b.Reset()
+	transactionMethodsTemplateErr := transactionMethodsCommandTemplate.Execute(&b, cliSpec)
+	if transactionMethodsTemplateErr != nil {
+		return code, transactionMethodsTemplateErr
+	}
+	code = code + "\n\n" + b.String()
 
+	b.Reset()
 	cliTemplateErr := cliTemplate.Execute(&b, cliSpec)
 	if cliTemplateErr != nil {
 		return code, cliTemplateErr
@@ -612,6 +650,12 @@ func Create{{.StructName}}Command() *cobra.Command {
 	cmd.AddCommand(cmd{{.DeployHandler.MethodName}})
 	{{- end}}
 
+	{{range .TransactHandlers}}
+	cmdTransact{{.MethodName}} := {{.HandlerName}}()
+	cmdTransact{{.MethodName}}.GroupID = TransactGroup.ID
+	cmd.AddCommand(cmdTransact{{.MethodName}})
+	{{- end}}
+
 	return cmd
 }
 `
@@ -733,14 +777,143 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 {{end}}
 `
 
-// This template generates the handler for smart contract methods that submit transactions. It is intended
-// to be used with a HandlerDefinition struct.
-var TransactMethodCommandTemplate string = `
-func {{.HandlerName}}
-`
-
 // This template generates the handler for smart contract call methods. It is intended to be used with
 // a HandlerDefinition struct.
 var ViewMethodCommandTemplate string = `
 func {{.HandlerName}}
+`
+
+// This template generates the handler for smart contract methods that submit transactions. It is intended
+// to be used with a HandlerDefinition struct.
+var TransactMethodCommandTemplate string = `{{$structName := .StructName}}
+{{range .TransactHandlers}}
+func {{.HandlerName}}() *cobra.Command {
+	var keyfile, nonce, password, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, rpc, contractAddressRaw string
+	var gasLimit uint64
+	var simulate bool
+	var timeout uint
+	var contractAddress common.Address
+
+	{{range .MethodArgs}}
+	var {{.CLIVar}} {{.CLIType}}
+	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
+	{{- end}}
+
+
+	cmd := &cobra.Command{
+		Use: "{{(KebabCase .MethodName)}}",
+		Short: "Execute the {{.MethodName}} method on a {{$structName}} contract",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if keyfile == "" {
+				return fmt.Errorf("--keystore not specified")
+			}
+
+			if contractAddressRaw == "" {
+				return fmt.Errorf("--contract not specified")
+			} else if !common.IsHexAddress(contractAddressRaw) {
+				return fmt.Errorf("--contract is not a valid Ethereum address")
+			}
+			contractAddress = common.HexToAddress(contractAddressRaw)
+
+			{{range .MethodArgs}}
+			{{.PreRunE}}
+			{{- end}}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, clientErr := NewClient(rpc)
+			if clientErr != nil {
+				return clientErr
+			}
+
+			key, keyErr := KeyFromFile(keyfile, password)
+			if keyErr != nil {
+				return keyErr
+			}
+
+			chainIDCtx, cancelChainIDCtx := NewChainContext(timeout)
+			defer cancelChainIDCtx()
+			chainID, chainIDErr := client.ChainID(chainIDCtx)
+			if chainIDErr != nil {
+				return chainIDErr
+			}
+
+			transactionOpts, transactionOptsErr := bind.NewKeyedTransactorWithChainID(key.PrivateKey, chainID)
+			if transactionOptsErr != nil {
+				return transactionOptsErr
+			}
+
+			SetTransactionParametersFromArgs(transactionOpts, nonce, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, gasLimit, simulate)
+
+			contract, contractErr := New{{$structName}}(contractAddress, client)
+			if contractErr != nil {
+				return contractErr
+			}
+
+			session := {{$structName}}TransactorSession{
+				Contract: &contract.{{$structName}}Transactor,
+				TransactOpts: *transactionOpts,
+			}
+
+			transaction, transactionErr := session.{{.MethodName}}(
+				{{- range .MethodArgs}}
+				{{.CLIVar}},
+				{{- end}}
+			)
+			if transactionErr != nil {
+				return transactionErr
+			}
+
+			cmd.Printf("Transaction hash: %s\n", transaction.Hash().Hex())
+			if transactionOpts.NoSend {
+				estimationMessage := ethereum.CallMsg{
+					From: 		transactionOpts.From,
+					To: 		&contractAddress,
+					Data: 		transaction.Data(),
+				}
+
+				gasEstimationCtx, cancelGasEstimationCtx := NewChainContext(timeout)
+				defer cancelGasEstimationCtx()
+
+				gasEstimate, gasEstimateErr := client.EstimateGas(gasEstimationCtx, estimationMessage)
+				if gasEstimateErr != nil {
+					return gasEstimateErr
+				}
+
+				transactionBinary, transactionBinaryErr := transaction.MarshalBinary()
+				if transactionBinaryErr != nil {
+					return transactionBinaryErr
+				}
+				transactionBinaryHex := hex.EncodeToString(transactionBinary)
+
+				cmd.Printf("Transaction: %s\nEstimated gas: %d\n", transactionBinaryHex, gasEstimate)
+			} else {
+				cmd.Println("Transaction submitted")
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&rpc, "rpc", "", "URL of the JSONRPC API to use")
+	cmd.Flags().StringVar(&keyfile, "keyfile", "", "Path to the keystore file to use for the transaction")
+	cmd.Flags().StringVar(&password, "password", "", "Password to use to unlock the keystore (if not specified, you will be prompted for the password when the command executes)")
+	cmd.Flags().StringVar(&nonce, "nonce", "", "Nonce to use for the transaction")
+	cmd.Flags().StringVar(&value, "value", "", "Value to send with the transaction")
+	cmd.Flags().StringVar(&gasPrice, "gas-price", "", "Gas price to use for the transaction")
+	cmd.Flags().StringVar(&maxFeePerGas, "max-fee-per-gas", "", "Maximum fee per gas to use for the (EIP-1559) transaction")
+	cmd.Flags().StringVar(&maxPriorityFeePerGas, "max-priority-fee-per-gas", "", "Maximum priority fee per gas to use for the (EIP-1559) transaction")
+	cmd.Flags().Uint64Var(&gasLimit, "gas-limit", 0, "Gas limit for the transaction")
+	cmd.Flags().BoolVar(&simulate, "simulate", false, "Simulate the transaction without sending it")
+	cmd.Flags().UintVar(&timeout, "timeout", 60, "Timeout (in seconds) for interactions with the JSONRPC API")
+	cmd.Flags().StringVar(&contractAddressRaw, "contract", "", "Address of the contract to interact with")
+
+	{{range .MethodArgs}}
+	cmd.Flags().{{.Flag}}
+	{{- end}}
+
+	return cmd
+}
+{{- end}}
 `
