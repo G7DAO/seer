@@ -87,5 +87,44 @@ This will create an executable file called `ownable-erc-721` (on Windows, you ma
 Try running it:
 
 ```bash
-./ownable-erc-721 -h
+$ ./ownable-erc-721 -h
+
+Interact with the OwnableERC721 contract
+
+Usage:
+  ownable-erc-721 [flags]
+  ownable-erc-721 [command]
+
+Commands which deploy contracts
+  deploy               Deploy a new OwnableERC721 contract
+
+Commands which view contract state
+  balance-of           Call the BalanceOf view method on a OwnableERC721 contract
+  get-approved         Call the GetApproved view method on a OwnableERC721 contract
+  is-approved-for-all  Call the IsApprovedForAll view method on a OwnableERC721 contract
+  name                 Call the Name view method on a OwnableERC721 contract
+  owner                Call the Owner view method on a OwnableERC721 contract
+  owner-of             Call the OwnerOf view method on a OwnableERC721 contract
+  supports-interface   Call the SupportsInterface view method on a OwnableERC721 contract
+  symbol               Call the Symbol view method on a OwnableERC721 contract
+  token-uri            Call the TokenURI view method on a OwnableERC721 contract
+
+Commands which submit transactions
+  approve              Execute the Approve method on a OwnableERC721 contract
+  mint                 Execute the Mint method on a OwnableERC721 contract
+  renounce-ownership   Execute the RenounceOwnership method on a OwnableERC721 contract
+  safe-transfer-from   Execute the SafeTransferFrom method on a OwnableERC721 contract
+  safe-transfer-from-0 Execute the SafeTransferFrom0 method on a OwnableERC721 contract
+  set-approval-for-all Execute the SetApprovalForAll method on a OwnableERC721 contract
+  transfer-from        Execute the TransferFrom method on a OwnableERC721 contract
+  transfer-ownership   Execute the TransferOwnership method on a OwnableERC721 contract
+
+Additional Commands:
+  completion           Generate the autocompletion script for the specified shell
+  help                 Help about any command
+
+Flags:
+  -h, --help   help for ownable-erc-721
+
+Use "ownable-erc-721 [command] --help" for more information about a command.
 ```
