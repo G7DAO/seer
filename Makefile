@@ -6,6 +6,7 @@ seer:
 	go build .
 
 clean:
+	rm -f ownable-erc-721
 	rm -f seer
 
 rebuild: clean build
