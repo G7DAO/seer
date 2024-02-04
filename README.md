@@ -30,7 +30,7 @@ To generate the Go bindings to a Starknet contract from its ABI, run:
 seer starknet generate --abi $ABI_FILE --package $GO_PACKAGE_NAME
 ```
 
-1. `$ABI_FILE` should be the path to the JSON file containing the Starknet contract ABI
+1. `$ABI_FILE` should be the path to the JSON file containing the Starknet contract ABI.
 2. `$GO_PACKAGE_NAME` should be the name of the Go package that the generated code will belong to. If specified,
 the line `package $GO_PACKAGE_NAME` will be emitted at the top of the generated code. If not specified, no
 such line is emitted.
@@ -40,3 +40,24 @@ You can also pipe the ABI JSON into this command rather than specifying the `--a
 ```bash
 jq . $ABI_FILE | seer starknet generate --package $GO_PACKAGE_NAME
 ```
+
+### Go bindings for Ethereum Virtual Machine (EVM) contracts
+
+To generate the Go bindings to an EVM contract, run:
+
+```bash
+seer evm generate \
+    --abi $ABI_FILE \
+    --bytecode $BIN_FILE \
+    --cli \
+    --package $GO_PACKAGE_NAME \
+    --struct $GO_STRUCT_NAME
+```
+
+1. `$ABI_FILE` should be the path to a JSON file containing the contract's ABI.
+2. `$BIN_FILE` should be a path to the file containing the compiled contract bytecode. If the `--bytecode` is not provided,
+the bindings are generated with no deployment method.
+3. `$GO_PACKAGE_NAME` should be the name of the Go package that the generated code will fall under.
+4. `$GO_STRUCT_NAME` should be the name of the struct that you would like to represent an instance of the contract with the given ABI.
+
+If you want to write the output to a file, you can use the `--output` argument to do so. Or shell redirections.
