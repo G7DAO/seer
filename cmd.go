@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"go/format"
 	"io"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/moonstream-to/seer/evm"
 	"github.com/moonstream-to/seer/starknet"
 	"github.com/moonstream-to/seer/version"
 )
@@ -26,7 +28,8 @@ func CreateRootCommand() *cobra.Command {
 	completionCmd := CreateCompletionCommand(rootCmd)
 	versionCmd := CreateVersionCommand()
 	starknetCmd := CreateStarknetCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, starknetCmd)
+	evmCmd := CreateEVMCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, starknetCmd, evmCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -104,7 +107,7 @@ func CreateVersionCommand() *cobra.Command {
 func CreateStarknetCommand() *cobra.Command {
 	starknetCmd := &cobra.Command{
 		Use:   "starknet",
-		Short: "Generate interfaces and crawlers for Starknet",
+		Short: "Generate interfaces and crawlers for Starknet contracts",
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Help()
 		},
@@ -160,7 +163,7 @@ func CreateStarknetGenerateCommand() *cobra.Command {
 	var rawABI []byte
 	var readErr error
 
-	starknetGenTypesCommand := &cobra.Command{
+	starknetGenerateCommand := &cobra.Command{
 		Use:   "generate",
 		Short: "Generate Go bindings for a Starknet contract from its ABI",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
@@ -201,8 +204,89 @@ func CreateStarknetGenerateCommand() *cobra.Command {
 		},
 	}
 
-	starknetGenTypesCommand.Flags().StringVarP(&packageName, "package", "p", "", "The name of the package to generate")
-	starknetGenTypesCommand.Flags().StringVarP(&infile, "abi", "a", "", "Path to contract ABI (default stdin)")
+	starknetGenerateCommand.Flags().StringVarP(&packageName, "package", "p", "", "The name of the package to generate")
+	starknetGenerateCommand.Flags().StringVarP(&infile, "abi", "a", "", "Path to contract ABI (default stdin)")
 
-	return starknetGenTypesCommand
+	return starknetGenerateCommand
+}
+
+func CreateEVMCommand() *cobra.Command {
+	evmCmd := &cobra.Command{
+		Use:   "evm",
+		Short: "Generate interfaces and crawlers for Ethereum Virtual Machine (EVM) contracts",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	evmGenerateCmd := CreateEVMGenerateCommand()
+	evmCmd.AddCommand(evmGenerateCmd)
+
+	return evmCmd
+}
+
+func CreateEVMGenerateCommand() *cobra.Command {
+	var cli, noformat, includemain bool
+	var infile, packageName, structName, bytecodefile, outfile string
+	var rawABI, bytecode []byte
+	var readErr error
+
+	evmGenerateCmd := &cobra.Command{
+		Use:   "generate",
+		Short: "Generate Go bindings for an EVM contract from its ABI",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if packageName == "" {
+				return errors.New("package name is required via --package/-p")
+			}
+			if structName == "" {
+				return errors.New("struct name is required via --struct/-s")
+			}
+
+			if infile != "" {
+				rawABI, readErr = os.ReadFile(infile)
+			} else {
+				rawABI, readErr = io.ReadAll(os.Stdin)
+			}
+
+			if bytecodefile != "" {
+				bytecode, readErr = os.ReadFile(bytecodefile)
+			}
+
+			return readErr
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			code, codeErr := evm.GenerateTypes(structName, rawABI, bytecode, packageName)
+			if codeErr != nil {
+				return codeErr
+			}
+
+			if cli {
+				code, readErr = evm.AddCLI(code, structName, noformat, includemain)
+				if readErr != nil {
+					return readErr
+				}
+			}
+
+			if outfile != "" {
+				writeErr := os.WriteFile(outfile, []byte(code), 0644)
+				if writeErr != nil {
+					return writeErr
+				}
+			} else {
+				cmd.Println(code)
+			}
+			return nil
+		},
+	}
+
+	evmGenerateCmd.Flags().StringVarP(&packageName, "package", "p", "", "The name of the package to generate")
+	evmGenerateCmd.Flags().StringVarP(&structName, "struct", "s", "", "The name of the struct to generate")
+	evmGenerateCmd.Flags().StringVarP(&infile, "abi", "a", "", "Path to contract ABI (default stdin)")
+	evmGenerateCmd.Flags().StringVarP(&bytecodefile, "bytecode", "b", "", "Path to contract bytecode (default none - in this case, no deployment method is created)")
+	evmGenerateCmd.Flags().BoolVarP(&cli, "cli", "c", false, "Add a CLI for interacting with the contract (default false)")
+	evmGenerateCmd.Flags().BoolVar(&noformat, "noformat", false, "Set this flag if you do not want the generated code to be formatted (useful to debug errors)")
+	evmGenerateCmd.Flags().BoolVar(&includemain, "includemain", false, "Set this flag if you want to generate a \"main\" function to execute the CLI and make the generated code self-contained - this option is ignored if --cli is not set")
+	evmGenerateCmd.Flags().StringVarP(&outfile, "output", "o", "", "Path to output file (default stdout)")
+
+	return evmGenerateCmd
 }
