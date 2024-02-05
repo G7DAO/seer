@@ -194,7 +194,7 @@ func minusOne(i int) int {
 }
 
 // Should be applied to a byteArraySpec
-var byteArrayDecoderTemplateDefinition string = `var hexDecodeErr error
+var byteArrayDecoderTemplateDefinition string = `var hexDecode{{.TargetVar}}Err error
 
 {{range .Levels}}
 {{if (eq .Index 0)}}
@@ -207,15 +207,15 @@ for i{{.Index}}, v{{.Index}} := range v{{(minusOne .Index)}} {{ "{" }}
 {{end}}
 
 {{if eq .FinalLength 0}}
-{{.TargetVar}}{{.FinalAccessor}}, hexDecodeErr = hex.DecodeString({{.RawVar}}{{.FinalAccessor}})
-if hexDecodeErr != nil {
-	return hexDecodeErr
+{{.TargetVar}}{{.FinalAccessor}}, hexDecode{{.TargetVar}}Err = hex.DecodeString({{.RawVar}}{{.FinalAccessor}})
+if hexDecode{{.TargetVar}}Err != nil {
+	return hexDecode{{.TargetVar}}Err
 }
 {{else}}
 var intermediate{{.TargetVar}}Leaf []byte
-intermediate{{.TargetVar}}Leaf, hexDecodeErr = hex.DecodeString({{.RawVar}}{{.FinalAccessor}})
-if hexDecodeErr != nil {
-	return hexDecodeErr
+intermediate{{.TargetVar}}Leaf, hexDecode{{.TargetVar}}Err = hex.DecodeString({{.RawVar}}{{.FinalAccessor}})
+if hexDecode{{.TargetVar}}Err != nil {
+	return hexDecode{{.TargetVar}}Err
 }
 {{.TargetVar}}{{.FinalAccessor}} = {{.FinalType}}(intermediate{{.TargetVar}}Leaf[:{{.FinalLength}}])
 {{- end}}
