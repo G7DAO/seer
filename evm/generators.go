@@ -12,6 +12,7 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -168,6 +169,63 @@ func ParseBoundParameter(arg ast.Node) (ABIBoundParameter, error) {
 
 	return result, nil
 }
+
+var byteArrayRegexp *regexp.Regexp = regexp.MustCompile(`\[(?P<len>\d*)\]byte`)
+var byteArrayUnwrapRegexp *regexp.Regexp = regexp.MustCompile(`^\[(?P<len>\d*)\]`)
+
+type byteArrayLevel struct {
+	Index      int
+	TargetType string
+	Length     int
+	Accessor   string
+}
+
+type byteArraySpec struct {
+	TargetVar     string
+	RawVar        string
+	Levels        []byteArrayLevel
+	FinalType     string
+	FinalLength   int
+	FinalAccessor string
+}
+
+func minusOne(i int) int {
+	return i - 1
+}
+
+// Should be applied to a byteArraySpec
+var byteArrayDecoderTemplateDefinition string = `var hexDecodeErr error
+
+{{range .Levels}}
+{{if (eq .Index 0)}}
+{{.TargetVar}} = make({{.TargetType}}, len({{.RawVar}}))
+for i{{.Index}}, v{{.Index}} := range {{.RawVar}} {{ "{" }}
+{{else}}
+{{if eq .Length 0}}{{.TargetVar}}{{.Accessor}} = make({{.TargetType}}, len({{.RawVar}}{{.Accessor}})){{end}}
+for i{{.Index}}, v{{.Index}} := range v{{(minusOne .Index)}} {{ "{" }}
+{{end}}
+{{end}}
+
+{{if eq .FinalLength 0}}
+{{.TargetVar}}{{.FinalAccessor}}, hexDecodeErr = hex.DecodeString({{.RawVar}}{{.FinalAccessor}})
+if hexDecodeErr != nil {
+	return hexDecodeErr
+}
+{{else}}
+var intermediate{{.TargetVar}}Leaf []byte
+intermediate{{.TargetVar}}Leaf, hexDecodeErr = hex.DecodeString({{.RawVar}}{{.FinalAccessor}})
+if hexDecodeErr != nil {
+	return hexDecodeErr
+}
+{{.TargetVar}}{{.FinalAccessor}} = {{.FinalType}}(intermediate{{.TargetVar}}Leaf[:{{.FinalLength}}])
+{{- end}}
+
+{{range .Levels}}
+{{ "}" }}
+{{end}}
+`
+
+var byteArrayDecoderTemplate *template.Template = template.Must(template.New("byteArrayDecoder").Funcs(map[string]any{"minusOne": minusOne}).Parse(byteArrayDecoderTemplateDefinition))
 
 // Fills in the information required to represent the given parameters as command-line argument. Takes
 // an array of ABIBoundParameter structs because it deduplicates flags.
@@ -334,10 +392,24 @@ if %s == "" {
 				result[i].CLIRawVar,
 			)
 
-		// In this case, we parse as JSON either directly from the command line or through a file if the argument as an "@" prefix (like curl)
+		// In the default case, we handle the various type of byte arrays slightly separately from other types of lists,
+		// structs, etc.
+		// This is because we cannot simply use JSON unmarshaling to work with bytes.
+		// The case of bytes is only slightly different from the general case, and largely uses the same logic. That is
+		// the reason for the peculiar branching structure of the following code. It only differs in the CLIRawType
+		// definition, and in some additional parsing code after the default PreRunE snippet.
 		default:
+			// In any case, we will need a raw variable.
 			result[i].CLIRawVar = fmt.Sprintf("%sRaw", result[i].CLIVar)
-			result[i].CLIRawType = "string"
+
+			if strings.HasSuffix(parameter.GoType, "byte") {
+				// Switch the last []byte or [n]byte to string
+				result[i].CLIRawType = byteArrayRegexp.ReplaceAllString(result[i].CLIType, "string")
+			} else {
+				// In this case, we parse as JSON either directly from the command line or through a file if the argument as an "@" prefix (like curl)
+				result[i].CLIRawType = "string"
+			}
+
 			result[i].Flag = fmt.Sprintf("StringVar(&%s, \"%s\", \"\", \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
 			preRunEFormat := `
 if %s == "" {
@@ -370,6 +442,75 @@ if %s == "" {
 				result[i].CLIRawVar,
 				result[i].CLIVar,
 			)
+
+			if strings.HasSuffix(parameter.GoType, "byte") {
+				depth := strings.Count(result[i].CLIRawType, "[")
+
+				matchesWithGroups := byteArrayRegexp.FindStringSubmatch(result[i].CLIType)
+				lenIndex := byteArrayRegexp.SubexpIndex("len")
+				lenRaw := matchesWithGroups[lenIndex]
+				finalLength := 0
+				if lenRaw != "" {
+					var convErr error
+					finalLength, convErr = strconv.Atoi(lenRaw)
+					if convErr != nil {
+						return result, convErr
+					}
+				}
+
+				finalType := "[]byte"
+				if finalLength > 0 {
+					finalType = fmt.Sprintf("[%d]byte", finalLength)
+				}
+
+				spec := byteArraySpec{
+					TargetVar:   result[i].CLIVar,
+					RawVar:      result[i].CLIRawVar,
+					Levels:      make([]byteArrayLevel, depth),
+					FinalLength: finalLength,
+					FinalType:   finalType,
+				}
+
+				currentType := result[i].CLIType
+				currentAccessor := ""
+				for i := 0; i < depth; i++ {
+					levelSpec := byteArrayLevel{
+						Index:      i,
+						TargetType: currentType,
+						Accessor:   currentAccessor,
+					}
+
+					unwrapMachesWithGroups := byteArrayUnwrapRegexp.FindStringSubmatch(currentType)
+					unwrapLenIndex := byteArrayUnwrapRegexp.SubexpIndex("len")
+					unwrapLenRaw := unwrapMachesWithGroups[unwrapLenIndex]
+					unwrapLength := 0
+					if unwrapLenRaw != "" {
+						var convErr error
+						unwrapLength, convErr = strconv.Atoi(unwrapLenRaw)
+						if convErr != nil {
+							return result, convErr
+						}
+					}
+
+					levelSpec.Length = unwrapLength
+
+					currentAccessor = fmt.Sprintf("%s[i%d]", currentAccessor, i)
+				}
+
+				spec.FinalAccessor = currentAccessor
+
+				var additionalCode bytes.Buffer
+				byteArrayDecoderTemplateErr := byteArrayDecoderTemplate.Execute(&additionalCode, spec)
+				if byteArrayDecoderTemplateErr != nil {
+					return result, byteArrayDecoderTemplateErr
+				}
+
+				if result[i].CLIRawType == "string" {
+					result[i].PreRunE = additionalCode.String()
+				} else {
+					result[i].PreRunE = result[i].PreRunE + "\n" + additionalCode.String()
+				}
+			}
 		}
 	}
 
@@ -398,6 +539,9 @@ func DeriveMethodReturnValues(parameters []ABIBoundParameter) ([]MethodReturnVal
 
 		case "common.Address":
 			result[i].PrintCode = fmt.Sprintf("cmd.Printf(\"%d: %%s\\n\", %s.Hex())", i, result[i].CaptureName)
+
+		case "bool":
+			result[i].PrintCode = fmt.Sprintf("cmd.Printf(\"%d: %%t\\n\", %s)", i, result[i].CaptureName)
 
 		default:
 			PrintCodeFormat := `
