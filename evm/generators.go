@@ -412,7 +412,13 @@ cmd.Printf("%d: %%s\\n", string(%sJSON))
 	return result, nil
 }
 
-func ParseCLIParams(structName string, deployMethod *ast.FuncDecl, viewMethods map[string]*ast.FuncDecl, transactMethods map[string]*ast.FuncDecl) (CLISpecification, error) {
+// Produces a CLI specification for the structure with the given name, provided the AST nodes representing
+// the deployment method, the tranasaction methods, and the view methods for the corresponding smart contract.
+//
+// The value of the deployMethod argument is used to determine if the deployment functionality will be
+// added to the CLI. If deployMethod is nil, then a deployment command is not generated. This is signified
+// by the result.DeployHandler.MethodName being empty in the resulting CLISpecification.
+func ParseCLISpecification(structName string, deployMethod *ast.FuncDecl, viewMethods map[string]*ast.FuncDecl, transactMethods map[string]*ast.FuncDecl) (CLISpecification, error) {
 	result := CLISpecification{StructName: structName}
 
 	result.DeployHandler = HandlerDefinition{
@@ -608,17 +614,17 @@ func AddCLI(sourceCode, structName string, noformat bool) (string, error) {
 		return code, deployCommandTemplateErr
 	}
 
-	viewMethodsCommandTemplate, viewMethodsCommandTemplateErr := template.New("viewMethods").Funcs(templateFuncs).Parse(ViewMethodCommandTemplate)
-	if viewMethodsCommandTemplateErr != nil {
-		return code, viewMethodsCommandTemplateErr
+	viewMethodsCommandsTemplate, viewMethodsCommandsTemplateErr := template.New("viewMethods").Funcs(templateFuncs).Parse(ViewMethodCommandsTemplate)
+	if viewMethodsCommandsTemplateErr != nil {
+		return code, viewMethodsCommandsTemplateErr
 	}
 
-	transactionMethodsCommandTemplate, transactionMethodsCommandTemplateErr := template.New("transactionMethods").Funcs(templateFuncs).Parse(TransactMethodCommandTemplate)
-	if transactionMethodsCommandTemplateErr != nil {
-		return code, transactionMethodsCommandTemplateErr
+	transactionMethodsCommandsTemplate, transactionMethodsCommandsTemplateErr := template.New("transactionMethods").Funcs(templateFuncs).Parse(TransactMethodCommandsTemplate)
+	if transactionMethodsCommandsTemplateErr != nil {
+		return code, transactionMethodsCommandsTemplateErr
 	}
 
-	cliSpec, cliSpecErr := ParseCLIParams(structName, deployMethod, structViewMethods, structTransactionMethods)
+	cliSpec, cliSpecErr := ParseCLISpecification(structName, deployMethod, structViewMethods, structTransactionMethods)
 	if cliSpecErr != nil {
 		return code, cliSpecErr
 	}
@@ -632,14 +638,14 @@ func AddCLI(sourceCode, structName string, noformat bool) (string, error) {
 	code = code + "\n\n" + b.String()
 
 	b.Reset()
-	viewMethodsTemplateErr := viewMethodsCommandTemplate.Execute(&b, cliSpec)
+	viewMethodsTemplateErr := viewMethodsCommandsTemplate.Execute(&b, cliSpec)
 	if viewMethodsTemplateErr != nil {
 		return code, viewMethodsTemplateErr
 	}
 	code = code + "\n\n" + b.String()
 
 	b.Reset()
-	transactionMethodsTemplateErr := transactionMethodsCommandTemplate.Execute(&b, cliSpec)
+	transactionMethodsTemplateErr := transactionMethodsCommandsTemplate.Execute(&b, cliSpec)
 	if transactionMethodsTemplateErr != nil {
 		return code, transactionMethodsTemplateErr
 	}
@@ -671,6 +677,8 @@ func AddCLI(sourceCode, structName string, noformat bool) (string, error) {
 	return code, nil
 }
 
+// This template is used to generate the skeleton of the CLI, along with all utility methods that can be
+// used by CLI handlers. It is expected to be applied to a CLISpecification struct.
 var CLICodeTemplate string = `
 var ErrNoRPCURL error = errors.New("no RPC URL provided -- please pass an RPC URL from the command line or set the {{(ScreamingSnake .StructName)}}_RPC_URL environment variable")
 
@@ -827,7 +835,7 @@ func Create{{.StructName}}Command() *cobra.Command {
 `
 
 // This template generates the handler for smart contract deployment. It is intended to be used with a
-// HandlerDefinition struct.
+// CLISpecification struct.
 var DeployCommandTemplate string = `
 {{if .DeployHandler.MethodName}}
 func {{.DeployHandler.HandlerName}}() *cobra.Command {
@@ -943,9 +951,9 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 {{end}}
 `
 
-// This template generates the handler for smart contract call methods. It is intended to be used with
-// a HandlerDefinition struct.
-var ViewMethodCommandTemplate string = `{{$structName := .StructName}}
+// This template generates the handlers for all smart contract call methods. It is intended to be used
+// with a CLISpecification struct.
+var ViewMethodCommandsTemplate string = `{{$structName := .StructName}}
 {{range .ViewHandlers}}
 func {{.HandlerName}}() *cobra.Command {
 	var contractAddressRaw, rpc string
@@ -1034,9 +1042,9 @@ func {{.HandlerName}}() *cobra.Command {
 {{- end}}
 `
 
-// This template generates the handler for smart contract methods that submit transactions. It is intended
-// to be used with a HandlerDefinition struct.
-var TransactMethodCommandTemplate string = `{{$structName := .StructName}}
+// This template generates the handlers for all smart contract methods that submit transactions. It
+// is intended to be used with a CLISpecification struct.
+var TransactMethodCommandsTemplate string = `{{$structName := .StructName}}
 {{range .TransactHandlers}}
 func {{.HandlerName}}() *cobra.Command {
 	var keyfile, nonce, password, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, rpc, contractAddressRaw string
