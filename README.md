@@ -1,6 +1,7 @@
 # seer
 
-`seer` is Moonstream's second generation blockchain crawler.
+`seer` is Moonstream's second generation blockchain-adjacent tooling for crawling data and performing
+smart contract interactions.
 
 It builds on what we have learned from our first generation of [`crawlers`](https://github.com/moonstream-to/api/tree/e69d81d1fb081cbddb0c8a1983af41e53d5a0f8f/crawlers) and from [`moonworm`](https://github.com/moonstream-to/moonworm).
 
