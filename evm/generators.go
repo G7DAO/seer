@@ -544,23 +544,7 @@ func DeriveMethodReturnValues(parameters []ABIBoundParameter) ([]MethodReturnVal
 			result[i].PrintCode = fmt.Sprintf("cmd.Printf(\"%d: %%t\\n\", %s)", i, result[i].CaptureName)
 
 		default:
-			PrintCodeFormat := `
-%sJSON, %sJSONMarshalErr := json.Marshal(%s)
-if %sJSONMarshalErr != nil {
-	return %sJSONMarshalErr
-}
-cmd.Printf("%d: %%s\\n", string(%sJSON))
-			`
-			result[i].PrintCode = fmt.Sprintf(
-				PrintCodeFormat,
-				result[i].CaptureName,
-				result[i].CaptureName,
-				result[i].CaptureName,
-				result[i].CaptureName,
-				result[i].CaptureName,
-				i,
-				result[i].CaptureName,
-			)
+			result[i].PrintCode = fmt.Sprintf("cmd.Printf(\"%d: %%v\\n\", %s)", i, result[i].CaptureName)
 		}
 	}
 
