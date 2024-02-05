@@ -201,7 +201,7 @@ var byteArrayDecoderTemplateDefinition string = `var hexDecode{{.TargetVar}}Err 
 {{.TargetVar}} = make({{.TargetType}}, len({{.RawVar}}))
 for i{{.Index}}, v{{.Index}} := range {{.RawVar}} {{ "{" }}
 {{else}}
-{{if eq .Length 0}}{{.TargetVar}}{{.Accessor}} = make({{.TargetType}}, len({{.RawVar}}{{.Accessor}})){{end}}
+{{if eq .Length 0}}{{.TargetVar}}{{.Accessor}}, includemain = make({{.TargetType}}, len({{.RawVar}}{{.Accessor}})){{end}}
 for i{{.Index}}, v{{.Index}} := range v{{(minusOne .Index)}} {{ "{" }}
 {{end}}
 {{end}}
@@ -669,7 +669,7 @@ func ParseCLISpecification(structName string, deployMethod *ast.FuncDecl, viewMe
 // GenerateTypes function. The output of this function *contains* the input, with enrichments (some of
 // then inline). It should not be concatenated with the output of GenerateTypes, but rather be used as
 // part of a chain.
-func AddCLI(sourceCode, structName string, noformat bool) (string, error) {
+func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, error) {
 	fileset := token.NewFileSet()
 	filename := ""
 	sourceAST, sourceASTErr := parser.ParseFile(fileset, filename, sourceCode, parser.ParseComments)
@@ -796,6 +796,20 @@ func AddCLI(sourceCode, structName string, noformat bool) (string, error) {
 		return code, cliTemplateErr
 	}
 	code = code + "\n\n" + b.String()
+
+	if includemain {
+		mainFormatString := `func main() {
+	command := %s()
+	err := command.Execute()
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+}
+`
+		mainCode := fmt.Sprintf(mainFormatString, fmt.Sprintf("Create%sCommand", structName))
+		code = code + "\n\n" + mainCode
+	}
 
 	if !noformat {
 		// We use golang.org/x/tools/imports instead of go/format.

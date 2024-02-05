@@ -226,7 +226,7 @@ func CreateEVMCommand() *cobra.Command {
 }
 
 func CreateEVMGenerateCommand() *cobra.Command {
-	var cli, noformat bool
+	var cli, noformat, includemain bool
 	var infile, packageName, structName, bytecodefile, outfile string
 	var rawABI, bytecode []byte
 	var readErr error
@@ -261,7 +261,7 @@ func CreateEVMGenerateCommand() *cobra.Command {
 			}
 
 			if cli {
-				code, readErr = evm.AddCLI(code, structName, noformat)
+				code, readErr = evm.AddCLI(code, structName, noformat, includemain)
 				if readErr != nil {
 					return readErr
 				}
@@ -285,6 +285,7 @@ func CreateEVMGenerateCommand() *cobra.Command {
 	evmGenerateCmd.Flags().StringVarP(&bytecodefile, "bytecode", "b", "", "Path to contract bytecode (default none - in this case, no deployment method is created)")
 	evmGenerateCmd.Flags().BoolVarP(&cli, "cli", "c", false, "Add a CLI for interacting with the contract (default false)")
 	evmGenerateCmd.Flags().BoolVar(&noformat, "noformat", false, "Set this flag if you do not want the generated code to be formatted (useful to debug errors)")
+	evmGenerateCmd.Flags().BoolVar(&includemain, "includemain", false, "Set this flag if you want to generate a \"main\" function to execute the CLI and make the generated code self-contained - this option is ignored if --cli is not set")
 	evmGenerateCmd.Flags().StringVarP(&outfile, "output", "o", "", "Path to output file (default stdout)")
 
 	return evmGenerateCmd
