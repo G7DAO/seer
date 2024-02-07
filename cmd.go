@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/starknet"
 	"github.com/moonstream-to/seer/version"
 )
@@ -26,6 +27,7 @@ func CreateRootCommand() *cobra.Command {
 	completionCmd := CreateCompletionCommand(rootCmd)
 	versionCmd := CreateVersionCommand()
 	starknetCmd := CreateStarknetCommand()
+	crawkerCmd := CreateCrawkerCommand()
 	rootCmd.AddCommand(completionCmd, versionCmd, starknetCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
@@ -115,6 +117,22 @@ func CreateStarknetCommand() *cobra.Command {
 	starknetCmd.AddCommand(starknetABIParseCmd, starknetABIGenGoCmd)
 
 	return starknetCmd
+}
+
+func CreateCrawkerCommand() *cobra.Command {
+	crawkerCmd := &cobra.Command{
+		Use:   "crawler",
+		Short: "Generate crawlers for various blockchains",
+		Run: func(cmd *cobra.Command, args []string) {
+
+			crawler := crawler.NewCrawler("ethereum", "http://localhost:8545")
+
+			crawler.Start()
+
+		},
+	}
+
+	return crawkerCmd
 }
 
 func CreateStarknetParseCommand() *cobra.Command {
