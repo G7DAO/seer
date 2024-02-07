@@ -1,12 +1,14 @@
 package crawler
 
 import (
+	"encoding/json"
 	"log"
 	"math/big"
 	"os"
 	"path/filepath"
 
 	"github.com/moonstream-to/seer/blockchain/common"
+	"github.com/moonstream-to/seer/indexer"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -37,6 +39,36 @@ func writeProtoMessagesToFile(messages []proto.Message, filePath string) {
 		}
 		if _, err := file.Write(data); err != nil {
 			log.Fatalf("Failed to write data to file: %v", err)
+		}
+	}
+}
+
+func updateBlockIndexFilepaths(indices []indexer.BlockIndex, baseDir string) {
+	for i, _ := range indices {
+		indices[i].Filepath = filepath.Join(baseDir, "blocks.proto")
+	}
+}
+
+func updateTransactionIndexFilepaths(indices []indexer.TransactionIndex, baseDir string) {
+	for i, _ := range indices {
+		indices[i].Filepath = filepath.Join(baseDir, "transactions.proto")
+	}
+}
+
+// writeIndicesToFile serializes and writes a batch of indices to a specified JSON file.
+func writeIndicesToFile(indices []interface{}, filePath string) { // small cheating
+	// Open or create the file for appending
+	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644) // that cool
+	if err != nil {
+		log.Fatalf("Failed to open file %s for writing: %v", filePath, err)
+	}
+	defer file.Close()
+
+	// Serialize and write each index in the batch
+	encoder := json.NewEncoder(file)
+	for _, index := range indices {
+		if err := encoder.Encode(index); err != nil {
+			log.Fatalf("Failed to encode index to %s: %v", filePath, err)
 		}
 	}
 }
@@ -84,8 +116,7 @@ func (c *Crawler) Start() {
 
 		// Process the blocks and transactions
 
-		// write the blocks and transactions to disk
-
+		// write the blocks and transactions to disk as example 100001-100010/blocks.proto and 100001-100010/transactions.proto
 		batchDir := filepath.Join("data", startBlock.String()+"-"+endBlock.String())
 		if err := os.MkdirAll(batchDir, 0755); err != nil {
 			log.Fatal(err)
@@ -101,6 +132,27 @@ func (c *Crawler) Start() {
 
 		writeProtoMessagesToFile(transactions, filepath.Join(batchDir, "transactions.proto"))
 
+		// Update filepaths for each index
+		updateBlockIndexFilepaths(blockIndex, batchDir)
+		updateTransactionIndexFilepaths(transactionIndex, batchDir)
+
+		// Write updated indices to their respective files
+		// Convert blockIndex to []interface{}
+		interfaceBlockIndex := make([]interface{}, len(blockIndex))
+		for i, v := range blockIndex {
+			interfaceBlockIndex[i] = v
+		}
+
+		// Convert transactionIndex to []interface{}
+
+		interfaceTransactionIndex := make([]interface{}, len(transactionIndex))
+		for i, v := range transactionIndex {
+			interfaceTransactionIndex[i] = v
+		}
+
+		writeIndicesToFile(interfaceBlockIndex, filepath.Join(batchDir, "blockIndex.json"))
+		writeIndicesToFile(interfaceTransactionIndex, filepath.Join(batchDir, "transactionIndex.json"))
+
 		// write the block and transaction indices to disk
 
 		// open index general file for writing
@@ -114,6 +166,8 @@ func (c *Crawler) Start() {
 		}
 
 		defer file.Close()
+
+		// write the block and transaction indices to disk
 
 		// Update the startBlock for the next batch
 		startBlock = endBlock

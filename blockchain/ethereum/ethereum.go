@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/moonstream-to/seer/indexer"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -39,9 +40,9 @@ func (c *Client) Close() {
 }
 
 // GetLatestBlockNumber returns the latest block number.
-func (c *Client) GetLatestBlockNumber(ctx context.Context) (*big.Int, error) {
+func (c *Client) GetLatestBlockNumber() (*big.Int, error) {
 	var blockNumber *big.Int
-	err := c.rpcClient.CallContext(ctx, &blockNumber, "eth_blockNumber")
+	err := c.rpcClient.CallContext(context.Background(), &blockNumber, "eth_blockNumber")
 	return blockNumber, err
 }
 
@@ -140,26 +141,45 @@ func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*Block, []*Sin
 	return parsedBlocks, parsedTransactions, nil
 }
 
-// EncodeToProtoBlocks demonstrates a hypothetical method to encode blocks to a protobuf format.
-// You would replace this with actual logic based on your protobuf definitions.
-func (c *Client) EncodeToProtoBlocks(from, to *big.Int) ([]proto.Message, []proto.Message, error) {
+func (c *Client) FetchAsProtoBlocks(from, to *big.Int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, error) {
 	parsedBlocks, parsedTransactions, err := c.ParseBlocksAndTransactions(from, to)
 
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
+	blockHashes := make(map[int64]string)
+
 	var blocksProto []proto.Message
+	var blockIndex []indexer.BlockIndex
 	for _, block := range parsedBlocks {
-		blocksProto = append(blocksProto, block) // Assuming block is already a proto.Message
+		blocksProto = append(blocksProto, block)    // Assuming block is already a proto.Message
+		blockHashes[block.BlockNumber] = block.Hash // Assuming block.BlockNumber is int64 and block.Hash is string
+		blockIndex = append(blockIndex, indexer.BlockIndex{
+			BlockNumber:    block.BlockNumber,
+			BlockHash:      block.Hash,
+			BlockTimestamp: block.Timestamp,
+			ParentHash:     block.ParentHash,
+			Filepath:       "",
+		})
 	}
 
 	var transactionsProto []proto.Message
+	var transactionIndex []indexer.TransactionIndex
 	for _, transaction := range parsedTransactions {
 		transactionsProto = append(transactionsProto, transaction) // Assuming transaction is also a proto.Message
+		transactionIndex = append(transactionIndex, indexer.TransactionIndex{
+			BlockNumber:          transaction.BlockNumber,
+			BlockHash:            blockHashes[transaction.BlockNumber],
+			BlockTimestamp:       transaction.BlockTimestamp,
+			TransactionHash:      transaction.Hash,
+			TransactionIndex:     transaction.TransactionIndex,
+			TransactionTimestamp: transaction.BlockTimestamp,
+			Filepath:             "",
+		})
 	}
 
-	return blocksProto, transactionsProto, nil
+	return blocksProto, transactionsProto, blockIndex, transactionIndex, nil
 }
 
 func ToProtoSingleBlock(obj *BlockJson) *Block {

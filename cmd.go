@@ -27,8 +27,8 @@ func CreateRootCommand() *cobra.Command {
 	completionCmd := CreateCompletionCommand(rootCmd)
 	versionCmd := CreateVersionCommand()
 	starknetCmd := CreateStarknetCommand()
-	crawkerCmd := CreateCrawkerCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, starknetCmd)
+	crawlerCmd := CreateCrawlerCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, starknetCmd, crawlerCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -119,20 +119,20 @@ func CreateStarknetCommand() *cobra.Command {
 	return starknetCmd
 }
 
-func CreateCrawkerCommand() *cobra.Command {
-	crawkerCmd := &cobra.Command{
+func CreateCrawlerCommand() *cobra.Command {
+	crawlerCmd := &cobra.Command{
 		Use:   "crawler",
 		Short: "Generate crawlers for various blockchains",
 		Run: func(cmd *cobra.Command, args []string) {
 
-			crawler := crawler.NewCrawler("ethereum", "http://localhost:8545")
+			crawler := crawler.NewCrawler("http://localhost:8545")
 
 			crawler.Start()
 
 		},
 	}
 
-	return crawkerCmd
+	return crawlerCmd
 }
 
 func CreateStarknetParseCommand() *cobra.Command {
