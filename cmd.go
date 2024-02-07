@@ -128,7 +128,9 @@ func CreateCrawlerCommand() *cobra.Command {
 		Short: "Generate crawlers for various blockchains",
 		Run: func(cmd *cobra.Command, args []string) {
 
-			crawler := crawler.NewCrawler("http://localhost:8545")
+			// read the blockchain url from $INFURA_URL
+			// if it is not set, use the default url
+			crawler := crawler.NewCrawler("ethereum")
 
 			crawler.Start()
 

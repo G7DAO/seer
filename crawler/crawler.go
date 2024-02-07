@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"math/big"
 	"os"
@@ -77,8 +78,13 @@ func writeIndicesToFile(indices []interface{}, filePath string) { // small cheat
 func (c *Crawler) Start() {
 
 	chainType := "ethereum"
+
+	url := os.Getenv("INFURA_URL")
+
+	fmt.Println("Using blockchain url:", url)
+
 	log.Println("Starting crawler...")
-	client, err := common.NewClient(chainType, "http://localhost:8545")
+	client, err := common.NewClient(chainType, url)
 
 	if err != nil {
 		log.Fatal(err)
@@ -96,6 +102,8 @@ func (c *Crawler) Start() {
 	if err != nil {
 		log.Fatalf("Failed to get latest block number: %v", err)
 	}
+
+	fmt.Println("Latest block number:", latestBlockNumber)
 
 	// Assuming latestBlockNumber is *big.Int and operations for big.Int
 	startBlock := new(big.Int).Sub(latestBlockNumber, big.NewInt(100)) // Start 100 blocks behind the latest

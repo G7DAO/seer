@@ -41,9 +41,18 @@ func (c *Client) Close() {
 
 // GetLatestBlockNumber returns the latest block number.
 func (c *Client) GetLatestBlockNumber() (*big.Int, error) {
-	var blockNumber *big.Int
-	err := c.rpcClient.CallContext(context.Background(), &blockNumber, "eth_blockNumber")
-	return blockNumber, err
+	var result string
+	if err := c.rpcClient.CallContext(context.Background(), &result, "eth_blockNumber"); err != nil {
+		return nil, err
+	}
+
+	// Convert the hex string to *big.Int
+	blockNumber, ok := new(big.Int).SetString(result, 0) // The 0 base lets the function infer the base from the string prefix.
+	if !ok {
+		return nil, fmt.Errorf("invalid block number format: %s", result)
+	}
+
+	return blockNumber, nil
 }
 
 // BlockByNumber returns the block with the given number.
@@ -105,6 +114,7 @@ func (c *Client) FetchBlocksInRange(from, to *big.Int) ([]*BlockJson, error) {
 
 	for i := new(big.Int).Set(from); i.Cmp(to) <= 0; i.Add(i, big.NewInt(1)) {
 		block, err := c.GetBlockByNumber(ctx, i)
+		fmt.Println("Block number: ", i)
 		if err != nil {
 			return nil, err
 		}
