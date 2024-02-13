@@ -129,25 +129,26 @@ package ethereum
 */
 
 type BlockJson struct {
-	Difficulty       int64                    `json:"difficulty"`
+	// difficulty originally a hex string
+	Difficulty       string                   `json:"difficulty"`
 	ExtraData        string                   `json:"extraData"`
-	GasLimit         int64                    `json:"gasLimit"`
-	GasUsed          int64                    `json:"gasUsed"`
+	GasLimit         string                   `json:"gasLimit"`
+	GasUsed          string                   `json:"gasUsed"`
 	Hash             string                   `json:"hash"`
 	LogsBloom        string                   `json:"logsBloom"`
 	Miner            string                   `json:"miner"`
 	MixHash          string                   `json:"mixHash"`
 	Nonce            string                   `json:"nonce"`
-	BlockNumber      int64                    `json:"number"`
+	BlockNumber      string                   `json:"number"`
 	ParentHash       string                   `json:"parentHash"`
 	ReceiptRoot      string                   `json:"receiptRoot"`
 	Sha3Uncles       string                   `json:"sha3Uncles"`
 	StateRoot        string                   `json:"stateRoot"`
-	Timestamp        int64                    `json:"timestamp"`
+	Timestamp        string                   `json:"timestamp"`
 	TotalDifficulty  string                   `json:"totalDifficulty"`
 	TransactionsRoot string                   `json:"transactionsRoot"`
-	Uncles           string                   `json:"uncles"`
-	Size             int32                    `json:"size"`
+	Uncles           []string                 `json:"uncles"`
+	Size             string                   `json:"size"`
 	BaseFeePerGas    string                   `json:"baseFeePerGas"`
 	IndexedAt        int64                    `json:"indexed_at"`
 	Transactions     []*SingleTransactionJson `json:"transactions"`
@@ -238,7 +239,7 @@ type BlockJson struct {
 type SingleTransactionJson struct {
 	AccessList           []AccessList `json:"accessList"`
 	BlockHash            string       `json:"blockHash"`
-	BlockNumber          int64        `json:"blockNumber"`
+	BlockNumber          string       `json:"blockNumber"`
 	ChainId              string       `json:"chainId"`
 	FromAddress          string       `json:"from"`
 	Gas                  string       `json:"gas"`
@@ -251,12 +252,12 @@ type SingleTransactionJson struct {
 	R                    string       `json:"r"`
 	S                    string       `json:"s"`
 	ToAddress            string       `json:"to"`
-	TransactionIndex     int64        `json:"transactionIndex"`
-	TransactionType      int32        `json:"type"`
+	TransactionIndex     string       `json:"transactionIndex"`
+	TransactionType      string       `json:"type"`
 	Value                string       `json:"value"`
 	YParity              string       `json:"yParity"`
-	IndexedAt            int64        `json:"indexed_at"`
-	BlockTimestamp       int64        `json:"block_timestamp"`
+	IndexedAt            string       `json:"indexed_at"`
+	BlockTimestamp       string       `json:"block_timestamp"`
 }
 
 type AccessList struct {

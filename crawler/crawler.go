@@ -110,6 +110,9 @@ func (c *Crawler) Start() {
 	crawlBatchSize := big.NewInt(10)                                   // Crawl in batches of 10
 	confirmations := big.NewInt(10)                                    // Consider 10 confirmations
 
+	// request startBlock from indexer
+	// WIP
+
 	for latestBlockNumber.Int64()-startBlock.Int64() > confirmations.Int64()+crawlBatchSize.Int64() {
 
 		endBlock := new(big.Int).Add(startBlock, crawlBatchSize)
@@ -124,8 +127,10 @@ func (c *Crawler) Start() {
 
 		// Process the blocks and transactions
 
+		baseDir := "data"
+
 		// write the blocks and transactions to disk as example 100001-100010/blocks.proto and 100001-100010/transactions.proto
-		batchDir := filepath.Join("data", startBlock.String()+"-"+endBlock.String())
+		batchDir := filepath.Join(baseDir, startBlock.String()+"-"+endBlock.String())
 		if err := os.MkdirAll(batchDir, 0755); err != nil {
 			log.Fatal(err)
 		}
@@ -136,9 +141,9 @@ func (c *Crawler) Start() {
 
 		// write the blocks and transactions to disk
 
-		writeProtoMessagesToFile(blocks, filepath.Join(batchDir, "blocks.proto"))
+		writeProtoMessagesToFile(blocks, filepath.Join(baseDir, "blocks.proto"))
 
-		writeProtoMessagesToFile(transactions, filepath.Join(batchDir, "transactions.proto"))
+		writeProtoMessagesToFile(transactions, filepath.Join(baseDir, "transactions.proto"))
 
 		// Update filepaths for each index
 		updateBlockIndexFilepaths(blockIndex, batchDir)

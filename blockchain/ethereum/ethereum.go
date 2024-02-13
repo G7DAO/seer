@@ -2,8 +2,10 @@ package ethereum
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
@@ -57,8 +59,52 @@ func (c *Client) GetLatestBlockNumber() (*big.Int, error) {
 
 // BlockByNumber returns the block with the given number.
 func (c *Client) GetBlockByNumber(ctx context.Context, number *big.Int) (*BlockJson, error) {
+
+	var rawResponse json.RawMessage // Use RawMessage to capture the entire JSON response
+	err := c.rpcClient.CallContext(ctx, &rawResponse, "eth_getBlockByNumber", "0x"+number.Text(16), true)
+	if err != nil {
+		fmt.Println("Error calling eth_getBlockByNumber: ", err)
+		return nil, err
+	}
+
+	var response_json map[string]interface{}
+
+	err = json.Unmarshal(rawResponse, &response_json)
+
+	delete(response_json, "transactions")
+
+	fmt.Println("Response: ", response_json)
+
+	// // Optionally log the raw JSON response for debugging
+	// fmt.Println("Raw JSON response: ", string(rawResponse))
+
+	// chain_block, err := c.rpcClient.BlockByNumber(context.Background(), blockNumber)
+	// if err != nil {
+	// 	log.Printf("Failed to retrieve block %v: %v", blockNumber, err)
+	// 	continue
+	// }
+
+	// blockData := map[string]interface{}{
+	// 	"number":           header.Number.String(),
+	// 	"hash":             header.Hash().Hex(),
+	// 	"parentHash":       header.ParentHash.Hex(),
+	// 	"nonce":            hexutil.EncodeUint64(header.Nonce.Uint64()),
+	// 	"sha3Uncles":       header.UncleHash.Hex(),
+	// 	"logsBloom":        header.Bloom.Bytes(),
+	// 	"transactionsRoot": header.TxHash.Hex(),
+	// 	"stateRoot":        header.Root.Hex(),
+	// 	"miner":            header.Coinbase.Hex(),
+	// 	"difficulty":       header.Difficulty.String(),
+	// 	"extraData":        hexutil.Encode(header.Extra[:]),
+	// 	"gasLimit":         header.GasLimit,
+	// 	"gasUsed":          header.GasUsed,
+	// 	"timestamp":        header.Time,
+	// 	"mixHash":          header.MixDigest.Hex(),
+	// 	"transactions":     body.Transactions,
+	// }
+
 	var block *BlockJson
-	err := c.rpcClient.CallContext(ctx, &block, "eth_getBlockByNumber", number, true) // true to include transactions
+	err = c.rpcClient.CallContext(ctx, &block, "eth_getBlockByNumber", "0x"+number.Text(16), true) // true to include transactions
 	return block, err
 }
 
@@ -104,6 +150,12 @@ func (c *Client) fetchBlocks(ctx context.Context, from, to *big.Int) ([]*BlockJs
 // Utility function to convert big.Int to its hexadecimal representation.
 func toHex(number *big.Int) string {
 	return fmt.Sprintf("0x%x", number)
+}
+
+func fromHex(hex string) *big.Int {
+	number := new(big.Int)
+	number.SetString(hex, 0)
+	return number
 }
 
 // FetchBlocksInRange fetches blocks within a specified range.
@@ -194,22 +246,23 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int) ([]proto.Message, []proto
 
 func ToProtoSingleBlock(obj *BlockJson) *Block {
 	return &Block{
-		BlockNumber:      obj.BlockNumber,
-		Difficulty:       obj.Difficulty,
-		ExtraData:        obj.ExtraData,
-		GasLimit:         obj.GasLimit,
-		GasUsed:          obj.GasUsed,
-		BaseFeePerGas:    obj.BaseFeePerGas,
-		Hash:             obj.Hash,
-		LogsBloom:        obj.LogsBloom,
-		Miner:            obj.Miner,
-		Nonce:            obj.Nonce,
-		ParentHash:       obj.ParentHash,
-		ReceiptRoot:      obj.ReceiptRoot,
-		Uncles:           obj.Uncles,
-		Size:             obj.Size,
+		BlockNumber:   fromHex(obj.BlockNumber).Int64(),
+		Difficulty:    fromHex(obj.Difficulty).Int64(),
+		ExtraData:     obj.ExtraData,
+		GasLimit:      fromHex(obj.GasLimit).Int64(),
+		GasUsed:       fromHex(obj.GasUsed).Int64(),
+		BaseFeePerGas: obj.BaseFeePerGas,
+		Hash:          obj.Hash,
+		LogsBloom:     obj.LogsBloom,
+		Miner:         obj.Miner,
+		Nonce:         obj.Nonce,
+		ParentHash:    obj.ParentHash,
+		ReceiptRoot:   obj.ReceiptRoot,
+		Uncles:        strings.Join(obj.Uncles, ","),
+		// convert hex to int32
+		Size:             int32(fromHex(obj.Size).Int64()),
 		StateRoot:        obj.StateRoot,
-		Timestamp:        obj.Timestamp,
+		Timestamp:        fromHex(obj.Timestamp).Int64(),
 		TotalDifficulty:  obj.TotalDifficulty,
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        obj.IndexedAt,
@@ -219,7 +272,7 @@ func ToProtoSingleBlock(obj *BlockJson) *Block {
 func ToProtoSingleTransaction(obj *SingleTransactionJson) *SingleTransaction {
 	return &SingleTransaction{
 		Hash:                 obj.Hash,
-		BlockNumber:          obj.BlockNumber,
+		BlockNumber:          fromHex(obj.BlockNumber).Int64(),
 		FromAddress:          obj.FromAddress,
 		ToAddress:            obj.ToAddress,
 		Gas:                  obj.Gas,
@@ -228,11 +281,11 @@ func ToProtoSingleTransaction(obj *SingleTransactionJson) *SingleTransaction {
 		MaxPriorityFeePerGas: obj.MaxPriorityFeePerGas,
 		Input:                obj.Input,
 		Nonce:                obj.Nonce,
-		TransactionIndex:     obj.TransactionIndex,
-		TransactionType:      obj.TransactionType,
+		TransactionIndex:     fromHex(obj.TransactionIndex).Int64(),
+		TransactionType:      int32(fromHex(obj.TransactionType).Int64()),
 		Value:                obj.Value,
-		IndexedAt:            obj.IndexedAt,
-		BlockTimestamp:       obj.BlockTimestamp,
+		IndexedAt:            fromHex(obj.IndexedAt).Int64(),
+		BlockTimestamp:       fromHex(obj.BlockTimestamp).Int64(),
 	}
 }
 
