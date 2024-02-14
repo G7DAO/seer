@@ -3,10 +3,12 @@ package crawler
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/big"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/moonstream-to/seer/blockchain/common"
 	"github.com/moonstream-to/seer/indexer"
@@ -15,13 +17,28 @@ import (
 
 // Crawler defines the crawler structure.
 type Crawler struct {
-	blockchain string
+	blockchain     string
+	startBlock     uint64
+	maxBlocksBatch int
+	minBlocksBatch int
+	confirmations  int
+	endBlock       uint64
+	force          bool
+	baseDir        string
 }
 
 // NewCrawler creates a new crawler instance with the given blockchain handler.
-func NewCrawler(bh string) *Crawler {
+func NewCrawler(chain string, startBlock uint64, endBlock uint64, timeout int, batchSize int, confirmations int, baseDir string, force bool) *Crawler {
+	fmt.Printf("Start block: %d\n", startBlock)
 	return &Crawler{
-		blockchain: bh,
+		blockchain:     chain,
+		startBlock:     startBlock,
+		endBlock:       endBlock,
+		maxBlocksBatch: batchSize,
+		minBlocksBatch: 1,
+		confirmations:  confirmations,
+		baseDir:        baseDir,
+		force:          force,
 	}
 
 }
@@ -74,78 +91,122 @@ func writeIndicesToFile(indices []interface{}, filePath string) { // small cheat
 	}
 }
 
+// read latest indexed block
+// readLatestIndexedBlock reads the latest indexed block from a JSON file
+func readLatestIndexedBlock() (uint64, error) {
+	// Open the file for reading
+	file, err := os.Open("data/block_index.json")
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	// Initialize a decoder that reads from the file
+	decoder := json.NewDecoder(file)
+	var blockIndex indexer.BlockIndex
+	var lastBlockNumber uint64 // Variable to store the last read block number
+
+	// Read the file line by line
+	for {
+		// Decode the next JSON object into the BlockIndex struct
+		if err := decoder.Decode(&blockIndex); err != nil {
+			if err == io.EOF {
+				// If EOF is reached, break out of the loop
+				break
+			} else {
+				// For any other error, return it
+				return 0, err
+			}
+		}
+		// Successfully decoded, update lastBlockNumber
+		lastBlockNumber = uint64(blockIndex.BlockNumber)
+	}
+
+	// Return the last block number read from the file
+	return lastBlockNumber, nil
+}
+
 // Start initiates the crawling process for the configured blockchain.
 func (c *Crawler) Start() {
 
 	chainType := "ethereum"
-
 	url := os.Getenv("INFURA_URL")
 
-	fmt.Println("Using blockchain url:", url)
-
-	log.Println("Starting crawler...")
+	log.Printf("Starting crawler using blockchain URL: %s", url)
 	client, err := common.NewClient(chainType, url)
-
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// get the latest block number
 
 	latestBlockNumber, err := client.GetLatestBlockNumber()
+	// Initial setup
+	baseDir := "data"
+	crawlBatchSize := uint64(10) // Crawl in batches of 10
+	confirmations := uint64(10)  // Consider 10 confirmations to ensure block finality
 
-	if err != nil {
-		log.Fatal(err)
+	fmt.Printf("Latest block number: %d\n", latestBlockNumber)
+	fmt.Printf("Start block: %d\n", c.startBlock)
+
+	fmt.Printf("force: %v\n", c.force)
+
+	if c.force {
+		// try extract from index
+		if c.startBlock == uint64(0) {
+			startBlock := latestBlockNumber.Uint64() - uint64(confirmations) - 100
+			c.startBlock = startBlock
+
+		}
+
+	} else {
+		latestIndexedBlock, err := readLatestIndexedBlock()
+
+		if err != nil {
+			log.Fatalf("Failed to read latest indexed block: %v", err)
+		}
+
+		if latestIndexedBlock != uint64(0) {
+			c.startBlock = latestIndexedBlock
+		}
 	}
 
-	// Get the latest block number
-	if err != nil {
-		log.Fatalf("Failed to get latest block number: %v", err)
-	}
+	endBlock := uint64(0)
+	safeBlock := uint64(0)
 
-	fmt.Println("Latest block number:", latestBlockNumber)
+	for {
+		// Fetch the latest block number at the start of each iteration
+		latestBlockNumber, err = client.GetLatestBlockNumber()
 
-	// Assuming latestBlockNumber is *big.Int and operations for big.Int
-	startBlock := new(big.Int).Sub(latestBlockNumber, big.NewInt(100)) // Start 100 blocks behind the latest
-	crawlBatchSize := big.NewInt(10)                                   // Crawl in batches of 10
-	confirmations := big.NewInt(10)                                    // Consider 10 confirmations
+		if err != nil {
+			log.Fatalf("Failed to get latest block number: %v", err)
+		}
 
-	// request startBlock from indexer
-	// WIP
+		safeBlock = latestBlockNumber.Uint64() - confirmations
 
-	for latestBlockNumber.Int64()-startBlock.Int64() > confirmations.Int64()+crawlBatchSize.Int64() {
+		endBlock = c.startBlock + crawlBatchSize
 
-		endBlock := new(big.Int).Add(startBlock, crawlBatchSize)
+		if endBlock > safeBlock {
+			//wait for new blocks
+			time.Sleep(1 * time.Minute) // Adjust sleep time as needed
+			continue
+		}
 
-		// Fetch the blocks and transactions
-
-		blocks, transactions, blockIndex, transactionIndex, err := common.CrawlBlocks(client, startBlock, endBlock)
-
+		// Fetch the blocks and transactions for the range
+		blocks, transactions, blockIndex, transactionIndex, err := common.CrawlBlocks(client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(endBlock)))
 		if err != nil {
 			log.Fatalf("Failed to get blocks: %v", err)
 		}
 
-		// Process the blocks and transactions
+		fmt.Printf("Crawled transactions: %d\n", len(transactions))
 
-		baseDir := "data"
-
-		// write the blocks and transactions to disk as example 100001-100010/blocks.proto and 100001-100010/transactions.proto
-		batchDir := filepath.Join(baseDir, startBlock.String()+"-"+endBlock.String())
+		// Compute batch directory for this iteration
+		batchDir := filepath.Join(c.baseDir, fmt.Sprintf("%d-%d", c.startBlock, endBlock))
 		if err := os.MkdirAll(batchDir, 0755); err != nil {
-			log.Fatal(err)
-		}
-
-		if err != nil {
 			log.Fatalf("Failed to create directory: %v", err)
 		}
 
-		// write the blocks and transactions to disk
-
-		writeProtoMessagesToFile(blocks, filepath.Join(baseDir, "blocks.proto"))
-
-		writeProtoMessagesToFile(transactions, filepath.Join(baseDir, "transactions.proto"))
-
-		// Update filepaths for each index
+		// Write the blocks, transactions, and their indices to disk
+		writeProtoMessagesToFile(blocks, filepath.Join(batchDir, "blocks.proto"))
+		writeProtoMessagesToFile(transactions, filepath.Join(batchDir, "transactions.proto"))
 		updateBlockIndexFilepaths(blockIndex, batchDir)
 		updateTransactionIndexFilepaths(transactionIndex, batchDir)
 
@@ -155,35 +216,18 @@ func (c *Crawler) Start() {
 		for i, v := range blockIndex {
 			interfaceBlockIndex[i] = v
 		}
-
-		// Convert transactionIndex to []interface{}
+		writeIndicesToFile(interfaceBlockIndex, filepath.Join(baseDir, "block_index.json"))
 
 		interfaceTransactionIndex := make([]interface{}, len(transactionIndex))
 		for i, v := range transactionIndex {
 			interfaceTransactionIndex[i] = v
 		}
+		writeIndicesToFile(interfaceTransactionIndex, filepath.Join(baseDir, "transaction_index.json"))
 
-		writeIndicesToFile(interfaceBlockIndex, filepath.Join(batchDir, "blockIndex.json"))
-		writeIndicesToFile(interfaceTransactionIndex, filepath.Join(batchDir, "transactionIndex.json"))
+		// Convert transactionIndex to []interface{}
 
-		// write the block and transaction indices to disk
-
-		// open index general file for writing
-
-		file_out := "index.db"
-
-		file, err := os.Create(file_out)
-
-		if err != nil {
-			panic(err)
-		}
-
-		defer file.Close()
-
-		// write the block and transaction indices to disk
-
-		// Update the startBlock for the next batch
-		startBlock = endBlock
+		nextStartBlock := endBlock + 1
+		c.startBlock = nextStartBlock
 	}
 }
 

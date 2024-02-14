@@ -48,7 +48,7 @@ func (c *Client) GetLatestBlockNumber() (*big.Int, error) {
 		return nil, err
 	}
 
-	// Convert the hex string to *big.Int
+	// Convert the hex string to a big.Int
 	blockNumber, ok := new(big.Int).SetString(result, 0) // The 0 base lets the function infer the base from the string prefix.
 	if !ok {
 		return nil, fmt.Errorf("invalid block number format: %s", result)

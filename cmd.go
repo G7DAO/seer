@@ -123,21 +123,59 @@ func CreateStarknetCommand() *cobra.Command {
 }
 
 func CreateCrawlerCommand() *cobra.Command {
+	var startBlock, endBlock uint64
+	var batchSize, confirmations, timeout int
+	var baseDir string
+	var force bool
+
 	crawlerCmd := &cobra.Command{
 		Use:   "crawler",
 		Short: "Generate crawlers for various blockchains",
 		Run: func(cmd *cobra.Command, args []string) {
 
+			//
+
 			// read the blockchain url from $INFURA_URL
 			// if it is not set, use the default url
-			crawler := crawler.NewCrawler("ethereum")
+			crawler := crawler.NewCrawler("ethereum", startBlock, endBlock, timeout, batchSize, confirmations, baseDir, force)
 
 			crawler.Start()
 
 		},
 	}
 
+	crawlerCmd.Flags().Uint64Var(&startBlock, "start-block", 0, "The block number to start crawling from (default: latest block)")
+	crawlerCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end crawling at (default: latest block)")
+	crawlerCmd.Flags().IntVar(&timeout, "timeout", 0, "The timeout for the crawler in seconds (default: 0 - no timeout)")
+	crawlerCmd.Flags().IntVar(&batchSize, "batch-size", 10, "The number of blocks to crawl in each batch (default: 10)")
+	crawlerCmd.Flags().IntVar(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
+	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "data", "The base directory to store the crawled data (default: data)")
+	crawlerCmd.Flags().BoolVar(&force, "force", false, "Set this flag to force the crawler start from the start block (default: false)")
+
 	return crawlerCmd
+}
+
+
+func CreateDecoderCommand() *cobra.Command {
+	var startBlock, endBlock uint64
+	var baseDir, output, abi_source string
+
+	decoderCmd := &cobra.Command{
+		Use:   "decoder",
+		Short: "Decode the crawled data from various blockchains",
+		Run: func(cmd *cobra.Command, args []string) {
+			decoder := decoder.NewDecoder("ethereum", startBlock, endBlock, baseDir)
+			decoder.Start()
+		}
+	}
+
+	decoderCmd.Flags().Uint64Var(&startBlock, "start-block", 0, "The block number to start decoding from (default: latest block)")
+	decoderCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end decoding at (default: latest block)")
+	decoderCmd.Flags().StringVar(&baseDir, "base-dir", "data", "The base directory to store the crawled data (default: data)")
+	decoderCmd.Flags().StringVar(&output, "output", "output", "The output directory to store the decoded data (default: output)")
+	decoderCmd.Flags().StringVar(&abi_source, "abi-source", "abi", "The source of the ABI (default: abi)")
+
+	return decoderCmd
 }
 
 func CreateStarknetParseCommand() *cobra.Command {
