@@ -45,6 +45,7 @@ var ErrParameterUnnamed error = errors.New("parameter is unnamed")
 //  3. bytecode: The bytes representing the contract's bytecode. If this is provided, a "deploy" method
 //     will be generated. If it is not provided, no such method will be generated.
 //  4. packageName: If this is provided, the generated code will contain a package declaration of this name.
+//  5. aliases: This is a mapping of aliases for identifiers from an ABI. Necessary because Go bindings have trouble with overloaded methods in an ABI.
 func GenerateTypes(structName string, abi []byte, bytecode []byte, packageName string, aliases map[string]string) (string, error) {
 	return bind.Bind([]string{structName}, []string{string(abi)}, []string{string(bytecode)}, []map[string]string{}, packageName, bind.LangGo, map[string]string{}, aliases)
 }
