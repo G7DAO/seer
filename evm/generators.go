@@ -307,6 +307,7 @@ func DeriveMethodArguments(parameters []ABIBoundParameter) ([]MethodArgument, er
 		"network":              true,
 		"simulate":             true,
 		"contractAddress":      true,
+		"name":                 true,
 	}
 
 	for i, parameter := range parameters {
