@@ -230,6 +230,7 @@ func CreateEVMGenerateCommand() *cobra.Command {
 	var infile, packageName, structName, bytecodefile, outfile, foundryBuildFile string
 	var rawABI, bytecode []byte
 	var readErr error
+	var aliases map[string]string
 
 	evmGenerateCmd := &cobra.Command{
 		Use:   "generate",
@@ -276,7 +277,7 @@ func CreateEVMGenerateCommand() *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			code, codeErr := evm.GenerateTypes(structName, rawABI, bytecode, packageName)
+			code, codeErr := evm.GenerateTypes(structName, rawABI, bytecode, packageName, aliases)
 			if codeErr != nil {
 				return codeErr
 			}
@@ -316,6 +317,7 @@ func CreateEVMGenerateCommand() *cobra.Command {
 	evmGenerateCmd.Flags().BoolVar(&includemain, "includemain", false, "Set this flag if you want to generate a \"main\" function to execute the CLI and make the generated code self-contained - this option is ignored if --cli is not set")
 	evmGenerateCmd.Flags().StringVarP(&outfile, "output", "o", "", "Path to output file (default stdout)")
 	evmGenerateCmd.Flags().StringVar(&foundryBuildFile, "foundry", "", "If your contract is compiled using Foundry, you can specify a path to the build file here (typically \"<foundry project root>/out/<solidit filename>/<contract name>.json\") instead of specifying --abi and --bytecode separately")
+	evmGenerateCmd.Flags().StringToStringVar(&aliases, "alias", nil, "A map of identifier aliaes (e.g. --alias name=somename)")
 
 	return evmGenerateCmd
 }

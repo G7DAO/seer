@@ -45,8 +45,8 @@ var ErrParameterUnnamed error = errors.New("parameter is unnamed")
 //  3. bytecode: The bytes representing the contract's bytecode. If this is provided, a "deploy" method
 //     will be generated. If it is not provided, no such method will be generated.
 //  4. packageName: If this is provided, the generated code will contain a package declaration of this name.
-func GenerateTypes(structName string, abi []byte, bytecode []byte, packageName string) (string, error) {
-	return bind.Bind([]string{structName}, []string{string(abi)}, []string{string(bytecode)}, []map[string]string{}, packageName, bind.LangGo, map[string]string{}, map[string]string{})
+func GenerateTypes(structName string, abi []byte, bytecode []byte, packageName string, aliases map[string]string) (string, error) {
+	return bind.Bind([]string{structName}, []string{string(abi)}, []string{string(bytecode)}, []map[string]string{}, packageName, bind.LangGo, map[string]string{}, aliases)
 }
 
 // ABIBoundParameter represents a Go type that is bound to an Ethereum contract ABI item.
