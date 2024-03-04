@@ -1,4 +1,4 @@
-package ethereum
+package polygon
 
 import (
 	"context"
@@ -33,7 +33,7 @@ type Client struct {
 
 // ChainType returns the chain type.
 func (c *Client) ChainType() string {
-	return "ethereum"
+	return "polygon"
 }
 
 // Close closes the underlying RPC client.
@@ -73,8 +73,6 @@ func (c *Client) GetBlockByNumber(ctx context.Context, number *big.Int) (*BlockJ
 
 	delete(response_json, "transactions")
 
-	fmt.Println("Response: ", response_json)
-
 	var block *BlockJson
 	err = c.rpcClient.CallContext(ctx, &block, "eth_getBlockByNumber", "0x"+number.Text(16), true) // true to include transactions
 	return block, err
@@ -96,12 +94,65 @@ func (c *Client) TransactionReceipt(ctx context.Context, hash common.Hash) (*typ
 	return receipt, err
 }
 
-// FilterLogs returns the logs that satisfy the specified filter query.
-
-func (c *Client) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]*SingleEventJson, error) {
+func (c *Client) ClientFilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]*SingleEventJson, error) {
 	var logs []*SingleEventJson
-	err := c.rpcClient.CallContext(ctx, &logs, "eth_getLogs", q)
-	return logs, err
+	fromBlock := q.FromBlock
+	toBlock := q.ToBlock
+	batchStep := new(big.Int).Sub(toBlock, fromBlock) // Calculate initial batch step
+
+	for {
+		// Calculate the next "lastBlock" within the batch step or adjust to "toBlock" if exceeding
+		nextBlock := new(big.Int).Add(fromBlock, batchStep)
+		if nextBlock.Cmp(toBlock) > 0 {
+			nextBlock = new(big.Int).Set(toBlock)
+		}
+
+		var result []*SingleEventJson
+		err := c.rpcClient.CallContext(ctx, &result, "eth_getLogs", struct {
+			FromBlock string           `json:"fromBlock"`
+			ToBlock   string           `json:"toBlock"`
+			Addresses []common.Address `json:"addresses"`
+			Topics    [][]common.Hash  `json:"topics"`
+		}{
+			FromBlock: toHex(fromBlock),
+			ToBlock:   toHex(nextBlock),
+			Addresses: q.Addresses,
+			Topics:    q.Topics,
+		})
+
+		if err != nil {
+			if strings.Contains(err.Error(), "query returned more than 10000 results") {
+				// Halve the batch step if too many results and retry
+				batchStep.Div(batchStep, big.NewInt(2))
+				if batchStep.Cmp(big.NewInt(1)) < 0 {
+					// If the batch step is too small we will skip that block
+
+					fromBlock = new(big.Int).Add(nextBlock, big.NewInt(1))
+					if fromBlock.Cmp(toBlock) > 0 {
+						break
+					}
+					continue
+
+					//return nil, fmt.Errorf("unable to fetch logs: batch step too small")
+				}
+				continue
+			} else {
+				// For any other error, return immediately
+				return nil, err
+			}
+		}
+
+		// Append the results and adjust "fromBlock" for the next batch
+		logs = append(logs, result...)
+		fromBlock = new(big.Int).Add(nextBlock, big.NewInt(1))
+
+		// Break the loop if we've reached or exceeded "toBlock"
+		if fromBlock.Cmp(toBlock) > 0 {
+			break
+		}
+	}
+
+	return logs, nil
 }
 
 // fetchBlocks returns the blocks for a given range.
@@ -150,15 +201,14 @@ func (c *Client) FetchBlocksInRange(from, to *big.Int) ([]*BlockJson, error) {
 
 // ParseBlocksAndTransactions parses blocks and their transactions into custom data structures.
 // This method showcases how to handle and transform detailed block and transaction data.
-func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*Block, []*SingleTransaction, error) {
+func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*BlockPolygon, []*SingleTransactionPolygon, error) {
 	blocksJson, err := c.FetchBlocksInRange(from, to)
 	if err != nil {
-		fmt.Println("Error fetching blocks: ", err)
 		return nil, nil, err
 	}
 
-	var parsedBlocks []*Block
-	var parsedTransactions []*SingleTransaction
+	var parsedBlocks []*BlockPolygon
+	var parsedTransactions []*SingleTransactionPolygon
 	for _, blockJson := range blocksJson {
 		// Convert BlockJson to Block and Transactions as required.
 		parsedBlock := ToProtoSingleBlock(blockJson)
@@ -176,16 +226,26 @@ func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*Block, []*Sin
 	return parsedBlocks, parsedTransactions, nil
 }
 
-func (c *Client) ParseEvents(from, to *big.Int) ([]*EventLog, error) {
-	logs, err := c.FilterLogs(context.Background(), ethereum.FilterQuery{
+func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCahche) ([]*EventLogPolygon, error) {
+
+	logs, err := c.ClientFilterLogs(context.Background(), ethereum.FilterQuery{
 		FromBlock: from,
 		ToBlock:   to,
 	})
+
 	if err != nil {
+		fmt.Println("Error fetching logs: ", err)
 		return nil, err
 	}
+	// transform blocksCache to map[string]indexer.BlockCahche
 
-	var parsedEvents []*EventLog
+	// var blocksCacheByHash map[string]indexer.BlockCahche
+
+	// for k, v := range blocksCache {
+	// 	blocksCacheByHash[v.BlockHash] = v
+	// }
+
+	var parsedEvents []*EventLogPolygon
 	for _, log := range logs {
 		parsedEvent := ToProtoSingleEventLog(log)
 		parsedEvents = append(parsedEvents, parsedEvent)
@@ -198,7 +258,6 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int) ([]proto.Message, []proto
 	parsedBlocks, parsedTransactions, err := c.ParseBlocksAndTransactions(from, to)
 
 	if err != nil {
-		fmt.Println("Error parsing blocks and transactions: ", err)
 		return nil, nil, nil, nil, nil, err
 	}
 
@@ -243,7 +302,7 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int) ([]proto.Message, []proto
 
 func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]indexer.BlockCahche) ([]proto.Message, []indexer.LogIndex, error) {
 
-	parsedEvents, err := c.ParseEvents(from, to)
+	parsedEvents, err := c.ParseEvents(from, to, blocksCahche)
 
 	if err != nil {
 		return nil, nil, err
@@ -253,12 +312,21 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 	var eventsIndex []indexer.LogIndex
 	for _, event := range parsedEvents {
 		eventsProto = append(eventsProto, event) // Assuming event is already a proto.Message
+
+		var topics []string
+
+		if len(event.Topics) == 0 {
+			topics = []string{""}
+		} else {
+			topics = event.Topics
+		}
+
 		eventsIndex = append(eventsIndex, indexer.LogIndex{
 			BlockNumber:     event.BlockNumber,
 			BlockHash:       event.BlockHash,
 			BlockTimestamp:  blocksCahche[event.BlockNumber].BlockTimestamp,
 			TransactionHash: event.TransactionHash,
-			Topic0:          event.Topics[0],
+			Topic0:          topics[0],
 			LogIndex:        event.LogIndex,
 			Filepath:        "",
 		})
@@ -268,8 +336,8 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 
 }
 
-func ToProtoSingleBlock(obj *BlockJson) *Block {
-	return &Block{
+func ToProtoSingleBlock(obj *BlockJson) *BlockPolygon {
+	return &BlockPolygon{
 		BlockNumber:   fromHex(obj.BlockNumber).Uint64(),
 		Difficulty:    fromHex(obj.Difficulty).Uint64(),
 		ExtraData:     obj.ExtraData,
@@ -293,8 +361,8 @@ func ToProtoSingleBlock(obj *BlockJson) *Block {
 	}
 }
 
-func ToProtoSingleTransaction(obj *SingleTransactionJson) *SingleTransaction {
-	return &SingleTransaction{
+func ToProtoSingleTransaction(obj *SingleTransactionJson) *SingleTransactionPolygon {
+	return &SingleTransactionPolygon{
 		Hash:                 obj.Hash,
 		BlockNumber:          fromHex(obj.BlockNumber).Uint64(),
 		FromAddress:          obj.FromAddress,
@@ -313,13 +381,15 @@ func ToProtoSingleTransaction(obj *SingleTransactionJson) *SingleTransaction {
 	}
 }
 
-func ToProtoSingleEventLog(obj *SingleEventJson) *EventLog {
-	return &EventLog{
+func ToProtoSingleEventLog(obj *SingleEventJson) *EventLogPolygon {
+
+	return &EventLogPolygon{
 		Address:         obj.Address,
 		Topics:          obj.Topics,
 		Data:            obj.Data,
-		BlockNumber:     obj.BlockNumber,
+		BlockNumber:     fromHex(obj.BlockNumber).Uint64(),
 		TransactionHash: obj.TransactionHash,
+		LogIndex:        fromHex(obj.LogIndex).Uint64(),
 		BlockHash:       obj.BlockHash,
 		Removed:         obj.Removed,
 	}

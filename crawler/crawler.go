@@ -25,10 +25,25 @@ type Crawler struct {
 	endBlock       uint64
 	force          bool
 	baseDir        string
+	providerURI    string
+}
+
+var infuraKey string
+
+// read from env
+func init() {
+
+	infuraKey = os.Getenv("INFURA_KEY")
+}
+
+// mapping of blockchain type to the corresponding infura URL
+var infuraURLs = map[string]string{
+	"ethereum": "https://mainnet.infura.io/v3/",
+	"polygon":  "https://polygon-mainnet.infura.io/v3/",
 }
 
 // NewCrawler creates a new crawler instance with the given blockchain handler.
-func NewCrawler(chain string, startBlock uint64, endBlock uint64, timeout int, batchSize int, confirmations int, baseDir string, force bool) *Crawler {
+func NewCrawler(chain string, startBlock uint64, endBlock uint64, timeout int, batchSize int, confirmations int, baseDir string, force bool, providerURI string) *Crawler {
 	fmt.Printf("Start block: %d\n", startBlock)
 	return &Crawler{
 		blockchain:     chain,
@@ -39,6 +54,7 @@ func NewCrawler(chain string, startBlock uint64, endBlock uint64, timeout int, b
 		confirmations:  confirmations,
 		baseDir:        baseDir,
 		force:          force,
+		providerURI:    providerURI,
 	}
 
 }
@@ -129,8 +145,15 @@ func readLatestIndexedBlock() (uint64, error) {
 // Start initiates the crawling process for the configured blockchain.
 func (c *Crawler) Start() {
 
-	chainType := "ethereum"
-	url := os.Getenv("INFURA_URL")
+	chainType := c.blockchain
+	var url string
+
+	fmt.Printf("providerURI: %s\n", c.providerURI)
+	if c.providerURI != "" {
+		url = c.providerURI
+	} else {
+		url = infuraURLs[chainType] + infuraKey
+	}
 
 	log.Printf("Starting crawler using blockchain URL: %s", url)
 	client, err := common.NewClient(chainType, url)
@@ -140,9 +163,9 @@ func (c *Crawler) Start() {
 
 	latestBlockNumber, err := client.GetLatestBlockNumber()
 	// Initial setup
-	baseDir := "data"
-	crawlBatchSize := uint64(10) // Crawl in batches of 10
-	confirmations := uint64(10)  // Consider 10 confirmations to ensure block finality
+	//baseDir := "data"
+	crawlBatchSize := uint64(5) // Crawl in batches of 10
+	confirmations := uint64(10) // Consider 10 confirmations to ensure block finality
 
 	fmt.Printf("Latest block number: %d\n", latestBlockNumber)
 	fmt.Printf("Start block: %d\n", c.startBlock)
@@ -150,7 +173,6 @@ func (c *Crawler) Start() {
 	fmt.Printf("force: %v\n", c.force)
 
 	if c.force {
-		// try extract from index
 		if c.startBlock == uint64(0) {
 			startBlock := latestBlockNumber.Uint64() - uint64(confirmations) - 100
 			c.startBlock = startBlock
@@ -191,7 +213,7 @@ func (c *Crawler) Start() {
 		}
 
 		// Fetch the blocks and transactions for the range
-		blocks, transactions, blockIndex, transactionIndex, err := common.CrawlBlocks(client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(endBlock)))
+		blocks, transactions, blockIndex, transactionIndex, blocksCache, err := common.CrawlBlocks(client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(endBlock)))
 		if err != nil {
 			log.Fatalf("Failed to get blocks: %v", err)
 		}
@@ -216,15 +238,37 @@ func (c *Crawler) Start() {
 		for i, v := range blockIndex {
 			interfaceBlockIndex[i] = v
 		}
-		writeIndicesToFile(interfaceBlockIndex, filepath.Join(baseDir, "block_index.json"))
+		//writeIndicesToFile(interfaceBlockIndex, filepath.Join(baseDir, "block_index.json"))
+
+		indexer.WriteIndexesToDatabase(c.blockchain, interfaceBlockIndex, "block")
 
 		interfaceTransactionIndex := make([]interface{}, len(transactionIndex))
 		for i, v := range transactionIndex {
 			interfaceTransactionIndex[i] = v
 		}
-		writeIndicesToFile(interfaceTransactionIndex, filepath.Join(baseDir, "transaction_index.json"))
+		//writeIndicesToFile(interfaceTransactionIndex, filepath.Join(baseDir, "transaction_index.json"))
+
+		indexer.WriteIndexesToDatabase(c.blockchain, interfaceTransactionIndex, "transaction")
+
+		// events log
+		_, eventsIndex, err := common.CrawlEvents(client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(endBlock)), blocksCache)
+
+		if err != nil {
+			log.Fatalf("Failed to get events: %v", err)
+		}
 
 		// Convert transactionIndex to []interface{}
+
+		interfaceEventsIndex := make([]interface{}, len(eventsIndex))
+		for i, v := range eventsIndex {
+			interfaceEventsIndex[i] = v
+		}
+		//writeIndicesToFile(interfaceEventsIndex, filepath.Join(baseDir, "event_index.json"))
+
+		indexer.WriteIndexesToDatabase(c.blockchain, interfaceEventsIndex, "log")
+
+		// Write the events and their indices to disk
+		//writeProtoMessagesToFile(events, filepath.Join(batchDir, "events.proto"))
 
 		nextStartBlock := endBlock + 1
 		c.startBlock = nextStartBlock
