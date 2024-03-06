@@ -142,6 +142,10 @@ func WriteIndexesToDatabase(blockchain string, indexes []interface{}, indexType 
 	// transaction -> ethereum_transaction_index
 	// log -> ethereum_log_index
 
+	if len(indexes) == 0 {
+		return nil
+	}
+
 	switch indexType {
 	case "block":
 		var blockIndexes []BlockIndex
@@ -226,7 +230,7 @@ func writeTransactionIndexToDB(tableName string, indexes []TransactionIndex) err
 	}
 
 	// Attempt to insert indexes, handling conflicts as needed
-	result := tx.Table(indexes[0].TableName()).Clauses(clause.OnConflict{
+	result := tx.Table(tableName).Clauses(clause.OnConflict{
 		DoNothing: true,
 	}).Create(&indexes)
 	if result.Error != nil {

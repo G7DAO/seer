@@ -237,13 +237,6 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 		fmt.Println("Error fetching logs: ", err)
 		return nil, err
 	}
-	// transform blocksCache to map[string]indexer.BlockCahche
-
-	// var blocksCacheByHash map[string]indexer.BlockCahche
-
-	// for k, v := range blocksCache {
-	// 	blocksCacheByHash[v.BlockHash] = v
-	// }
 
 	var parsedEvents []*EventLogPolygon
 	for _, log := range logs {

@@ -42,9 +42,9 @@ type TransactionIndex struct {
 	BlockNumber          uint64
 	BlockHash            string
 	BlockTimestamp       uint64
-	TransactionHash      string
-	TransactionIndex     uint64
-	TransactionTimestamp uint64
+	TransactionHash      string // TODO: Rename this to Hash
+	TransactionIndex     uint64 // TODO: Rename this to Index
+	TransactionTimestamp uint64 // TODO: Remove this field
 	Filepath             string
 }
 
@@ -76,7 +76,7 @@ type LogIndex struct {
 	BlockHash       string
 	BlockTimestamp  uint64
 	TransactionHash string
-	Topic0          string
+	Topic0          string // TODO: 1) Add Topic1, Topic2. 2) Rename Topic0 to selector
 	LogIndex        uint64
 	Filepath        string
 }
