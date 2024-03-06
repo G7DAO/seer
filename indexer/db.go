@@ -90,15 +90,14 @@ func InitializeDB() error {
 		// Manually specify the table name for migration
 		DB.Table(tableName).AutoMigrate(&BlockIndex{})
 		// add unique constraint
-		constraintName := fmt.Sprintf("unique_idx_%s_block_number", chain)
-		if err := DB.Table(tableName).Exec(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (block_number)", tableName, constraintName)).Error; err != nil {
-			fmt.Printf("Error adding unique constraint to table %s: %v\n", tableName, err)
-			if DB.Name() == "sqlite" {
-				// SQLite does not support adding unique constraints after table creation
-				// so we ignore the error
-				fmt.Println("Ignoring error for SQLite")
+		if DB.Name() != "sqlite" {
+			constraintName := fmt.Sprintf("unique_idx_%s_block_number", chain)
+			if err := DB.Table(tableName).Exec(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (block_number)", tableName, constraintName)).Error; err != nil {
+				fmt.Printf("Error adding unique constraint to table %s: %v\n", tableName, err)
+				// Handle the error appropriately
 			}
-			// Handle the error appropriately
+		} else {
+			fmt.Println("Ignoring block unique constraint for SQLite on chain: ", chain)
 		}
 	}
 
@@ -108,12 +107,15 @@ func InitializeDB() error {
 		tableName := chain + "_transaction_index"
 		// Manually specify the table name for migration
 		DB.Table(tableName).AutoMigrate(&TransactionIndex{})
-
-		// add unique constraint
-		constraintName := fmt.Sprintf("unique_idx_%s_block_number_transaction_index", chain)
-		if err := DB.Table(tableName).Exec(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (block_number, transaction_hash)", tableName, constraintName)).Error; err != nil {
-			fmt.Printf("Error adding unique constraint to table %s: %v\n", tableName, err)
-			// Handle the error appropriately
+		if DB.Name() != "sqlite" {
+			// add unique constraint
+			constraintName := fmt.Sprintf("unique_idx_%s_block_number_transaction_index", chain)
+			if err := DB.Table(tableName).Exec(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (block_number, transaction_hash)", tableName, constraintName)).Error; err != nil {
+				fmt.Printf("Error adding unique constraint to table %s: %v\n", tableName, err)
+				// Handle the error appropriately
+			}
+		} else {
+			fmt.Println("Ignoring transaction unique constraint for SQLite on chain: ", chain)
 		}
 	}
 
@@ -124,28 +126,19 @@ func InitializeDB() error {
 		// Manually specify the table name for migration
 		DB.Table(tableName).AutoMigrate(&LogIndex{})
 
-		// add unique constraint
-		constraintName := fmt.Sprintf("unique_idx_%s_block_number_log_index", chain)
-		if err := DB.Table(tableName).Exec(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (block_number, transaction_hash, log_index)", tableName, constraintName)).Error; err != nil {
-			fmt.Printf("Error adding unique constraint to table %s: %v\n", tableName, err)
-			// Handle the error appropriately
+		if DB.Name() != "sqlite" {
+			// add unique constraint
+			constraintName := fmt.Sprintf("unique_idx_%s_block_number_log_index", chain)
+			if err := DB.Table(tableName).Exec(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (block_number, transaction_hash, log_index)", tableName, constraintName)).Error; err != nil {
+				fmt.Printf("Error adding unique constraint to table %s: %v\n", tableName, err)
+				// Handle the error appropriately
+			}
+		} else {
+			fmt.Println("Ignoring log unique constraint for SQLite on chain: ", chain)
 		}
 	}
 
-	// insert test block index
-	DB.Create(&BlockIndex{
-		chain:          "ethereum",
-		BlockNumber:    0,
-		BlockHash:      "0x0",
-		BlockTimestamp: 1234567890,
-		ParentHash:     "0x0",
-		Filepath:       "test",
-	})
-
-	// get test block index
-	var blockIndex BlockIndex
-	DB.First(&blockIndex, "block_number = ?", 0)
-	fmt.Println("blockIndex", blockIndex)
+	fmt.Println("Tables auto-migrated")
 
 	return nil
 }

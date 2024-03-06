@@ -198,10 +198,18 @@ type SingleEventJson struct {
 	Address          string   `json:"address"`
 	Topics           []string `json:"topics"`
 	Data             string   `json:"data"`
-	BlockNumber      uint64   `json:"blockNumber"`
 	TransactionHash  string   `json:"transactionHash"`
+	BlockNumber      string   `json:"blockNumber"`
 	BlockHash        string   `json:"blockHash"`
 	Removed          bool     `json:"removed"`
-	LogIndex         uint64   `json:"logIndex"`
-	TransactionIndex uint64   `json:"transactionIndex"`
+	LogIndex         string   `json:"logIndex"`
+	TransactionIndex string   `json:"transactionIndex"`
+}
+
+type QueryFilter struct {
+	BlockHash string     `json:"blockHash"`
+	FromBlock string     `json:"fromBlock"`
+	ToBlock   string     `json:"toBlock"`
+	Address   []string   `json:"address"`
+	Topics    [][]string `json:"topics"`
 }

@@ -1,7 +1,5 @@
 package indexer
 
-import "fmt"
-
 // gorm is a Go ORM library for working with databases
 
 // Define the interface for handling general index types such as blocks, transactions, and logs for fast access to blockchain data.
@@ -17,7 +15,6 @@ type BlockIndex struct {
 
 func (b BlockIndex) TableName() string {
 	// This is the table name in the database for particular chain
-	fmt.Println(b.chain + "_block_index")
 	return b.chain + "_block_index"
 }
 
@@ -115,4 +112,10 @@ type BlockCahche struct {
 	BlockNumber    uint64
 	BlockTimestamp uint64
 	BlockHash      string
+}
+
+type abiJob struct {
+	ABI             string
+	Chain           string
+	ContractAddress string
 }

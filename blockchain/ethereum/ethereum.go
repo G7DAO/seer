@@ -328,7 +328,6 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 	return eventsProto, eventsIndex, nil
 
 }
-
 func ToProtoSingleBlock(obj *BlockJson) *Block {
 	return &Block{
 		BlockNumber:   fromHex(obj.BlockNumber).Uint64(),
@@ -375,12 +374,14 @@ func ToProtoSingleTransaction(obj *SingleTransactionJson) *SingleTransaction {
 }
 
 func ToProtoSingleEventLog(obj *SingleEventJson) *EventLog {
+
 	return &EventLog{
 		Address:         obj.Address,
 		Topics:          obj.Topics,
 		Data:            obj.Data,
-		BlockNumber:     obj.BlockNumber,
+		BlockNumber:     fromHex(obj.BlockNumber).Uint64(),
 		TransactionHash: obj.TransactionHash,
+		LogIndex:        fromHex(obj.LogIndex).Uint64(),
 		BlockHash:       obj.BlockHash,
 		Removed:         obj.Removed,
 	}
