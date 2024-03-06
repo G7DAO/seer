@@ -93,6 +93,11 @@ func InitializeDB() error {
 		constraintName := fmt.Sprintf("unique_idx_%s_block_number", chain)
 		if err := DB.Table(tableName).Exec(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (block_number)", tableName, constraintName)).Error; err != nil {
 			fmt.Printf("Error adding unique constraint to table %s: %v\n", tableName, err)
+			if DB.Name() == "sqlite" {
+				// SQLite does not support adding unique constraints after table creation
+				// so we ignore the error
+				fmt.Println("Ignoring error for SQLite")
+			}
 			// Handle the error appropriately
 		}
 	}
