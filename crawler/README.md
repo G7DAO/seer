@@ -27,8 +27,15 @@ Depending of MOONSTREAM_INDEX_URI, you can use different databases.
 
 Before running the crawler, you need initialize the database with the following command:
 
+
+
+
 ```bash
-go run *.go index initialize
+./alembic.sh -c configs/alembic.dev.ini ensure_version
+```
+
+```bash
+./alembic.sh -c configs/alembic.dev.ini upgrade head
 ```
 
 ```bash
