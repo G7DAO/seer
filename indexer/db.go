@@ -1,144 +1,240 @@
 package indexer
 
 import (
+	"context"
 	"fmt"
-	"net/url"
 	"os"
+	"time"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // DB is a global variable to hold the GORM database connection.
-var DB *gorm.DB
 
-// InitializeDB initializes the database connection using GORM with the given connection URI.
-func InitializeDBConnection() error {
+type PostgreSQLpgx struct {
+	pool *pgxpool.Pool
+}
 
-	// read the connection string from the environment
+func NewPostgreSQLpgx() (*PostgreSQLpgx, error) {
 
-	connectionString := os.Getenv("MOONSTREAM_INDEX_URI")
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 
-	fmt.Println("connectionString", connectionString)
+	defer cancel()
 
-	uri, err := url.Parse(connectionString)
+	connect := os.Getenv("MOONSTREAM_INDEX_URI")
+
+	if connect == "" {
+		panic("MOONSTREAM_INDEX_URI is not set")
+	}
+
+	pool, err := pgxpool.New(ctx, os.Getenv("MOONSTREAM_INDEX_URI"))
 	if err != nil {
-		return fmt.Errorf("parsing connection string: %v", err)
-	}
-	fmt.Println("uri", uri.Scheme)
-
-	var gormDialector gorm.Dialector
-	switch uri.Scheme {
-	case "postgresql":
-		gormDialector = postgres.Open(connectionString)
-	case "sqlite":
-		// For SQLite, the connection string is the path after the scheme
-		path := connectionString[len("sqlite://"):]
-		fmt.Println("sqlite file path", path)
-		gormDialector = sqlite.Open(path)
-	default:
-		fmt.Println("unsupported database type")
-		return fmt.Errorf("unsupported database type: %s", uri.Scheme)
+		return nil, err
 	}
 
-	// Open the database connection using GORM
-	db, err := gorm.Open(gormDialector, &gorm.Config{
-		DisableForeignKeyConstraintWhenMigrating: true,
-	})
+	return &PostgreSQLpgx{
+		pool: pool,
+	}, nil
+}
+
+func (p *PostgreSQLpgx) Close() {
+	p.pool.Close()
+}
+
+func (p *PostgreSQLpgx) GetPool() *pgxpool.Pool {
+	return p.pool
+}
+
+// write to database
+func (p *PostgreSQLpgx) WriteIndex(index interface{}) error {
+	// write to database
+	return nil
+}
+
+// read from database
+
+func (p *PostgreSQLpgx) ReadBlockIndex(startBlock uint64, endBlock uint64) ([]BlockIndex, error) {
+
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
 	if err != nil {
-		return fmt.Errorf("opening database connection: %v", err)
+		return nil, err
 	}
 
-	// Store the GORM DB object in the global variable for later use
-	DB = db
+	defer conn.Release()
+
+	rows, err := conn.Query(context.Background(), "SELECT * FROM products WHERE id = $1", 1)
+
+	blocksIndex, err := pgx.CollectRows(rows, pgx.RowToStructByName[BlockIndex])
+
+	if err != nil {
+		return nil, err
+	}
+
+	return blocksIndex, nil
+
+}
+
+func (p *PostgreSQLpgx) ReadTransactionIndex(startBlock uint64, endBlock uint64) ([]TransactionIndex, error) {
+	// read from database
+	return nil, nil
+}
+
+func (p *PostgreSQLpgx) ReadLogIndex(startBlock uint64, endBlock uint64) ([]LogIndex, error) {
+
+	// read from database
+	return nil, nil
+}
+
+func (p *PostgreSQLpgx) writeBlockIndexToDB(tableName string, indexes []BlockIndex) error {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+	if err != nil {
+		fmt.Println("Connection error", err)
+		return err
+	}
+	defer conn.Release()
+
+	// Start building the bulk insert query
+	query := fmt.Sprintf("INSERT INTO %s ( block_number, block_hash, block_timestamp, parent_hash, path) VALUES ", tableName)
+
+	// Placeholder slice for query parameters
+	var params []interface{}
+
+	// Loop through indexes to append values and parameters
+	for i, index := range indexes {
+
+		query += fmt.Sprintf("( $%d, $%d, $%d, $%d, $%d),", i*5+1, i*5+2, i*5+3, i*5+4, i*5+5)
+		params = append(params, index.BlockNumber, index.BlockHash, index.BlockTimestamp, index.ParentHash, index.Path)
+	}
+
+	// Remove the last comma from the query
+	query = query[:len(query)-1]
+
+	// Add the ON CONFLICT clause - adjust based on your conflict resolution strategy
+	// For example, to do nothing on conflict with the 'id' column
+	query += " ON CONFLICT (block_number) DO NOTHING"
+
+	// Execute the query
+	_, err = conn.Exec(context.Background(), query, params...)
+	if err != nil {
+		fmt.Println("Error executing bulk insert", err)
+		return err
+	}
+
+	fmt.Println("Records inserted into", tableName)
 	return nil
 }
 
-// Example function to add a new BlockIndex
-func AddBlockIndex(index BlockIndex) error {
-	result := DB.Create(&index) // Pass a pointer of data to Create
-	if result.Error != nil {
-		return result.Error
-	}
-	return nil
-}
+func (p *PostgreSQLpgx) writeTransactionIndexToDB(tableName string, indexes []TransactionIndex) error {
 
-// Example function to query BlockIndexes
-func GetBlockIndexes() ([]BlockIndex, error) {
-	var indexes []BlockIndex
-	result := DB.Find(&indexes)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	return indexes, nil
-}
+	pool := p.GetPool()
 
-// InitializeDB initializes tables in the database
-func InitializeDB() error {
+	conn, err := pool.Acquire(context.Background())
 
-	// Auto-migrate block indexes
-	// per each chain type
+	if err != nil {
 
-	fmt.Println("Auto-migrating tables")
-	// block indexes
-
-	var chains = []string{"ethereum", "polygon"}
-
-	for _, chain := range chains {
-		tableName := chain + "_block_index"
-		// Manually specify the table name for migration
-		DB.Table(tableName).AutoMigrate(&BlockIndex{})
-		// add unique constraint
-		if DB.Name() != "sqlite" {
-			constraintName := fmt.Sprintf("unique_idx_%s_block_number", chain)
-			if err := DB.Table(tableName).Exec(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (block_number)", tableName, constraintName)).Error; err != nil {
-				fmt.Printf("Error adding unique constraint to table %s: %v\n", tableName, err)
-				// Handle the error appropriately
-			}
-		} else {
-			fmt.Println("Ignoring block unique constraint for SQLite on chain: ", chain)
-		}
+		return err
 	}
 
-	// transaction indexes
+	defer conn.Release()
 
-	for _, chain := range chains {
-		tableName := chain + "_transaction_index"
-		// Manually specify the table name for migration
-		DB.Table(tableName).AutoMigrate(&TransactionIndex{})
-		if DB.Name() != "sqlite" {
-			// add unique constraint
-			constraintName := fmt.Sprintf("unique_idx_%s_block_number_transaction_index", chain)
-			if err := DB.Table(tableName).Exec(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (block_number, transaction_hash)", tableName, constraintName)).Error; err != nil {
-				fmt.Printf("Error adding unique constraint to table %s: %v\n", tableName, err)
-				// Handle the error appropriately
-			}
-		} else {
-			fmt.Println("Ignoring transaction unique constraint for SQLite on chain: ", chain)
-		}
+	// Start building the bulk insert query
+	query := fmt.Sprintf("INSERT INTO %s (block_number, block_hash,  hash, index, path) VALUES ", tableName)
+
+	// Placeholder slice for query parameters
+	var params []interface{}
+
+	// Loop through indexes to append values and parameters
+
+	for i, index := range indexes {
+
+		query += fmt.Sprintf("($%d, $%d, $%d, $%d, $%d),", i*5+1, i*5+2, i*5+3, i*5+4, i*5+5)
+		params = append(params, index.BlockNumber, index.BlockHash, index.TransactionHash, index.TransactionIndex, index.Path)
+		//fmt.Println(uuid, index.BlockNumber, index.BlockHash, index.BlockTimestamp, index.TransactionHash, index.TransactionIndex, index.Path)
 	}
 
-	// log indexes
+	// Remove the last comma from the query
+	query = query[:len(query)-1]
 
-	for _, chain := range chains {
-		tableName := chain + "_log_index"
-		// Manually specify the table name for migration
-		DB.Table(tableName).AutoMigrate(&LogIndex{})
+	// Add the ON CONFLICT clause - adjust based on your conflict resolution strategy
 
-		if DB.Name() != "sqlite" {
-			// add unique constraint
-			constraintName := fmt.Sprintf("unique_idx_%s_block_number_log_index", chain)
-			if err := DB.Table(tableName).Exec(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (block_number, transaction_hash, log_index)", tableName, constraintName)).Error; err != nil {
-				fmt.Printf("Error adding unique constraint to table %s: %v\n", tableName, err)
-				// Handle the error appropriately
-			}
-		} else {
-			fmt.Println("Ignoring log unique constraint for SQLite on chain: ", chain)
-		}
+	query += " ON CONFLICT (hash) DO NOTHING"
+
+	// Execute the query
+
+	_, err = conn.Exec(context.Background(), query, params...)
+
+	if err != nil {
+
+		fmt.Println("Error executing bulk insert", err)
+
+		return err
+
 	}
 
-	fmt.Println("Tables auto-migrated")
+	fmt.Println("Records inserted into", tableName)
 
 	return nil
+
+}
+
+func (p *PostgreSQLpgx) writeLogIndexToDB(tableName string, indexes []LogIndex) error {
+
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
+	if err != nil {
+
+		return err
+	}
+
+	defer conn.Release()
+
+	// Start building the bulk insert query
+	query := fmt.Sprintf("INSERT INTO %s (address, block_hash, selector, topic1, topic2, transaction_hash, log_index, path) VALUES ", tableName)
+
+	// Placeholder slice for query parameters
+
+	var params []interface{}
+
+	// Loop through indexes to append values and parameters
+
+	for i, index := range indexes {
+
+		query += fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d),", i*8+1, i*8+2, i*8+3, i*8+4, i*8+5, i*8+6, i*8+7, i*8+8)
+
+		params = append(params, index.Address, index.BlockHash, index.Selector, index.Topic1, index.Topic2, index.TransactionHash, index.LogIndex, index.Path)
+
+	}
+
+	// Remove the last comma from the query
+
+	query = query[:len(query)-1]
+
+	// Add the ON CONFLICT clause - adjust based on your conflict resolution strategy
+
+	query += " ON CONFLICT (transaction_hash, log_index) DO NOTHING"
+
+	// Execute the query
+
+	_, err = conn.Exec(context.Background(), query, params...)
+
+	if err != nil {
+
+		fmt.Println("Error executing bulk insert", err)
+
+		return err
+
+	}
+
+	fmt.Println("Records inserted into", tableName)
+
+	return nil
+
 }

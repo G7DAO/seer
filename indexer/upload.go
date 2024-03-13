@@ -7,9 +7,20 @@ import (
 	"io"
 	"os"
 	"strings"
-
-	"gorm.io/gorm/clause"
 )
+
+var Actions *PostgreSQLpgx
+var err error
+
+// init initializes the Actions variable with a new PostgreSQLpgx instance.
+func InitDBConnection() {
+
+	Actions, err = NewPostgreSQLpgx()
+
+	if err != nil {
+		fmt.Println("Error initializing Actions: ", err)
+	}
+}
 
 func WriteIndicesToFile(indices []interface{}, filePath string) error {
 
@@ -136,11 +147,7 @@ func filterDuplicates(indexType string, existingIndices, newIndices []interface{
 }
 
 func WriteIndexesToDatabase(blockchain string, indexes []interface{}, indexType string) error {
-	fmt.Println("Writing index to database")
-	// chain to table name
-	// block -> ethereum_block_index
-	// transaction -> ethereum_transaction_index
-	// log -> ethereum_log_index
+	// Implement logic to write indexes to the database
 
 	if len(indexes) == 0 {
 		return nil
@@ -154,11 +161,10 @@ func WriteIndexesToDatabase(blockchain string, indexes []interface{}, indexType 
 			if !ok {
 				return errors.New("invalid type for block index")
 			}
-			fmt.Println(index.chain)
 			index.chain = blockchain
 			blockIndexes = append(blockIndexes, index)
 		}
-		return writeBlockIndexToDB(blockchain+"_block_index", blockIndexes)
+		return Actions.writeBlockIndexToDB(blockchain+"_blocks", blockIndexes)
 
 	case "transaction":
 		var transactionIndexes []TransactionIndex
@@ -170,7 +176,7 @@ func WriteIndexesToDatabase(blockchain string, indexes []interface{}, indexType 
 			index.chain = blockchain
 			transactionIndexes = append(transactionIndexes, index)
 		}
-		return writeTransactionIndexToDB(blockchain+"_transaction_index", transactionIndexes)
+		return Actions.writeTransactionIndexToDB(blockchain+"_transactions", transactionIndexes)
 
 	case "log":
 		var logIndexes []LogIndex
@@ -182,134 +188,9 @@ func WriteIndexesToDatabase(blockchain string, indexes []interface{}, indexType 
 			index.chain = blockchain
 			logIndexes = append(logIndexes, index)
 		}
-		return writeLogIndexToDB(blockchain+"_log_index", logIndexes)
+		return Actions.writeLogIndexToDB(blockchain+"_logs", logIndexes)
 
 	default:
 		return errors.New("unsupported index type")
 	}
-}
-
-func writeBlockIndexToDB(tableName string, indexes []BlockIndex) error {
-	// Start a transaction
-
-	fmt.Println("Writing block index to database")
-	fmt.Println(indexes[0].TableName())
-	tx := DB.Begin()
-	if tx.Error != nil {
-		fmt.Println("Error starting transaction: ", tx.Error)
-		return fmt.Errorf("starting transaction: %w", tx.Error)
-
-	}
-
-	// Attempt to insert indexes, handling conflicts as needed
-	result := tx.Table(indexes[0].TableName()).Clauses(clause.OnConflict{
-		DoNothing: true,
-	}).Create(&indexes)
-	if result.Error != nil {
-		tx.Rollback() // Rollback on error
-		fmt.Println("Error inserting block indexes: ", result.Error)
-		return fmt.Errorf("inserting block indexes: %w", result.Error)
-	}
-
-	// Commit the transaction if all went well
-	if commitErr := tx.Commit().Error; commitErr != nil {
-		fmt.Println("Error committing transaction: ", commitErr)
-		return fmt.Errorf("committing transaction: %w", commitErr)
-	}
-
-	return nil // Return nil on success
-}
-
-func writeTransactionIndexToDB(tableName string, indexes []TransactionIndex) error {
-	// Insert with dedication to the database
-
-	tx := DB.Begin()
-	if tx.Error != nil {
-		fmt.Println("Error starting transaction: ", tx.Error)
-		return fmt.Errorf("starting transaction: %w", tx.Error)
-	}
-
-	// Attempt to insert indexes, handling conflicts as needed
-	result := tx.Table(tableName).Clauses(clause.OnConflict{
-		DoNothing: true,
-	}).Create(&indexes)
-	if result.Error != nil {
-		tx.Rollback() // Rollback on error
-		fmt.Println("Error inserting transaction indexes: ", result.Error)
-		return fmt.Errorf("inserting transaction indexes: %w", result.Error)
-	}
-
-	// Commit the transaction if all went well
-	if commitErr := tx.Commit().Error; commitErr != nil {
-		DB.Rollback()
-		fmt.Println("Error committing transaction: ", commitErr)
-		return fmt.Errorf("committing transaction: %w", commitErr)
-	}
-
-	return nil
-}
-
-func writeLogIndexToDB(tableName string, indexes []LogIndex) error {
-
-	fmt.Println("Writing log index to database")
-
-	tx := DB.Begin()
-	if tx.Error != nil {
-		fmt.Println("Error starting transaction: ", tx.Error)
-		return fmt.Errorf("starting transaction: %w", tx.Error)
-	}
-
-	batchSize := 1000
-	for i := 0; i < len(indexes); i += batchSize {
-		end := i + batchSize
-		if end > len(indexes) {
-			end = len(indexes)
-		}
-
-		// Insert the current batch of indexes.
-		result := tx.Table(tableName).Clauses(clause.OnConflict{
-			DoNothing: true,
-		}).Create(indexes[i:end])
-
-		if result.Error != nil {
-			tx.Rollback() // Rollback on error
-			fmt.Println("Error inserting log indexes: ", result.Error)
-			return fmt.Errorf("inserting log indexes: %w", result.Error)
-		}
-	}
-
-	// Commit the transaction if all went well
-	if commitErr := tx.Commit().Error; commitErr != nil {
-		fmt.Println("Error committing transaction: ", commitErr)
-		return fmt.Errorf("committing transaction: %w", commitErr)
-	}
-
-	return nil
-}
-
-// ReadIndexFromDatabase reads indices from the database based on the type and block range.
-func ReadIndexFromDatabase(chain string, addresses, startBlock, endBlock uint64) ([]interface{}, error) {
-
-	var indexRecords []interface{} // Assuming IndexRecord is the correct struct
-
-	// Assuming DB is correctly set up and addresses is a slice that can be used in the query
-
-	event_table_name := chain + "_log_indexes"
-
-	records := DB.Table(event_table_name).
-		Joins("JOIN transactions ON transactions.hash = (?).transaction_hash", event_table_name).
-		Where("log_indexes.block_number >= ? AND log_indexes.block_number <= ? AND transactions.to IN (?)", startBlock, endBlock, addresses).
-		Find(&indexRecords)
-
-	if records.Error != nil {
-		return nil, records.Error
-	}
-
-	var indices []interface{}
-	for _, record := range indexRecords { // Now iterating over the slice of results
-		indices = append(indices, record)
-	}
-
-	return indices, nil
-
 }

@@ -79,13 +79,13 @@ func writeProtoMessagesToFile(messages []proto.Message, filePath string) {
 
 func updateBlockIndexFilepaths(indices []indexer.BlockIndex, baseDir string) {
 	for i, _ := range indices {
-		indices[i].Filepath = filepath.Join(baseDir, "blocks.proto")
+		indices[i].Path = filepath.Join(baseDir, "blocks.proto")
 	}
 }
 
 func updateTransactionIndexFilepaths(indices []indexer.TransactionIndex, baseDir string) {
 	for i, _ := range indices {
-		indices[i].Filepath = filepath.Join(baseDir, "transactions.proto")
+		indices[i].Path = filepath.Join(baseDir, "transactions.proto")
 	}
 }
 

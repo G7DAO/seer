@@ -10,7 +10,7 @@ type BlockIndex struct {
 	BlockHash      string
 	BlockTimestamp uint64
 	ParentHash     string
-	Filepath       string
+	Path           string
 }
 
 func (b BlockIndex) TableName() string {
@@ -23,14 +23,14 @@ func (b *BlockIndex) SetChain(chain string) {
 }
 
 // NewBlockIndex creates a new instance of BlockIndex with the chain set.
-func NewBlockIndex(chain string, blockNumber uint64, blockHash string, blockTimestamp uint64, parentHash string, filepath string) BlockIndex {
+func NewBlockIndex(chain string, blockNumber uint64, blockHash string, blockTimestamp uint64, parentHash string, path string) BlockIndex {
 	return BlockIndex{
 		chain:          chain,
 		BlockNumber:    blockNumber,
 		BlockHash:      blockHash,
 		BlockTimestamp: blockTimestamp,
 		ParentHash:     parentHash,
-		Filepath:       filepath,
+		Path:           path,
 	}
 }
 
@@ -42,7 +42,7 @@ type TransactionIndex struct {
 	TransactionHash      string // TODO: Rename this to Hash
 	TransactionIndex     uint64 // TODO: Rename this to Index
 	TransactionTimestamp uint64 // TODO: Remove this field
-	Filepath             string
+	Path                 string
 }
 
 func (t TransactionIndex) TableName() string {
@@ -54,7 +54,7 @@ func (t TransactionIndex) SetChain(chain string) {
 	t.chain = chain
 }
 
-func NewTransactionIndex(chain string, blockNumber uint64, blockHash string, blockTimestamp uint64, transactionHash string, transactionIndex uint64, transactionTimestamp uint64, filepath string) TransactionIndex {
+func NewTransactionIndex(chain string, blockNumber uint64, blockHash string, blockTimestamp uint64, transactionHash string, transactionIndex uint64, transactionTimestamp uint64, path string) TransactionIndex {
 	return TransactionIndex{
 		chain:                chain,
 		BlockNumber:          blockNumber,
@@ -63,7 +63,7 @@ func NewTransactionIndex(chain string, blockNumber uint64, blockHash string, blo
 		TransactionHash:      transactionHash,
 		TransactionIndex:     transactionIndex,
 		TransactionTimestamp: transactionTimestamp,
-		Filepath:             filepath,
+		Path:                 path,
 	}
 }
 
@@ -72,10 +72,13 @@ type LogIndex struct {
 	BlockNumber     uint64
 	BlockHash       string
 	BlockTimestamp  uint64
+	Address         string
 	TransactionHash string
-	Topic0          string // TODO: 1) Add Topic1, Topic2. 2) Rename Topic0 to selector
+	Selector        *string // TODO: 1) Add Topic1, Topic2. 2) Rename Topic0 to selector
+	Topic1          *string
+	Topic2          *string
 	LogIndex        uint64
-	Filepath        string
+	Path            string
 }
 
 func (l LogIndex) TableName() string {
@@ -87,25 +90,28 @@ func (l LogIndex) SetChain(chain string) {
 	l.chain = chain
 }
 
-func NewLogIndex(chain string, blockNumber uint64, blockHash string, transactionHash string, BlockTimestamp uint64, topic0 string, logIndex uint64, filepath string) LogIndex {
+func NewLogIndex(chain string, address string, blockNumber uint64, blockHash string, transactionHash string, BlockTimestamp uint64, topic0 *string, topic1 *string, topic2 *string, logIndex uint64, path string) LogIndex {
 	return LogIndex{
 		chain:           chain,
+		Address:         address,
 		BlockNumber:     blockNumber,
 		BlockHash:       blockHash,
 		BlockTimestamp:  BlockTimestamp,
 		TransactionHash: transactionHash,
-		Topic0:          topic0,
+		Selector:        topic0,
+		Topic1:          topic1,
+		Topic2:          topic2,
 		LogIndex:        logIndex,
-		Filepath:        filepath,
+		Path:            path,
 	}
 }
 
 type IndexType string
 
 const (
-	BlockIndexType       IndexType = "block"
-	TransactionIndexType IndexType = "transaction"
-	LogIndexType         IndexType = "log"
+	BlockIndexType       IndexType = "blocks"
+	TransactionIndexType IndexType = "transactions"
+	LogIndexType         IndexType = "logs"
 )
 
 type BlockCahche struct {

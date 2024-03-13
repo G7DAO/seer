@@ -6,9 +6,13 @@ from sqlalchemy import (
     Column,
     DateTime,
     Integer,
+    Index,
     MetaData,
     Text,
-    Boolean
+    Boolean,
+    UniqueConstraint,
+    ForeignKey,
+    PrimaryKeyConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.compiler import compiles
@@ -40,97 +44,159 @@ def pg_utcnow(element, compiler, **kwargs):
     return "TIMEZONE('utc', statement_timestamp())"
 
 
-class EthereumBlockIndex(Base):
-    __tablename__ = "ethereum_index"
+class EvmBasedBlocks(Base):
+    __abstract__ = True
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    block_number = Column(BigInteger, nullable=False, index=True)
-    block_hash = Column(VARCHAR(256), nullable=False, index=True)
-    block_timestamp = Column(DateTime, nullable=False, index=True)
+    block_number = Column(BigInteger, primary_key=True, nullable=False, index=True)
+    block_hash = Column(VARCHAR(256), nullable=False, index=False)
+    block_timestamp = Column(BigInteger, nullable=False, index=True)
     parent_hash = Column(VARCHAR(256), nullable=False)
     path = Column(Text, nullable=False)
     indexed_at = Column(
         DateTime(timezone=True), server_default=utcnow(), nullable=False
     )
 
-class EthereumTransactionIndex(Base):
-    __tablename__ = "ethereum_transaction_index"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    block_number = Column(BigInteger, nullable=False, index=True)
-    block_hash = Column(VARCHAR(256), nullable=False, index=True)
-    block_timestamp = Column(DateTime, nullable=False, index=True)
-    transaction_hash = Column(VARCHAR(256), nullable=False, index=True)
-    transaction_index = Column(BigInteger, nullable=False, index=True)
-    path = Column(Text, nullable=False)
-    indexed_at = Column(
-        DateTime(timezone=True), server_default=utcnow(), nullable=False
+class EvmBasedTransactions(Base):
+    __abstract__ = True
+
+    hash = Column(
+        VARCHAR(256), primary_key=True, unique=True, nullable=False, index=True
     )
-
-class EthereumLogIndex(Base):
-    __tablename__ = "ethereum_log_index"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    block_number = Column(BigInteger, nullable=False, index=True)
-    block_hash = Column(VARCHAR(256), nullable=False, index=True)
-    block_timestamp = Column(DateTime, nullable=False, index=True)
-    transaction_hash = Column(VARCHAR(256), nullable=False, index=True)
-    selector = Column(VARCHAR(256), nullable=False, index=True)
-    topic1 = Column(VARCHAR(256), nullable=False, index=True)
-    topic2 = Column(VARCHAR(256), nullable=False, index=True)
-    log_index = Column(BigInteger, nullable=False, index=True)
+    block_hash = Column(VARCHAR(256), nullable=False, index=False)
+    index = Column(BigInteger, nullable=False, index=True)
     path = Column(Text, nullable=False)
     indexed_at = Column(
         DateTime(timezone=True), server_default=utcnow(), nullable=False
     )
 
 
-class PolygonBlockIndex(Base):
-    __tablename__ = "polygon_index"
+class EvmBasedLogs(Base):
+    __abstract__ = True
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    block_number = Column(BigInteger, nullable=False, index=True)
-    block_hash = Column(VARCHAR(256), nullable=False, index=True)
-    block_timestamp = Column(DateTime, nullable=False, index=True)
-    parent_hash = Column(VARCHAR(256), nullable=False, index=True)
-    path = Column(Text, nullable=False)
-    indexed_at = Column(
-        DateTime(timezone=True), server_default=utcnow(), nullable=False
-    )
-
-class PolygonTransactionIndex(Base):
-    __tablename__ = "polygon_transaction_index"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    block_number = Column(BigInteger, nullable=False, index=True)
-    block_hash = Column(VARCHAR(256), nullable=False, index=True)
-    block_timestamp = Column(DateTime, nullable=False, index=True)
-    transaction_hash = Column(VARCHAR(256), nullable=False, index=True)
-    transaction_index = Column(BigInteger, nullable=False, index=True)
-    path = Column(Text, nullable=False)
-    indexed_at = Column(
-        DateTime(timezone=True), server_default=utcnow(), nullable=False
-    )
-
-class PolygonLogIndex(Base):
-    __tablename__ = "polygon_log_index"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    block_number = Column(BigInteger, nullable=False, index=True)
-    block_hash = Column(VARCHAR(256), nullable=False, index=True)
-    block_timestamp = Column(DateTime, nullable=False, index=True)
-    transaction_hash = Column(VARCHAR(256), nullable=False, index=True)
-    selector = Column(VARCHAR(256), nullable=False, index=True)
-    topic1 = Column(VARCHAR(256), nullable=False, index=True)
-    topic2 = Column(VARCHAR(256), nullable=False, index=True)
+    block_hash = Column(VARCHAR(256), nullable=False, index=False)
+    address = Column(VARCHAR(256), nullable=False, index=True)
+    selector = Column(VARCHAR(256), nullable=True, index=False)
+    topic1 = Column(VARCHAR(256), nullable=True, index=False)
+    topic2 = Column(VARCHAR(256), nullable=True, index=False)
     log_index = Column(BigInteger, nullable=False, index=False)
     path = Column(Text, nullable=False)
     indexed_at = Column(
         DateTime(timezone=True), server_default=utcnow(), nullable=False
     )
 
+
+class EvmBasedReorgs(Base):
+    __abstract__ = True
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    block_number = Column(BigInteger, nullable=False, index=True)
+    block_hash = Column(VARCHAR(256), nullable=False, index=True)
+
+
+### Ethereum
+
+
+class EthereumBlockIndex(EvmBasedBlocks):
+    __tablename__ = "ethereum_blocks"
+
+
+class EthereumTransactionIndex(EvmBasedTransactions):
+    __tablename__ = "ethereum_transactions"
+
+    block_number = Column(
+        BigInteger,
+        ForeignKey("ethereum_blocks.block_number", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+
+class EthereumLogIndex(EvmBasedLogs):
+    __tablename__ = "ethereum_logs"
+
+    __table_args__ = (
+        Index(
+            "idx_ethereum_logs_block_hash_log_index",
+            "block_hash",
+            "log_index",
+            unique=True,
+        ),
+        UniqueConstraint(
+            "transaction_hash",
+            "log_index",
+            name="uq_ethereum_log_index_transaction_hash_log_index",
+        ),
+        PrimaryKeyConstraint(
+            "transaction_hash", "log_index", name="pk_ethereum_log_index"
+        ),
+    )
+    transaction_hash = Column(
+        VARCHAR(256),
+        ForeignKey("ethereum_transactions.hash", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+
+class EthereumReorgs(EvmBasedReorgs):
+    __tablename__ = "ethereum_reorgs"
+
+
+### Polygon
+
+
+class PolygonBlockIndex(EvmBasedBlocks):
+    __tablename__ = "polygon_blocks"
+
+
+class PolygonTransactionIndex(EvmBasedTransactions):
+    __tablename__ = "polygon_transactions"
+
+    block_number = Column(
+        BigInteger,
+        ForeignKey("polygon_blocks.block_number", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+
+class PolygonLogIndex(EvmBasedLogs):
+
+    __tablename__ = "polygon_logs"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "transaction_hash",
+            "log_index",
+            name="uq_polygon_log_index_transaction_hash_log_index",
+        ),
+        PrimaryKeyConstraint(
+            "transaction_hash", "log_index", name="pk_polygon_log_index"
+        ),
+    )
+    transaction_hash = Column(
+        VARCHAR(256),
+        ForeignKey("polygon_transactions.hash", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+
+class PolygonReorgs(EvmBasedReorgs):
+    __tablename__ = "polygon_reorgs"
+
+
+### ABI Jobs
+
+
 class AbiJobs(Base):
     __tablename__ = "abi_jobs"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "chain", "address", "abi_selector", "customer_id", name="uq_abi_jobs"
+        ),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     address = Column(VARCHAR(256), nullable=False, index=True)
@@ -150,5 +216,3 @@ class AbiJobs(Base):
     updated_at = Column(
         DateTime(timezone=True), server_default=utcnow(), nullable=False
     )
-
-

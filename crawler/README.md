@@ -14,13 +14,9 @@ make
 Crawler variables
 
 ```env
-export MOONSTREAM_INDEX_URI="sqlite://~/seer/moonstream.db"
+export MOONSTREAM_INDEX_URI="driver://user:pass@localhost/dbname"
 export INFURA_KEY="infura_key"
 ```
-
-Depending of MOONSTREAM_INDEX_URI, you can use different databases.
-
-
 
 ### Usage run crawler
 

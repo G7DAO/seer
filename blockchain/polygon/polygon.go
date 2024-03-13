@@ -216,6 +216,8 @@ func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*BlockPolygon,
 		// Example: Parsing transactions within the block
 		for _, txJson := range blockJson.Transactions {
 
+			txJson.BlockTimestamp = blockJson.Timestamp
+
 			parsedTransaction := ToProtoSingleTransaction(txJson)
 			parsedTransactions = append(parsedTransactions, parsedTransaction)
 		}
@@ -265,13 +267,13 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int) ([]proto.Message, []proto
 			BlockHash:      block.Hash,
 			BlockTimestamp: block.Timestamp,
 		} // Assuming block.BlockNumber is int64 and block.Hash is string
-		blockIndex = append(blockIndex, indexer.NewBlockIndex("polygon",
-			block.BlockNumber,
-			block.Hash,
-			block.Timestamp,
-			block.ParentHash,
-			"",
-		))
+		blockIndex = append(blockIndex, indexer.BlockIndex{
+			BlockNumber:    block.BlockNumber,
+			BlockHash:      block.Hash,
+			BlockTimestamp: block.Timestamp,
+			ParentHash:     block.ParentHash,
+			Path:           "",
+		})
 	}
 
 	var transactionsProto []proto.Message
@@ -286,7 +288,7 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int) ([]proto.Message, []proto
 			TransactionHash:      transaction.Hash,
 			TransactionIndex:     transaction.TransactionIndex,
 			TransactionTimestamp: transaction.BlockTimestamp,
-			Filepath:             "",
+			Path:                 "",
 		})
 	}
 
@@ -306,22 +308,32 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 	for _, event := range parsedEvents {
 		eventsProto = append(eventsProto, event) // Assuming event is already a proto.Message
 
-		var topics []string
+		var topic0, topic1, topic2 *string
 
 		if len(event.Topics) == 0 {
-			topics = []string{""}
+			fmt.Println("No topics found for event: ", event)
 		} else {
-			topics = event.Topics
+			topic0 = &event.Topics[0]
+		}
+		// Assign topics based on availability
+		if len(event.Topics) > 1 {
+			topic1 = &event.Topics[1] // Second topic, if present
+		}
+		if len(event.Topics) > 2 {
+			topic2 = &event.Topics[2] // Third topic, if present
 		}
 
 		eventsIndex = append(eventsIndex, indexer.LogIndex{
+			Address:         event.Address,
 			BlockNumber:     event.BlockNumber,
 			BlockHash:       event.BlockHash,
 			BlockTimestamp:  blocksCahche[event.BlockNumber].BlockTimestamp,
 			TransactionHash: event.TransactionHash,
-			Topic0:          topics[0],
+			Selector:        topic0, // First topic
+			Topic1:          topic1,
+			Topic2:          topic2,
 			LogIndex:        event.LogIndex,
-			Filepath:        "",
+			Path:            "",
 		})
 	}
 

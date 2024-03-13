@@ -137,7 +137,7 @@ func CreateCrawlerCommand() *cobra.Command {
 		Short: "Generate crawlers for various blockchains",
 		Run: func(cmd *cobra.Command, args []string) {
 
-			indexer.InitializeDBConnection()
+			indexer.InitDBConnection()
 
 			// read the blockchain url from $INFURA_URL
 			// if it is not set, use the default url
@@ -196,9 +196,7 @@ func CreateIndexCommand() *cobra.Command {
 		Use:   "initialize",
 		Short: "Initialize the index storage",
 		Run: func(cmd *cobra.Command, args []string) {
-			indexer.InitializeDBConnection()
-			fmt.Println(indexer.DB)
-			indexer.InitializeDB()
+			fmt.Println("Initializing index storage from go")
 		},
 	}
 
