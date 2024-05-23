@@ -1,9 +1,8 @@
 package crawler
 
 import (
-	"encoding/json"
+	"encoding/base64"
 	"fmt"
-	"io"
 	"log"
 	"math/big"
 	"os"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/moonstream-to/seer/blockchain/common"
 	"github.com/moonstream-to/seer/indexer"
+	"github.com/moonstream-to/seer/storage"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -26,20 +26,6 @@ type Crawler struct {
 	force          bool
 	baseDir        string
 	providerURI    string
-}
-
-var infuraKey string
-
-// read from env
-func init() {
-
-	infuraKey = os.Getenv("INFURA_KEY")
-}
-
-// mapping of blockchain type to the corresponding infura URL
-var infuraURLs = map[string]string{
-	"ethereum": "https://mainnet.infura.io/v3/",
-	"polygon":  "https://polygon-mainnet.infura.io/v3/",
 }
 
 // NewCrawler creates a new crawler instance with the given blockchain handler.
@@ -59,22 +45,20 @@ func NewCrawler(chain string, startBlock uint64, endBlock uint64, timeout int, b
 
 }
 
-func writeProtoMessagesToFile(messages []proto.Message, filePath string) {
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		log.Fatalf("Failed to open file %s: %v", filePath, err)
-	}
-	defer file.Close()
-
-	for _, msg := range messages {
-		data, err := proto.Marshal(msg)
-		if err != nil {
-			log.Fatalf("Failed to marshal proto message: %v", err)
+// Utility function to handle retries
+func retryOperation(attempts int, sleep time.Duration, fn func() error) error {
+	for i := 0; i < attempts; i++ {
+		if err := fn(); err != nil {
+			if i == attempts-1 {
+				return err
+			}
+			log.Printf("Attempt %d/%d failed: %v. Retrying in %s...", i+1, attempts, err, sleep)
+			time.Sleep(sleep)
+			continue
 		}
-		if _, err := file.Write(data); err != nil {
-			log.Fatalf("Failed to write data to file: %v", err)
-		}
+		return nil
 	}
+	return fmt.Errorf("failed after %d attempts", attempts)
 }
 
 func updateBlockIndexFilepaths(indices []indexer.BlockIndex, baseDir string) {
@@ -89,70 +73,34 @@ func updateTransactionIndexFilepaths(indices []indexer.TransactionIndex, baseDir
 	}
 }
 
-// writeIndicesToFile serializes and writes a batch of indices to a specified JSON file.
-func writeIndicesToFile(indices []interface{}, filePath string) { // small cheating
-	// Open or create the file for appending
-	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644) // that cool
-	if err != nil {
-		log.Fatalf("Failed to open file %s for writing: %v", filePath, err)
+func UpdateEventIndexFilepaths(indices []indexer.LogIndex, baseDir string) {
+	for i, _ := range indices {
+		indices[i].Path = filepath.Join(baseDir, "logs.proto")
 	}
-	defer file.Close()
-
-	// Serialize and write each index in the batch
-	encoder := json.NewEncoder(file)
-	for _, index := range indices {
-		if err := encoder.Encode(index); err != nil {
-			log.Fatalf("Failed to encode index to %s: %v", filePath, err)
-		}
-	}
-}
-
-// read latest indexed block
-// readLatestIndexedBlock reads the latest indexed block from a JSON file
-func readLatestIndexedBlock() (uint64, error) {
-	// Open the file for reading
-	file, err := os.Open("data/block_index.json")
-	if err != nil {
-		return 0, err
-	}
-	defer file.Close()
-
-	// Initialize a decoder that reads from the file
-	decoder := json.NewDecoder(file)
-	var blockIndex indexer.BlockIndex
-	var lastBlockNumber uint64 // Variable to store the last read block number
-
-	// Read the file line by line
-	for {
-		// Decode the next JSON object into the BlockIndex struct
-		if err := decoder.Decode(&blockIndex); err != nil {
-			if err == io.EOF {
-				// If EOF is reached, break out of the loop
-				break
-			} else {
-				// For any other error, return it
-				return 0, err
-			}
-		}
-		// Successfully decoded, update lastBlockNumber
-		lastBlockNumber = uint64(blockIndex.BlockNumber)
-	}
-
-	// Return the last block number read from the file
-	return lastBlockNumber, nil
 }
 
 // Start initiates the crawling process for the configured blockchain.
 func (c *Crawler) Start() {
 
 	chainType := c.blockchain
+
+	// Initialize the storage instance
+
+	storageInstance, err := storage.NewStorage()
+
+	if err != nil {
+
+		log.Fatalf("Failed to create storage instance: %v", err)
+		panic(err)
+	}
+
 	var url string
 
 	fmt.Printf("providerURI: %s\n", c.providerURI)
 	if c.providerURI != "" {
 		url = c.providerURI
 	} else {
-		url = infuraURLs[chainType] + infuraKey
+		url = InfuraURLs[chainType]
 	}
 
 	log.Printf("Starting crawler using blockchain URL: %s", url)
@@ -162,8 +110,11 @@ func (c *Crawler) Start() {
 	}
 
 	latestBlockNumber, err := client.GetLatestBlockNumber()
-	// Initial setup
-	//baseDir := "data"
+
+	if err != nil {
+		log.Fatalf("Failed to get latest block number: %v", err)
+	}
+
 	crawlBatchSize := uint64(5) // Crawl in batches of 10
 	confirmations := uint64(10) // Consider 10 confirmations to ensure block finality
 
@@ -180,10 +131,17 @@ func (c *Crawler) Start() {
 		}
 
 	} else {
-		latestIndexedBlock, err := readLatestIndexedBlock()
+		latestIndexedBlock, err := indexer.Actions.GetLatestBlockNumber(chainType)
+
+		// if err no rows in result set then set startBlock to latestBlockNumber from the blockchain
 
 		if err != nil {
-			log.Fatalf("Failed to read latest indexed block: %v", err)
+			if err.Error() == "no rows in result set" {
+				c.startBlock = latestBlockNumber.Uint64() - uint64(confirmations) - 100
+			} else {
+				log.Fatalf("Failed to get latest indexed block: %v", err)
+			}
+
 		}
 
 		if latestIndexedBlock != uint64(0) {
@@ -194,12 +152,29 @@ func (c *Crawler) Start() {
 	endBlock := uint64(0)
 	safeBlock := uint64(0)
 
+	fmt.Printf("Start block: %d\n", c.startBlock)
+
+	retryWaitTime := 10 * time.Second
+	waitForBlocksTime := retryWaitTime
+	maxWaitForBlocksTime := 12 * retryWaitTime
+	retryAttempts := 3
+
+	c.baseDir = filepath.Join(c.baseDir, SeerCrawlerStoragePrefix, chainType)
+
+	// Crawling loop
 	for {
-		// Fetch the latest block number at the start of each iteration
+
 		latestBlockNumber, err = client.GetLatestBlockNumber()
 
 		if err != nil {
 			log.Fatalf("Failed to get latest block number: %v", err)
+			// Retry the operation
+			time.Sleep(retryWaitTime)
+			retryAttempts--
+			if retryAttempts == 0 {
+				log.Fatalf("Failed to get latest block number after %d attempts", retryAttempts)
+			}
+			continue
 		}
 
 		safeBlock = latestBlockNumber.Uint64() - confirmations
@@ -207,68 +182,119 @@ func (c *Crawler) Start() {
 		endBlock = c.startBlock + crawlBatchSize
 
 		if endBlock > safeBlock {
-			//wait for new blocks
-			time.Sleep(1 * time.Minute) // Adjust sleep time as needed
+			// Auto adjust time
+			log.Printf("Waiting for new blocks to be mined. Current block: %d, Safe block: %d", latestBlockNumber, safeBlock)
+			time.Sleep(waitForBlocksTime)
+			if waitForBlocksTime < maxWaitForBlocksTime {
+				waitForBlocksTime = waitForBlocksTime * 2
+			}
 			continue
 		}
+		waitForBlocksTime = retryWaitTime
 
-		// Fetch the blocks and transactions for the range
-		blocks, transactions, blockIndex, transactionIndex, blocksCache, err := common.CrawlBlocks(client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(endBlock)))
+		if c.endBlock != 0 && endBlock > c.endBlock {
+			log.Printf("End block reached: %d", endBlock)
+			break
+		}
+
+		// Retry the operation in case of failure with cumulative attempts
+		err = retryOperation(retryAttempts, retryWaitTime, func() error {
+			blocks, transactions, blockIndex, transactionIndex, blocksCache, err := common.CrawlBlocks(client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(endBlock)))
+			if err != nil {
+				return fmt.Errorf("failed to crawl blocks: %w", err)
+			}
+
+			batchDir := filepath.Join(c.baseDir, fmt.Sprintf("%d-%d", c.startBlock, endBlock))
+			if err := os.MkdirAll(batchDir, 0755); err != nil {
+				return fmt.Errorf("failed to create directory: %w", err)
+			}
+
+			var encodedBytesBlocks []string
+			for _, block := range blocks {
+				bytesBlocks, err := proto.Marshal(block)
+				if err != nil {
+					return fmt.Errorf("failed to marshal proto message: %w", err)
+				}
+				// Encode the bytes to base64 for newline delimited storage
+				base64Block := base64.StdEncoding.EncodeToString(bytesBlocks)
+				encodedBytesBlocks = append(encodedBytesBlocks, base64Block)
+			}
+
+			if err := storageInstance.Save(filepath.Join(batchDir, "blocks.proto"), encodedBytesBlocks); err != nil {
+				return fmt.Errorf("failed to save blocks: %w", err)
+			}
+
+			var encodedBytesTransactions []string
+			for _, transaction := range transactions {
+				bytesTransaction, err := proto.Marshal(transaction)
+				if err != nil {
+					return fmt.Errorf("failed to marshal proto message: %w", err)
+				}
+				// Encode the bytes to base64 for newline delimited storage
+				base64Transaction := base64.StdEncoding.EncodeToString(bytesTransaction)
+				encodedBytesTransactions = append(encodedBytesTransactions, base64Transaction)
+			}
+
+			if err := storageInstance.Save(filepath.Join(batchDir, "transactions.proto"), encodedBytesTransactions); err != nil {
+				return fmt.Errorf("failed to save transactions: %w", err)
+			}
+
+			updateBlockIndexFilepaths(blockIndex, batchDir)
+			interfaceBlockIndex := make([]interface{}, len(blockIndex))
+			for i, v := range blockIndex {
+				interfaceBlockIndex[i] = v
+			}
+
+			if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceBlockIndex, "block"); err != nil {
+				return fmt.Errorf("failed to write block index to database: %w", err)
+			}
+
+			updateTransactionIndexFilepaths(transactionIndex, batchDir)
+			interfaceTransactionIndex := make([]interface{}, len(transactionIndex))
+			for i, v := range transactionIndex {
+				interfaceTransactionIndex[i] = v
+			}
+
+			if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceTransactionIndex, "transaction"); err != nil {
+				return fmt.Errorf("failed to write transaction index to database: %w", err)
+			}
+
+			events, eventsIndex, err := common.CrawlEvents(client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(endBlock)), blocksCache)
+			if err != nil {
+				return fmt.Errorf("failed to crawl events: %w", err)
+			}
+
+			UpdateEventIndexFilepaths(eventsIndex, batchDir)
+			interfaceEventsIndex := make([]interface{}, len(eventsIndex))
+			for i, v := range eventsIndex {
+				interfaceEventsIndex[i] = v
+			}
+
+			if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceEventsIndex, "log"); err != nil {
+				return fmt.Errorf("failed to write event index to database: %w", err)
+			}
+
+			var encodedBytesEvents []string
+			for _, event := range events {
+				bytesEvent, err := proto.Marshal(event)
+				if err != nil {
+					return fmt.Errorf("failed to marshal proto message: %w", err)
+				}
+				// Encode the bytes to base64 for newline delimited storage
+				base64Event := base64.StdEncoding.EncodeToString(bytesEvent)
+				encodedBytesEvents = append(encodedBytesEvents, base64Event)
+			}
+
+			if err := storageInstance.Save(filepath.Join(batchDir, "logs.proto"), encodedBytesEvents); err != nil {
+				return fmt.Errorf("failed to save events: %w", err)
+			}
+
+			return nil
+		})
+
 		if err != nil {
-			log.Fatalf("Failed to get blocks: %v", err)
+			log.Fatalf("Operation failed: %v", err)
 		}
-
-		fmt.Printf("Crawled transactions: %d\n", len(transactions))
-
-		// Compute batch directory for this iteration
-		batchDir := filepath.Join(c.baseDir, fmt.Sprintf("%d-%d", c.startBlock, endBlock))
-		if err := os.MkdirAll(batchDir, 0755); err != nil {
-			log.Fatalf("Failed to create directory: %v", err)
-		}
-
-		// Write the blocks, transactions, and their indices to disk
-		writeProtoMessagesToFile(blocks, filepath.Join(batchDir, "blocks.proto"))
-		writeProtoMessagesToFile(transactions, filepath.Join(batchDir, "transactions.proto"))
-		updateBlockIndexFilepaths(blockIndex, batchDir)
-		updateTransactionIndexFilepaths(transactionIndex, batchDir)
-
-		// Write updated indices to their respective files
-		// Convert blockIndex to []interface{}
-		interfaceBlockIndex := make([]interface{}, len(blockIndex))
-		for i, v := range blockIndex {
-			interfaceBlockIndex[i] = v
-		}
-		//writeIndicesToFile(interfaceBlockIndex, filepath.Join(baseDir, "block_index.json"))
-
-		indexer.WriteIndexesToDatabase(c.blockchain, interfaceBlockIndex, "block")
-
-		interfaceTransactionIndex := make([]interface{}, len(transactionIndex))
-		for i, v := range transactionIndex {
-			interfaceTransactionIndex[i] = v
-		}
-		//writeIndicesToFile(interfaceTransactionIndex, filepath.Join(baseDir, "transaction_index.json"))
-
-		indexer.WriteIndexesToDatabase(c.blockchain, interfaceTransactionIndex, "transaction")
-
-		// events log
-		_, eventsIndex, err := common.CrawlEvents(client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(endBlock)), blocksCache)
-
-		if err != nil {
-			log.Fatalf("Failed to get events: %v", err)
-		}
-
-		// Convert transactionIndex to []interface{}
-
-		interfaceEventsIndex := make([]interface{}, len(eventsIndex))
-		for i, v := range eventsIndex {
-			interfaceEventsIndex[i] = v
-		}
-		//writeIndicesToFile(interfaceEventsIndex, filepath.Join(baseDir, "event_index.json"))
-
-		indexer.WriteIndexesToDatabase(c.blockchain, interfaceEventsIndex, "log")
-
-		// Write the events and their indices to disk
-		//writeProtoMessagesToFile(events, filepath.Join(batchDir, "events.proto"))
 
 		nextStartBlock := endBlock + 1
 		c.startBlock = nextStartBlock
