@@ -2,15 +2,19 @@ package ethereum
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/moonstream-to/seer/blockchain"
 	"github.com/moonstream-to/seer/indexer"
 	"google.golang.org/protobuf/proto"
 )
@@ -58,7 +62,7 @@ func (c *Client) GetLatestBlockNumber() (*big.Int, error) {
 }
 
 // BlockByNumber returns the block with the given number.
-func (c *Client) GetBlockByNumber(ctx context.Context, number *big.Int) (*BlockJson, error) {
+func (c *Client) GetBlockByNumber(ctx context.Context, number *big.Int) (*EthereumBlockJson, error) {
 
 	var rawResponse json.RawMessage // Use RawMessage to capture the entire JSON response
 	err := c.rpcClient.CallContext(ctx, &rawResponse, "eth_getBlockByNumber", "0x"+number.Text(16), true)
@@ -73,15 +77,15 @@ func (c *Client) GetBlockByNumber(ctx context.Context, number *big.Int) (*BlockJ
 
 	delete(response_json, "transactions")
 
-	var block *BlockJson
+	var block *EthereumBlockJson
 	err = c.rpcClient.CallContext(ctx, &block, "eth_getBlockByNumber", "0x"+number.Text(16), true) // true to include transactions
 	return block, err
 }
 
 // BlockByHash returns the block with the given hash.
 
-func (c *Client) BlockByHash(ctx context.Context, hash common.Hash) (*BlockJson, error) {
-	var block *BlockJson
+func (c *Client) BlockByHash(ctx context.Context, hash common.Hash) (*EthereumBlockJson, error) {
+	var block *EthereumBlockJson
 	err := c.rpcClient.CallContext(ctx, &block, "eth_getBlockByHash", hash, true) // true to include transactions
 	return block, err
 }
@@ -94,8 +98,8 @@ func (c *Client) TransactionReceipt(ctx context.Context, hash common.Hash) (*typ
 	return receipt, err
 }
 
-func (c *Client) ClientFilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]*SingleEventJson, error) {
-	var logs []*SingleEventJson
+func (c *Client) ClientFilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]*EthereumSingleEventJson, error) {
+	var logs []*EthereumSingleEventJson
 	fromBlock := q.FromBlock
 	toBlock := q.ToBlock
 	batchStep := new(big.Int).Sub(toBlock, fromBlock) // Calculate initial batch step
@@ -107,7 +111,7 @@ func (c *Client) ClientFilterLogs(ctx context.Context, q ethereum.FilterQuery) (
 			nextBlock = new(big.Int).Set(toBlock)
 		}
 
-		var result []*SingleEventJson
+		var result []*EthereumSingleEventJson
 		err := c.rpcClient.CallContext(ctx, &result, "eth_getLogs", struct {
 			FromBlock string           `json:"fromBlock"`
 			ToBlock   string           `json:"toBlock"`
@@ -157,8 +161,8 @@ func (c *Client) ClientFilterLogs(ctx context.Context, q ethereum.FilterQuery) (
 
 // fetchBlocks returns the blocks for a given range.
 
-func (c *Client) fetchBlocks(ctx context.Context, from, to *big.Int) ([]*BlockJson, error) {
-	var blocks []*BlockJson
+func (c *Client) fetchBlocks(ctx context.Context, from, to *big.Int) ([]*EthereumBlockJson, error) {
+	var blocks []*EthereumBlockJson
 
 	for i := from; i.Cmp(to) <= 0; i.Add(i, big.NewInt(1)) {
 		block, err := c.GetBlockByNumber(ctx, i)
@@ -183,8 +187,8 @@ func fromHex(hex string) *big.Int {
 
 // FetchBlocksInRange fetches blocks within a specified range.
 // This could be useful for batch processing or analysis.
-func (c *Client) FetchBlocksInRange(from, to *big.Int) ([]*BlockJson, error) {
-	var blocks []*BlockJson
+func (c *Client) FetchBlocksInRange(from, to *big.Int) ([]*EthereumBlockJson, error) {
+	var blocks []*EthereumBlockJson
 	ctx := context.Background() // For simplicity, using a background context; consider timeouts for production.
 
 	for i := new(big.Int).Set(from); i.Cmp(to) <= 0; i.Add(i, big.NewInt(1)) {
@@ -201,14 +205,14 @@ func (c *Client) FetchBlocksInRange(from, to *big.Int) ([]*BlockJson, error) {
 
 // ParseBlocksAndTransactions parses blocks and their transactions into custom data structures.
 // This method showcases how to handle and transform detailed block and transaction data.
-func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*Block, []*SingleTransaction, error) {
+func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*EthereumBlock, []*EthereumSingleTransaction, error) {
 	blocksJson, err := c.FetchBlocksInRange(from, to)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var parsedBlocks []*Block
-	var parsedTransactions []*SingleTransaction
+	var parsedBlocks []*EthereumBlock
+	var parsedTransactions []*EthereumSingleTransaction
 	for _, blockJson := range blocksJson {
 		// Convert BlockJson to Block and Transactions as required.
 		parsedBlock := ToProtoSingleBlock(blockJson)
@@ -228,7 +232,7 @@ func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*Block, []*Sin
 	return parsedBlocks, parsedTransactions, nil
 }
 
-func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCahche) ([]*EventLog, error) {
+func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCahche) ([]*EthereumEventLog, error) {
 
 	logs, err := c.ClientFilterLogs(context.Background(), ethereum.FilterQuery{
 		FromBlock: from,
@@ -240,7 +244,7 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 		return nil, err
 	}
 
-	var parsedEvents []*EventLog
+	var parsedEvents []*EthereumEventLog
 	for _, log := range logs {
 		parsedEvent := ToProtoSingleEventLog(log)
 		parsedEvents = append(parsedEvents, parsedEvent)
@@ -260,7 +264,7 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int) ([]proto.Message, []proto
 
 	var blocksProto []proto.Message
 	var blockIndex []indexer.BlockIndex
-	for _, block := range parsedBlocks {
+	for index, block := range parsedBlocks {
 		blocksProto = append(blocksProto, block) // Assuming block is already a proto.Message
 		blocksCache[block.BlockNumber] = indexer.BlockCahche{
 			BlockNumber:    block.BlockNumber,
@@ -272,23 +276,34 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int) ([]proto.Message, []proto
 			block.Hash,
 			block.Timestamp,
 			block.ParentHash,
+			uint64(index),
 			"",
 		))
 	}
 
 	var transactionsProto []proto.Message
 	var transactionIndex []indexer.TransactionIndex
-	for _, transaction := range parsedTransactions {
+	for index, transaction := range parsedTransactions {
 		transactionsProto = append(transactionsProto, transaction) // Assuming transaction is also a proto.Message
 
+		selector := "0x"
+
+		if len(transaction.Input) > 10 {
+			selector = transaction.Input[:10]
+		}
+
 		transactionIndex = append(transactionIndex, indexer.TransactionIndex{
-			BlockNumber:          transaction.BlockNumber,
-			BlockHash:            blocksCache[transaction.BlockNumber].BlockHash,
-			BlockTimestamp:       transaction.BlockTimestamp,
-			TransactionHash:      transaction.Hash,
-			TransactionIndex:     transaction.TransactionIndex,
-			TransactionTimestamp: transaction.BlockTimestamp,
-			Path:                 "",
+			BlockNumber:      transaction.BlockNumber,
+			BlockHash:        transaction.BlockHash,
+			BlockTimestamp:   transaction.BlockTimestamp,
+			FromAddress:      transaction.FromAddress,
+			ToAddress:        transaction.ToAddress,
+			RowID:            uint64(index),
+			Selector:         selector, // First 10 characters of the input data 0x + 4 bytes of the function signature
+			TransactionHash:  transaction.Hash,
+			TransactionIndex: transaction.TransactionIndex,
+			Type:             transaction.TransactionType,
+			Path:             "",
 		})
 	}
 
@@ -305,7 +320,7 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 
 	var eventsProto []proto.Message
 	var eventsIndex []indexer.LogIndex
-	for _, event := range parsedEvents {
+	for index, event := range parsedEvents {
 		eventsProto = append(eventsProto, event) // Assuming event is already a proto.Message
 
 		var topic0, topic1, topic2 *string
@@ -333,6 +348,7 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 			Selector:        topic0, // First topic
 			Topic1:          topic1,
 			Topic2:          topic2,
+			RowID:           uint64(index),
 			LogIndex:        event.LogIndex,
 			Path:            "",
 		})
@@ -341,8 +357,8 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 	return eventsProto, eventsIndex, nil
 
 }
-func ToProtoSingleBlock(obj *BlockJson) *Block {
-	return &Block{
+func ToProtoSingleBlock(obj *EthereumBlockJson) *EthereumBlock {
+	return &EthereumBlock{
 		BlockNumber:   fromHex(obj.BlockNumber).Uint64(),
 		Difficulty:    fromHex(obj.Difficulty).Uint64(),
 		ExtraData:     obj.ExtraData,
@@ -357,7 +373,7 @@ func ToProtoSingleBlock(obj *BlockJson) *Block {
 		ReceiptRoot:   obj.ReceiptRoot,
 		Uncles:        strings.Join(obj.Uncles, ","),
 		// convert hex to int32
-		Size:             int32(fromHex(obj.Size).Int64()),
+		Size:             fromHex(obj.Size).Uint64(),
 		StateRoot:        obj.StateRoot,
 		Timestamp:        fromHex(obj.Timestamp).Uint64(),
 		TotalDifficulty:  obj.TotalDifficulty,
@@ -366,10 +382,11 @@ func ToProtoSingleBlock(obj *BlockJson) *Block {
 	}
 }
 
-func ToProtoSingleTransaction(obj *SingleTransactionJson) *SingleTransaction {
-	return &SingleTransaction{
+func ToProtoSingleTransaction(obj *EthereumSingleTransactionJson) *EthereumSingleTransaction {
+	return &EthereumSingleTransaction{
 		Hash:                 obj.Hash,
 		BlockNumber:          fromHex(obj.BlockNumber).Uint64(),
+		BlockHash:            obj.BlockHash,
 		FromAddress:          obj.FromAddress,
 		ToAddress:            obj.ToAddress,
 		Gas:                  obj.Gas,
@@ -379,16 +396,16 @@ func ToProtoSingleTransaction(obj *SingleTransactionJson) *SingleTransaction {
 		Input:                obj.Input,
 		Nonce:                obj.Nonce,
 		TransactionIndex:     fromHex(obj.TransactionIndex).Uint64(),
-		TransactionType:      int32(fromHex(obj.TransactionType).Uint64()),
+		TransactionType:      uint32(fromHex(obj.TransactionType).Uint64()),
 		Value:                obj.Value,
 		IndexedAt:            fromHex(obj.IndexedAt).Uint64(),
 		BlockTimestamp:       fromHex(obj.BlockTimestamp).Uint64(),
 	}
 }
 
-func ToProtoSingleEventLog(obj *SingleEventJson) *EventLog {
+func ToProtoSingleEventLog(obj *EthereumSingleEventJson) *EthereumEventLog {
 
-	return &EventLog{
+	return &EthereumEventLog{
 		Address:         obj.Address,
 		Topics:          obj.Topics,
 		Data:            obj.Data,
@@ -398,4 +415,186 @@ func ToProtoSingleEventLog(obj *SingleEventJson) *EventLog {
 		BlockHash:       obj.BlockHash,
 		Removed:         obj.Removed,
 	}
+}
+
+func (c *Client) DecodeProtoEventLogs(data []string) ([]*EthereumEventLog, error) {
+	var events []*EthereumEventLog
+	for _, d := range data {
+		var event EthereumEventLog
+		base64Decoded, err := base64.StdEncoding.DecodeString(d)
+		if err != nil {
+			return nil, err
+		}
+		if err := proto.Unmarshal(base64Decoded, &event); err != nil {
+			return nil, err
+		}
+		events = append(events, &event)
+	}
+	return events, nil
+}
+
+func (c *Client) DecodeProtoTransactions(data []string) ([]*EthereumSingleTransaction, error) {
+	var transactions []*EthereumSingleTransaction
+	for _, d := range data {
+		var transaction EthereumSingleTransaction
+		base64Decoded, err := base64.StdEncoding.DecodeString(d)
+		if err != nil {
+			return nil, err
+		}
+		if err := proto.Unmarshal(base64Decoded, &transaction); err != nil {
+			return nil, err
+		}
+		transactions = append(transactions, &transaction)
+	}
+	return transactions, nil
+}
+
+func (c *Client) DecodeProtoBlocks(data []string) ([]*EthereumBlock, error) {
+	var blocks []*EthereumBlock
+	for _, d := range data {
+		var block EthereumBlock
+		base64Decoded, err := base64.StdEncoding.DecodeString(d)
+		if err != nil {
+			return nil, err
+		}
+		if err := proto.Unmarshal(base64Decoded, &block); err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, &block)
+	}
+	return blocks, nil
+}
+
+// return label
+// return label
+func (c *Client) DecodeProtoEventsToLabels(events []string, blocksCache map[uint64]uint64, abiMap map[string]map[string]map[string]string) ([]indexer.EventLabel, error) {
+
+	decodedEvents, err := c.DecodeProtoEventLogs(events)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var labels []indexer.EventLabel
+
+	for _, event := range decodedEvents {
+
+		var topicSelector string
+
+		if len(event.Topics) > 0 {
+			topicSelector = event.Topics[0][:10]
+		} else {
+			continue
+		}
+
+		checksumAddress := common.HexToAddress(event.Address).Hex()
+
+		// Get the ABI string
+		contractAbi, err := abi.JSON(strings.NewReader(abiMap[checksumAddress][topicSelector]["abi"]))
+		if err != nil {
+			fmt.Println("Error initializing contract ABI: ", err)
+			return nil, err
+		}
+
+		// Decode the event data
+		decodedArgs, err := blockchain.DecodeLogArgsToLabelData(&contractAbi, event.Topics, event.Data)
+
+		if err != nil {
+			fmt.Println("Error decoding event data: ", err)
+			return nil, err
+		}
+
+		// Convert decodedArgs map to JSON
+		labelDataBytes, err := json.Marshal(decodedArgs)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert JSON byte slice to string
+		labelDataString := string(labelDataBytes)
+
+		// Convert event to label
+		eventLabel := indexer.EventLabel{
+			Label:           "seer",
+			LabelName:       abiMap[checksumAddress][topicSelector]["abi_name"],
+			LabelType:       "event",
+			BlockNumber:     event.BlockNumber,
+			BlockHash:       event.BlockHash,
+			Address:         event.Address,
+			TransactionHash: event.TransactionHash,
+			LabelData:       labelDataString,
+			BlockTimestamp:  blocksCache[event.BlockNumber],
+			LogIndex:        event.LogIndex,
+		}
+
+		labels = append(labels, eventLabel)
+
+	}
+
+	return labels, nil
+}
+func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCache map[uint64]uint64, abiMap map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error) {
+
+	decodedTransactions, err := c.DecodeProtoTransactions(transactions)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var labels []indexer.TransactionLabel
+
+	for _, transaction := range decodedTransactions {
+
+		selector := transaction.Input[:10]
+
+		// To checksum address
+		checksumAddress := common.HexToAddress(transaction.ToAddress).Hex()
+
+		contractAbi, err := abi.JSON(strings.NewReader(abiMap[checksumAddress][selector]["abi"]))
+
+		if err != nil {
+			return nil, err
+		}
+
+		inputData, err := hex.DecodeString(transaction.Input[2:])
+		if err != nil {
+			fmt.Println("Error decoding input data: ", err)
+			return nil, err
+		}
+
+		decodedArgs, err := blockchain.DecodeTransactionInputData(&contractAbi, inputData)
+
+		if err != nil {
+			fmt.Println("Error decoding transaction input data: ", err)
+			return nil, err
+		}
+
+		labelDataBytes, err := json.Marshal(decodedArgs)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert JSON byte slice to string
+		labelDataString := string(labelDataBytes)
+
+		// Convert transaction to label
+		transactionLabel := indexer.TransactionLabel{
+			Address:         transaction.ToAddress,
+			BlockNumber:     transaction.BlockNumber,
+			BlockHash:       transaction.BlockHash,
+			CallerAddress:   transaction.FromAddress,
+			LabelName:       abiMap[checksumAddress][selector]["abi_name"],
+			LabelType:       "tx_call",
+			OriginAddress:   transaction.FromAddress,
+			Label:           indexer.SeerCrawlerLabel,
+			TransactionHash: transaction.Hash,
+			LabelData:       labelDataString,
+			BlockTimestamp:  blocksCache[transaction.BlockNumber],
+		}
+
+		labels = append(labels, transactionLabel)
+
+	}
+
+	return labels, nil
 }

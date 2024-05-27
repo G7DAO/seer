@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/moonstream-to/seer/blockchain/synchronizer"
 	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/evm"
 	"github.com/moonstream-to/seer/indexer"
@@ -35,7 +36,8 @@ func CreateRootCommand() *cobra.Command {
 	// synchronizerCmd := CreatesynchronizerCommand()
 	indexCmd := CreateIndexCommand()
 	evmCmd := CreateEVMCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd)
+	synchronizerCmd := CreatesynchronizerCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd, synchronizerCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -163,14 +165,22 @@ func CreateCrawlerCommand() *cobra.Command {
 
 func CreatesynchronizerCommand() *cobra.Command {
 	var startBlock, endBlock uint64
+	// var startBlockBig, endBlockBig big.Int
 	var baseDir, output, abi_source string
 
 	synchronizerCmd := &cobra.Command{
 		Use:   "synchronizer",
 		Short: "Decode the crawled data from various blockchains",
 		Run: func(cmd *cobra.Command, args []string) {
-			// synchronizer := synchronizer.NewSynchronizer("ethereum", startBlock, endBlock, baseDir, output, abi_source, nil)
-			// synchronizer.Start()
+			indexer.InitDBConnection()
+
+			// convert the start and end block to big.Int
+
+			// read the blockchain url from $INFURA_URL
+			// if it is not set, use the default url
+			synchronizer := synchronizer.NewSynchronizer("polygon", startBlock, endBlock)
+
+			synchronizer.SyncCustomers()
 		},
 	}
 

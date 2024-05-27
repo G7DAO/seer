@@ -39,6 +39,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
+            "seerdb = indexdb.cli:main",
         ]
     },
 )

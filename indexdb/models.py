@@ -1,6 +1,7 @@
 import uuid
 
 from sqlalchemy import (
+    LargeBinary,
     VARCHAR,
     BigInteger,
     Column,
@@ -14,7 +15,7 @@ from sqlalchemy import (
     ForeignKey,
     PrimaryKeyConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import expression
@@ -63,7 +64,11 @@ class EvmBasedTransactions(Base):
     hash = Column(
         VARCHAR(256), primary_key=True, unique=True, nullable=False, index=True
     )
-    block_hash = Column(VARCHAR(256), nullable=False, index=False)
+    from_address = Column(LargeBinary(length=20), nullable=False, index=True)
+    to_address = Column(LargeBinary(length=20), nullable=False, index=True)
+    selector = Column(VARCHAR(256), nullable=True, index=True)
+    row_id = Column(BigInteger, nullable=False, index=False)
+    block_hash = Column(VARCHAR(256), nullable=False, index=True)
     index = Column(BigInteger, nullable=False, index=True)
     path = Column(Text, nullable=False)
     indexed_at = Column(
@@ -74,8 +79,9 @@ class EvmBasedTransactions(Base):
 class EvmBasedLogs(Base):
     __abstract__ = True
 
-    block_hash = Column(VARCHAR(256), nullable=False, index=False)
-    address = Column(VARCHAR(256), nullable=False, index=True)
+    block_hash = Column(VARCHAR(256), nullable=False, index=True)
+    address = Column(LargeBinary(length=20), nullable=False, index=True)
+    row_id = Column(BigInteger, nullable=False, index=False)
     selector = Column(VARCHAR(256), nullable=True, index=False)
     topic1 = Column(VARCHAR(256), nullable=True, index=False)
     topic2 = Column(VARCHAR(256), nullable=True, index=False)
@@ -199,7 +205,7 @@ class AbiJobs(Base):
     )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    address = Column(VARCHAR(256), nullable=False, index=True)
+    address = Column(LargeBinary, nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     customer_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     abi_selector = Column(VARCHAR(256), nullable=False, index=True)

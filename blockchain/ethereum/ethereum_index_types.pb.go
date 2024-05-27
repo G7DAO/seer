@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.32.0
 // 	protoc        v3.6.1
-// source: blocks_transactions.proto
+// source: ethereum_index_types.proto
 
 package ethereum
 
@@ -21,7 +21,7 @@ const (
 )
 
 // Represents a single transaction within a block
-type SingleTransaction struct {
+type EthereumSingleTransaction struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
@@ -37,29 +37,30 @@ type SingleTransaction struct {
 	Input                string `protobuf:"bytes,9,opt,name=input,proto3" json:"input,omitempty"` // could be a long text
 	Nonce                string `protobuf:"bytes,10,opt,name=nonce,proto3" json:"nonce,omitempty"`
 	TransactionIndex     uint64 `protobuf:"varint,11,opt,name=transaction_index,json=transactionIndex,proto3" json:"transaction_index,omitempty"`
-	TransactionType      int32  `protobuf:"varint,12,opt,name=transaction_type,json=transactionType,proto3" json:"transaction_type,omitempty"`
+	TransactionType      uint32 `protobuf:"varint,12,opt,name=transaction_type,json=transactionType,proto3" json:"transaction_type,omitempty"`
 	Value                string `protobuf:"bytes,13,opt,name=value,proto3" json:"value,omitempty"`                                          // using string to handle big numeric values
 	IndexedAt            uint64 `protobuf:"varint,14,opt,name=indexed_at,json=indexedAt,proto3" json:"indexed_at,omitempty"`                // using uint64 to represent timestamp
 	BlockTimestamp       uint64 `protobuf:"varint,15,opt,name=block_timestamp,json=blockTimestamp,proto3" json:"block_timestamp,omitempty"` // using uint64 to represent timestam
+	BlockHash            string `protobuf:"bytes,16,opt,name=block_hash,json=blockHash,proto3" json:"block_hash,omitempty"`                 // Added field for block hash
 }
 
-func (x *SingleTransaction) Reset() {
-	*x = SingleTransaction{}
+func (x *EthereumSingleTransaction) Reset() {
+	*x = EthereumSingleTransaction{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_blocks_transactions_proto_msgTypes[0]
+		mi := &file_ethereum_index_types_proto_msgTypes[0]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
 }
 
-func (x *SingleTransaction) String() string {
+func (x *EthereumSingleTransaction) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SingleTransaction) ProtoMessage() {}
+func (*EthereumSingleTransaction) ProtoMessage() {}
 
-func (x *SingleTransaction) ProtoReflect() protoreflect.Message {
-	mi := &file_blocks_transactions_proto_msgTypes[0]
+func (x *EthereumSingleTransaction) ProtoReflect() protoreflect.Message {
+	mi := &file_ethereum_index_types_proto_msgTypes[0]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -70,161 +71,168 @@ func (x *SingleTransaction) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SingleTransaction.ProtoReflect.Descriptor instead.
-func (*SingleTransaction) Descriptor() ([]byte, []int) {
-	return file_blocks_transactions_proto_rawDescGZIP(), []int{0}
+// Deprecated: Use EthereumSingleTransaction.ProtoReflect.Descriptor instead.
+func (*EthereumSingleTransaction) Descriptor() ([]byte, []int) {
+	return file_ethereum_index_types_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *SingleTransaction) GetHash() string {
+func (x *EthereumSingleTransaction) GetHash() string {
 	if x != nil {
 		return x.Hash
 	}
 	return ""
 }
 
-func (x *SingleTransaction) GetBlockNumber() uint64 {
+func (x *EthereumSingleTransaction) GetBlockNumber() uint64 {
 	if x != nil {
 		return x.BlockNumber
 	}
 	return 0
 }
 
-func (x *SingleTransaction) GetFromAddress() string {
+func (x *EthereumSingleTransaction) GetFromAddress() string {
 	if x != nil {
 		return x.FromAddress
 	}
 	return ""
 }
 
-func (x *SingleTransaction) GetToAddress() string {
+func (x *EthereumSingleTransaction) GetToAddress() string {
 	if x != nil {
 		return x.ToAddress
 	}
 	return ""
 }
 
-func (x *SingleTransaction) GetGas() string {
+func (x *EthereumSingleTransaction) GetGas() string {
 	if x != nil {
 		return x.Gas
 	}
 	return ""
 }
 
-func (x *SingleTransaction) GetGasPrice() string {
+func (x *EthereumSingleTransaction) GetGasPrice() string {
 	if x != nil {
 		return x.GasPrice
 	}
 	return ""
 }
 
-func (x *SingleTransaction) GetMaxFeePerGas() string {
+func (x *EthereumSingleTransaction) GetMaxFeePerGas() string {
 	if x != nil {
 		return x.MaxFeePerGas
 	}
 	return ""
 }
 
-func (x *SingleTransaction) GetMaxPriorityFeePerGas() string {
+func (x *EthereumSingleTransaction) GetMaxPriorityFeePerGas() string {
 	if x != nil {
 		return x.MaxPriorityFeePerGas
 	}
 	return ""
 }
 
-func (x *SingleTransaction) GetInput() string {
+func (x *EthereumSingleTransaction) GetInput() string {
 	if x != nil {
 		return x.Input
 	}
 	return ""
 }
 
-func (x *SingleTransaction) GetNonce() string {
+func (x *EthereumSingleTransaction) GetNonce() string {
 	if x != nil {
 		return x.Nonce
 	}
 	return ""
 }
 
-func (x *SingleTransaction) GetTransactionIndex() uint64 {
+func (x *EthereumSingleTransaction) GetTransactionIndex() uint64 {
 	if x != nil {
 		return x.TransactionIndex
 	}
 	return 0
 }
 
-func (x *SingleTransaction) GetTransactionType() int32 {
+func (x *EthereumSingleTransaction) GetTransactionType() uint32 {
 	if x != nil {
 		return x.TransactionType
 	}
 	return 0
 }
 
-func (x *SingleTransaction) GetValue() string {
+func (x *EthereumSingleTransaction) GetValue() string {
 	if x != nil {
 		return x.Value
 	}
 	return ""
 }
 
-func (x *SingleTransaction) GetIndexedAt() uint64 {
+func (x *EthereumSingleTransaction) GetIndexedAt() uint64 {
 	if x != nil {
 		return x.IndexedAt
 	}
 	return 0
 }
 
-func (x *SingleTransaction) GetBlockTimestamp() uint64 {
+func (x *EthereumSingleTransaction) GetBlockTimestamp() uint64 {
 	if x != nil {
 		return x.BlockTimestamp
 	}
 	return 0
 }
 
+func (x *EthereumSingleTransaction) GetBlockHash() string {
+	if x != nil {
+		return x.BlockHash
+	}
+	return ""
+}
+
 // Represents a single blockchain block
-type Block struct {
+type EthereumBlock struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	BlockNumber      uint64               `protobuf:"varint,1,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"`
-	Difficulty       uint64               `protobuf:"varint,2,opt,name=difficulty,proto3" json:"difficulty,omitempty"`
-	ExtraData        string               `protobuf:"bytes,3,opt,name=extra_data,json=extraData,proto3" json:"extra_data,omitempty"`
-	GasLimit         uint64               `protobuf:"varint,4,opt,name=gas_limit,json=gasLimit,proto3" json:"gas_limit,omitempty"`
-	GasUsed          uint64               `protobuf:"varint,5,opt,name=gas_used,json=gasUsed,proto3" json:"gas_used,omitempty"`
-	BaseFeePerGas    string               `protobuf:"bytes,6,opt,name=base_fee_per_gas,json=baseFeePerGas,proto3" json:"base_fee_per_gas,omitempty"` // using string to handle big numeric values
-	Hash             string               `protobuf:"bytes,7,opt,name=hash,proto3" json:"hash,omitempty"`
-	LogsBloom        string               `protobuf:"bytes,8,opt,name=logs_bloom,json=logsBloom,proto3" json:"logs_bloom,omitempty"`
-	Miner            string               `protobuf:"bytes,9,opt,name=miner,proto3" json:"miner,omitempty"`
-	Nonce            string               `protobuf:"bytes,10,opt,name=nonce,proto3" json:"nonce,omitempty"`
-	ParentHash       string               `protobuf:"bytes,11,opt,name=parent_hash,json=parentHash,proto3" json:"parent_hash,omitempty"`
-	ReceiptRoot      string               `protobuf:"bytes,12,opt,name=receipt_root,json=receiptRoot,proto3" json:"receipt_root,omitempty"`
-	Uncles           string               `protobuf:"bytes,13,opt,name=uncles,proto3" json:"uncles,omitempty"`
-	Size             int32                `protobuf:"varint,14,opt,name=size,proto3" json:"size,omitempty"`
-	StateRoot        string               `protobuf:"bytes,15,opt,name=state_root,json=stateRoot,proto3" json:"state_root,omitempty"`
-	Timestamp        uint64               `protobuf:"varint,16,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	TotalDifficulty  string               `protobuf:"bytes,17,opt,name=total_difficulty,json=totalDifficulty,proto3" json:"total_difficulty,omitempty"`
-	TransactionsRoot string               `protobuf:"bytes,18,opt,name=transactions_root,json=transactionsRoot,proto3" json:"transactions_root,omitempty"`
-	IndexedAt        uint64               `protobuf:"varint,19,opt,name=indexed_at,json=indexedAt,proto3" json:"indexed_at,omitempty"` // using uint64 to represent timestamp
-	Transactions     []*SingleTransaction `protobuf:"bytes,20,rep,name=transactions,proto3" json:"transactions,omitempty"`
+	BlockNumber      uint64                       `protobuf:"varint,1,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"`
+	Difficulty       uint64                       `protobuf:"varint,2,opt,name=difficulty,proto3" json:"difficulty,omitempty"`
+	ExtraData        string                       `protobuf:"bytes,3,opt,name=extra_data,json=extraData,proto3" json:"extra_data,omitempty"`
+	GasLimit         uint64                       `protobuf:"varint,4,opt,name=gas_limit,json=gasLimit,proto3" json:"gas_limit,omitempty"`
+	GasUsed          uint64                       `protobuf:"varint,5,opt,name=gas_used,json=gasUsed,proto3" json:"gas_used,omitempty"`
+	BaseFeePerGas    string                       `protobuf:"bytes,6,opt,name=base_fee_per_gas,json=baseFeePerGas,proto3" json:"base_fee_per_gas,omitempty"` // using string to handle big numeric values
+	Hash             string                       `protobuf:"bytes,7,opt,name=hash,proto3" json:"hash,omitempty"`
+	LogsBloom        string                       `protobuf:"bytes,8,opt,name=logs_bloom,json=logsBloom,proto3" json:"logs_bloom,omitempty"`
+	Miner            string                       `protobuf:"bytes,9,opt,name=miner,proto3" json:"miner,omitempty"`
+	Nonce            string                       `protobuf:"bytes,10,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	ParentHash       string                       `protobuf:"bytes,11,opt,name=parent_hash,json=parentHash,proto3" json:"parent_hash,omitempty"`
+	ReceiptRoot      string                       `protobuf:"bytes,12,opt,name=receipt_root,json=receiptRoot,proto3" json:"receipt_root,omitempty"`
+	Uncles           string                       `protobuf:"bytes,13,opt,name=uncles,proto3" json:"uncles,omitempty"`
+	Size             uint64                       `protobuf:"varint,14,opt,name=size,proto3" json:"size,omitempty"`
+	StateRoot        string                       `protobuf:"bytes,15,opt,name=state_root,json=stateRoot,proto3" json:"state_root,omitempty"`
+	Timestamp        uint64                       `protobuf:"varint,16,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	TotalDifficulty  string                       `protobuf:"bytes,17,opt,name=total_difficulty,json=totalDifficulty,proto3" json:"total_difficulty,omitempty"`
+	TransactionsRoot string                       `protobuf:"bytes,18,opt,name=transactions_root,json=transactionsRoot,proto3" json:"transactions_root,omitempty"`
+	IndexedAt        uint64                       `protobuf:"varint,19,opt,name=indexed_at,json=indexedAt,proto3" json:"indexed_at,omitempty"` // using uint64 to represent timestamp
+	Transactions     []*EthereumSingleTransaction `protobuf:"bytes,20,rep,name=transactions,proto3" json:"transactions,omitempty"`
 }
 
-func (x *Block) Reset() {
-	*x = Block{}
+func (x *EthereumBlock) Reset() {
+	*x = EthereumBlock{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_blocks_transactions_proto_msgTypes[1]
+		mi := &file_ethereum_index_types_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
 }
 
-func (x *Block) String() string {
+func (x *EthereumBlock) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Block) ProtoMessage() {}
+func (*EthereumBlock) ProtoMessage() {}
 
-func (x *Block) ProtoReflect() protoreflect.Message {
-	mi := &file_blocks_transactions_proto_msgTypes[1]
+func (x *EthereumBlock) ProtoReflect() protoreflect.Message {
+	mi := &file_ethereum_index_types_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -235,152 +243,152 @@ func (x *Block) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Block.ProtoReflect.Descriptor instead.
-func (*Block) Descriptor() ([]byte, []int) {
-	return file_blocks_transactions_proto_rawDescGZIP(), []int{1}
+// Deprecated: Use EthereumBlock.ProtoReflect.Descriptor instead.
+func (*EthereumBlock) Descriptor() ([]byte, []int) {
+	return file_ethereum_index_types_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *Block) GetBlockNumber() uint64 {
+func (x *EthereumBlock) GetBlockNumber() uint64 {
 	if x != nil {
 		return x.BlockNumber
 	}
 	return 0
 }
 
-func (x *Block) GetDifficulty() uint64 {
+func (x *EthereumBlock) GetDifficulty() uint64 {
 	if x != nil {
 		return x.Difficulty
 	}
 	return 0
 }
 
-func (x *Block) GetExtraData() string {
+func (x *EthereumBlock) GetExtraData() string {
 	if x != nil {
 		return x.ExtraData
 	}
 	return ""
 }
 
-func (x *Block) GetGasLimit() uint64 {
+func (x *EthereumBlock) GetGasLimit() uint64 {
 	if x != nil {
 		return x.GasLimit
 	}
 	return 0
 }
 
-func (x *Block) GetGasUsed() uint64 {
+func (x *EthereumBlock) GetGasUsed() uint64 {
 	if x != nil {
 		return x.GasUsed
 	}
 	return 0
 }
 
-func (x *Block) GetBaseFeePerGas() string {
+func (x *EthereumBlock) GetBaseFeePerGas() string {
 	if x != nil {
 		return x.BaseFeePerGas
 	}
 	return ""
 }
 
-func (x *Block) GetHash() string {
+func (x *EthereumBlock) GetHash() string {
 	if x != nil {
 		return x.Hash
 	}
 	return ""
 }
 
-func (x *Block) GetLogsBloom() string {
+func (x *EthereumBlock) GetLogsBloom() string {
 	if x != nil {
 		return x.LogsBloom
 	}
 	return ""
 }
 
-func (x *Block) GetMiner() string {
+func (x *EthereumBlock) GetMiner() string {
 	if x != nil {
 		return x.Miner
 	}
 	return ""
 }
 
-func (x *Block) GetNonce() string {
+func (x *EthereumBlock) GetNonce() string {
 	if x != nil {
 		return x.Nonce
 	}
 	return ""
 }
 
-func (x *Block) GetParentHash() string {
+func (x *EthereumBlock) GetParentHash() string {
 	if x != nil {
 		return x.ParentHash
 	}
 	return ""
 }
 
-func (x *Block) GetReceiptRoot() string {
+func (x *EthereumBlock) GetReceiptRoot() string {
 	if x != nil {
 		return x.ReceiptRoot
 	}
 	return ""
 }
 
-func (x *Block) GetUncles() string {
+func (x *EthereumBlock) GetUncles() string {
 	if x != nil {
 		return x.Uncles
 	}
 	return ""
 }
 
-func (x *Block) GetSize() int32 {
+func (x *EthereumBlock) GetSize() uint64 {
 	if x != nil {
 		return x.Size
 	}
 	return 0
 }
 
-func (x *Block) GetStateRoot() string {
+func (x *EthereumBlock) GetStateRoot() string {
 	if x != nil {
 		return x.StateRoot
 	}
 	return ""
 }
 
-func (x *Block) GetTimestamp() uint64 {
+func (x *EthereumBlock) GetTimestamp() uint64 {
 	if x != nil {
 		return x.Timestamp
 	}
 	return 0
 }
 
-func (x *Block) GetTotalDifficulty() string {
+func (x *EthereumBlock) GetTotalDifficulty() string {
 	if x != nil {
 		return x.TotalDifficulty
 	}
 	return ""
 }
 
-func (x *Block) GetTransactionsRoot() string {
+func (x *EthereumBlock) GetTransactionsRoot() string {
 	if x != nil {
 		return x.TransactionsRoot
 	}
 	return ""
 }
 
-func (x *Block) GetIndexedAt() uint64 {
+func (x *EthereumBlock) GetIndexedAt() uint64 {
 	if x != nil {
 		return x.IndexedAt
 	}
 	return 0
 }
 
-func (x *Block) GetTransactions() []*SingleTransaction {
+func (x *EthereumBlock) GetTransactions() []*EthereumSingleTransaction {
 	if x != nil {
 		return x.Transactions
 	}
 	return nil
 }
 
-type EventLog struct {
+type EthereumEventLog struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
@@ -396,23 +404,23 @@ type EventLog struct {
 	TransactionIndex uint64   `protobuf:"varint,9,opt,name=transaction_index,json=transactionIndex,proto3" json:"transaction_index,omitempty"` // The index of the transaction in the block
 }
 
-func (x *EventLog) Reset() {
-	*x = EventLog{}
+func (x *EthereumEventLog) Reset() {
+	*x = EthereumEventLog{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_blocks_transactions_proto_msgTypes[2]
+		mi := &file_ethereum_index_types_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
 }
 
-func (x *EventLog) String() string {
+func (x *EthereumEventLog) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*EventLog) ProtoMessage() {}
+func (*EthereumEventLog) ProtoMessage() {}
 
-func (x *EventLog) ProtoReflect() protoreflect.Message {
-	mi := &file_blocks_transactions_proto_msgTypes[2]
+func (x *EthereumEventLog) ProtoReflect() protoreflect.Message {
+	mi := &file_ethereum_index_types_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -423,111 +431,114 @@ func (x *EventLog) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use EventLog.ProtoReflect.Descriptor instead.
-func (*EventLog) Descriptor() ([]byte, []int) {
-	return file_blocks_transactions_proto_rawDescGZIP(), []int{2}
+// Deprecated: Use EthereumEventLog.ProtoReflect.Descriptor instead.
+func (*EthereumEventLog) Descriptor() ([]byte, []int) {
+	return file_ethereum_index_types_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *EventLog) GetAddress() string {
+func (x *EthereumEventLog) GetAddress() string {
 	if x != nil {
 		return x.Address
 	}
 	return ""
 }
 
-func (x *EventLog) GetTopics() []string {
+func (x *EthereumEventLog) GetTopics() []string {
 	if x != nil {
 		return x.Topics
 	}
 	return nil
 }
 
-func (x *EventLog) GetData() string {
+func (x *EthereumEventLog) GetData() string {
 	if x != nil {
 		return x.Data
 	}
 	return ""
 }
 
-func (x *EventLog) GetBlockNumber() uint64 {
+func (x *EthereumEventLog) GetBlockNumber() uint64 {
 	if x != nil {
 		return x.BlockNumber
 	}
 	return 0
 }
 
-func (x *EventLog) GetTransactionHash() string {
+func (x *EthereumEventLog) GetTransactionHash() string {
 	if x != nil {
 		return x.TransactionHash
 	}
 	return ""
 }
 
-func (x *EventLog) GetBlockHash() string {
+func (x *EthereumEventLog) GetBlockHash() string {
 	if x != nil {
 		return x.BlockHash
 	}
 	return ""
 }
 
-func (x *EventLog) GetRemoved() bool {
+func (x *EthereumEventLog) GetRemoved() bool {
 	if x != nil {
 		return x.Removed
 	}
 	return false
 }
 
-func (x *EventLog) GetLogIndex() uint64 {
+func (x *EthereumEventLog) GetLogIndex() uint64 {
 	if x != nil {
 		return x.LogIndex
 	}
 	return 0
 }
 
-func (x *EventLog) GetTransactionIndex() uint64 {
+func (x *EthereumEventLog) GetTransactionIndex() uint64 {
 	if x != nil {
 		return x.TransactionIndex
 	}
 	return 0
 }
 
-var File_blocks_transactions_proto protoreflect.FileDescriptor
+var File_ethereum_index_types_proto protoreflect.FileDescriptor
 
-var file_blocks_transactions_proto_rawDesc = []byte{
-	0x0a, 0x19, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x73, 0x5f, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63,
-	0x74, 0x69, 0x6f, 0x6e, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xfc, 0x03, 0x0a, 0x11,
-	0x53, 0x69, 0x6e, 0x67, 0x6c, 0x65, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f,
-	0x6e, 0x12, 0x12, 0x0a, 0x04, 0x68, 0x61, 0x73, 0x68, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x04, 0x68, 0x61, 0x73, 0x68, 0x12, 0x21, 0x0a, 0x0c, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x5f, 0x6e,
-	0x75, 0x6d, 0x62, 0x65, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0b, 0x62, 0x6c, 0x6f,
-	0x63, 0x6b, 0x4e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x12, 0x21, 0x0a, 0x0c, 0x66, 0x72, 0x6f, 0x6d,
-	0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b,
-	0x66, 0x72, 0x6f, 0x6d, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x1d, 0x0a, 0x0a, 0x74,
-	0x6f, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x09, 0x74, 0x6f, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x10, 0x0a, 0x03, 0x67, 0x61,
-	0x73, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x67, 0x61, 0x73, 0x12, 0x1b, 0x0a, 0x09,
-	0x67, 0x61, 0x73, 0x5f, 0x70, 0x72, 0x69, 0x63, 0x65, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x08, 0x67, 0x61, 0x73, 0x50, 0x72, 0x69, 0x63, 0x65, 0x12, 0x25, 0x0a, 0x0f, 0x6d, 0x61, 0x78,
-	0x5f, 0x66, 0x65, 0x65, 0x5f, 0x70, 0x65, 0x72, 0x5f, 0x67, 0x61, 0x73, 0x18, 0x07, 0x20, 0x01,
-	0x28, 0x09, 0x52, 0x0c, 0x6d, 0x61, 0x78, 0x46, 0x65, 0x65, 0x50, 0x65, 0x72, 0x47, 0x61, 0x73,
-	0x12, 0x36, 0x0a, 0x18, 0x6d, 0x61, 0x78, 0x5f, 0x70, 0x72, 0x69, 0x6f, 0x72, 0x69, 0x74, 0x79,
-	0x5f, 0x66, 0x65, 0x65, 0x5f, 0x70, 0x65, 0x72, 0x5f, 0x67, 0x61, 0x73, 0x18, 0x08, 0x20, 0x01,
-	0x28, 0x09, 0x52, 0x14, 0x6d, 0x61, 0x78, 0x50, 0x72, 0x69, 0x6f, 0x72, 0x69, 0x74, 0x79, 0x46,
-	0x65, 0x65, 0x50, 0x65, 0x72, 0x47, 0x61, 0x73, 0x12, 0x14, 0x0a, 0x05, 0x69, 0x6e, 0x70, 0x75,
-	0x74, 0x18, 0x09, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x69, 0x6e, 0x70, 0x75, 0x74, 0x12, 0x14,
-	0x0a, 0x05, 0x6e, 0x6f, 0x6e, 0x63, 0x65, 0x18, 0x0a, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x6e,
-	0x6f, 0x6e, 0x63, 0x65, 0x12, 0x2b, 0x0a, 0x11, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74,
-	0x69, 0x6f, 0x6e, 0x5f, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x04, 0x52,
-	0x10, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x49, 0x6e, 0x64, 0x65,
-	0x78, 0x12, 0x29, 0x0a, 0x10, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e,
-	0x5f, 0x74, 0x79, 0x70, 0x65, 0x18, 0x0c, 0x20, 0x01, 0x28, 0x05, 0x52, 0x0f, 0x74, 0x72, 0x61,
-	0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x54, 0x79, 0x70, 0x65, 0x12, 0x14, 0x0a, 0x05,
-	0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x0d, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x76, 0x61, 0x6c,
-	0x75, 0x65, 0x12, 0x1d, 0x0a, 0x0a, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x65, 0x64, 0x5f, 0x61, 0x74,
-	0x18, 0x0e, 0x20, 0x01, 0x28, 0x04, 0x52, 0x09, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x65, 0x64, 0x41,
-	0x74, 0x12, 0x27, 0x0a, 0x0f, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x5f, 0x74, 0x69, 0x6d, 0x65, 0x73,
-	0x74, 0x61, 0x6d, 0x70, 0x18, 0x0f, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0e, 0x62, 0x6c, 0x6f, 0x63,
-	0x6b, 0x54, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x22, 0x85, 0x05, 0x0a, 0x05, 0x42,
+var file_ethereum_index_types_proto_rawDesc = []byte{
+	0x0a, 0x1a, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6d, 0x5f, 0x69, 0x6e, 0x64, 0x65, 0x78,
+	0x5f, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xa3, 0x04, 0x0a,
+	0x19, 0x45, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6d, 0x53, 0x69, 0x6e, 0x67, 0x6c, 0x65, 0x54,
+	0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x68, 0x61,
+	0x73, 0x68, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x68, 0x61, 0x73, 0x68, 0x12, 0x21,
+	0x0a, 0x0c, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x5f, 0x6e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x18, 0x02,
+	0x20, 0x01, 0x28, 0x04, 0x52, 0x0b, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x4e, 0x75, 0x6d, 0x62, 0x65,
+	0x72, 0x12, 0x21, 0x0a, 0x0c, 0x66, 0x72, 0x6f, 0x6d, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73,
+	0x73, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x66, 0x72, 0x6f, 0x6d, 0x41, 0x64, 0x64,
+	0x72, 0x65, 0x73, 0x73, 0x12, 0x1d, 0x0a, 0x0a, 0x74, 0x6f, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65,
+	0x73, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x74, 0x6f, 0x41, 0x64, 0x64, 0x72,
+	0x65, 0x73, 0x73, 0x12, 0x10, 0x0a, 0x03, 0x67, 0x61, 0x73, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x03, 0x67, 0x61, 0x73, 0x12, 0x1b, 0x0a, 0x09, 0x67, 0x61, 0x73, 0x5f, 0x70, 0x72, 0x69,
+	0x63, 0x65, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x67, 0x61, 0x73, 0x50, 0x72, 0x69,
+	0x63, 0x65, 0x12, 0x25, 0x0a, 0x0f, 0x6d, 0x61, 0x78, 0x5f, 0x66, 0x65, 0x65, 0x5f, 0x70, 0x65,
+	0x72, 0x5f, 0x67, 0x61, 0x73, 0x18, 0x07, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x6d, 0x61, 0x78,
+	0x46, 0x65, 0x65, 0x50, 0x65, 0x72, 0x47, 0x61, 0x73, 0x12, 0x36, 0x0a, 0x18, 0x6d, 0x61, 0x78,
+	0x5f, 0x70, 0x72, 0x69, 0x6f, 0x72, 0x69, 0x74, 0x79, 0x5f, 0x66, 0x65, 0x65, 0x5f, 0x70, 0x65,
+	0x72, 0x5f, 0x67, 0x61, 0x73, 0x18, 0x08, 0x20, 0x01, 0x28, 0x09, 0x52, 0x14, 0x6d, 0x61, 0x78,
+	0x50, 0x72, 0x69, 0x6f, 0x72, 0x69, 0x74, 0x79, 0x46, 0x65, 0x65, 0x50, 0x65, 0x72, 0x47, 0x61,
+	0x73, 0x12, 0x14, 0x0a, 0x05, 0x69, 0x6e, 0x70, 0x75, 0x74, 0x18, 0x09, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x05, 0x69, 0x6e, 0x70, 0x75, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x6e, 0x6f, 0x6e, 0x63, 0x65,
+	0x18, 0x0a, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x6e, 0x6f, 0x6e, 0x63, 0x65, 0x12, 0x2b, 0x0a,
+	0x11, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x69, 0x6e, 0x64,
+	0x65, 0x78, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x04, 0x52, 0x10, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61,
+	0x63, 0x74, 0x69, 0x6f, 0x6e, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x12, 0x29, 0x0a, 0x10, 0x74, 0x72,
+	0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x18, 0x0c,
+	0x20, 0x01, 0x28, 0x0d, 0x52, 0x0f, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f,
+	0x6e, 0x54, 0x79, 0x70, 0x65, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x0d,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x12, 0x1d, 0x0a, 0x0a, 0x69,
+	0x6e, 0x64, 0x65, 0x78, 0x65, 0x64, 0x5f, 0x61, 0x74, 0x18, 0x0e, 0x20, 0x01, 0x28, 0x04, 0x52,
+	0x09, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x65, 0x64, 0x41, 0x74, 0x12, 0x27, 0x0a, 0x0f, 0x62, 0x6c,
+	0x6f, 0x63, 0x6b, 0x5f, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x18, 0x0f, 0x20,
+	0x01, 0x28, 0x04, 0x52, 0x0e, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x54, 0x69, 0x6d, 0x65, 0x73, 0x74,
+	0x61, 0x6d, 0x70, 0x12, 0x1d, 0x0a, 0x0a, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x5f, 0x68, 0x61, 0x73,
+	0x68, 0x18, 0x10, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x48, 0x61,
+	0x73, 0x68, 0x22, 0x95, 0x05, 0x0a, 0x0d, 0x45, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6d, 0x42,
 	0x6c, 0x6f, 0x63, 0x6b, 0x12, 0x21, 0x0a, 0x0c, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x5f, 0x6e, 0x75,
 	0x6d, 0x62, 0x65, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0b, 0x62, 0x6c, 0x6f, 0x63,
 	0x6b, 0x4e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x12, 0x1e, 0x0a, 0x0a, 0x64, 0x69, 0x66, 0x66, 0x69,
@@ -552,7 +563,7 @@ var file_blocks_transactions_proto_rawDesc = []byte{
 	0x70, 0x74, 0x5f, 0x72, 0x6f, 0x6f, 0x74, 0x18, 0x0c, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x72,
 	0x65, 0x63, 0x65, 0x69, 0x70, 0x74, 0x52, 0x6f, 0x6f, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x75, 0x6e,
 	0x63, 0x6c, 0x65, 0x73, 0x18, 0x0d, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x75, 0x6e, 0x63, 0x6c,
-	0x65, 0x73, 0x12, 0x12, 0x0a, 0x04, 0x73, 0x69, 0x7a, 0x65, 0x18, 0x0e, 0x20, 0x01, 0x28, 0x05,
+	0x65, 0x73, 0x12, 0x12, 0x0a, 0x04, 0x73, 0x69, 0x7a, 0x65, 0x18, 0x0e, 0x20, 0x01, 0x28, 0x04,
 	0x52, 0x04, 0x73, 0x69, 0x7a, 0x65, 0x12, 0x1d, 0x0a, 0x0a, 0x73, 0x74, 0x61, 0x74, 0x65, 0x5f,
 	0x72, 0x6f, 0x6f, 0x74, 0x18, 0x0f, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x73, 0x74, 0x61, 0x74,
 	0x65, 0x52, 0x6f, 0x6f, 0x74, 0x12, 0x1c, 0x0a, 0x09, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61,
@@ -564,11 +575,12 @@ var file_blocks_transactions_proto_rawDesc = []byte{
 	0x6f, 0x6f, 0x74, 0x18, 0x12, 0x20, 0x01, 0x28, 0x09, 0x52, 0x10, 0x74, 0x72, 0x61, 0x6e, 0x73,
 	0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x52, 0x6f, 0x6f, 0x74, 0x12, 0x1d, 0x0a, 0x0a, 0x69,
 	0x6e, 0x64, 0x65, 0x78, 0x65, 0x64, 0x5f, 0x61, 0x74, 0x18, 0x13, 0x20, 0x01, 0x28, 0x04, 0x52,
-	0x09, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x65, 0x64, 0x41, 0x74, 0x12, 0x36, 0x0a, 0x0c, 0x74, 0x72,
+	0x09, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x65, 0x64, 0x41, 0x74, 0x12, 0x3e, 0x0a, 0x0c, 0x74, 0x72,
 	0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x18, 0x14, 0x20, 0x03, 0x28, 0x0b,
-	0x32, 0x12, 0x2e, 0x53, 0x69, 0x6e, 0x67, 0x6c, 0x65, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63,
-	0x74, 0x69, 0x6f, 0x6e, 0x52, 0x0c, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f,
-	0x6e, 0x73, 0x22, 0xa1, 0x02, 0x0a, 0x08, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x4c, 0x6f, 0x67, 0x12,
+	0x32, 0x1a, 0x2e, 0x45, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6d, 0x53, 0x69, 0x6e, 0x67, 0x6c,
+	0x65, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x0c, 0x74, 0x72,
+	0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x22, 0xa9, 0x02, 0x0a, 0x10, 0x45,
+	0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6d, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x4c, 0x6f, 0x67, 0x12,
 	0x18, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09,
 	0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x74, 0x6f, 0x70,
 	0x69, 0x63, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x09, 0x52, 0x06, 0x74, 0x6f, 0x70, 0x69, 0x63,
@@ -586,30 +598,31 @@ var file_blocks_transactions_proto_rawDesc = []byte{
 	0x08, 0x6c, 0x6f, 0x67, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x12, 0x2b, 0x0a, 0x11, 0x74, 0x72, 0x61,
 	0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x18, 0x09,
 	0x20, 0x01, 0x28, 0x04, 0x52, 0x10, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f,
-	0x6e, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x42, 0x04, 0x5a, 0x02, 0x2e, 0x2f, 0x62, 0x06, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x33,
+	0x6e, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x42, 0x1a, 0x5a, 0x18, 0x73, 0x65, 0x65, 0x72, 0x2e, 0x62,
+	0x6c, 0x6f, 0x63, 0x6b, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2e, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65,
+	0x75, 0x6d, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
-	file_blocks_transactions_proto_rawDescOnce sync.Once
-	file_blocks_transactions_proto_rawDescData = file_blocks_transactions_proto_rawDesc
+	file_ethereum_index_types_proto_rawDescOnce sync.Once
+	file_ethereum_index_types_proto_rawDescData = file_ethereum_index_types_proto_rawDesc
 )
 
-func file_blocks_transactions_proto_rawDescGZIP() []byte {
-	file_blocks_transactions_proto_rawDescOnce.Do(func() {
-		file_blocks_transactions_proto_rawDescData = protoimpl.X.CompressGZIP(file_blocks_transactions_proto_rawDescData)
+func file_ethereum_index_types_proto_rawDescGZIP() []byte {
+	file_ethereum_index_types_proto_rawDescOnce.Do(func() {
+		file_ethereum_index_types_proto_rawDescData = protoimpl.X.CompressGZIP(file_ethereum_index_types_proto_rawDescData)
 	})
-	return file_blocks_transactions_proto_rawDescData
+	return file_ethereum_index_types_proto_rawDescData
 }
 
-var file_blocks_transactions_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
-var file_blocks_transactions_proto_goTypes = []interface{}{
-	(*SingleTransaction)(nil), // 0: SingleTransaction
-	(*Block)(nil),             // 1: Block
-	(*EventLog)(nil),          // 2: EventLog
+var file_ethereum_index_types_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_ethereum_index_types_proto_goTypes = []interface{}{
+	(*EthereumSingleTransaction)(nil), // 0: EthereumSingleTransaction
+	(*EthereumBlock)(nil),             // 1: EthereumBlock
+	(*EthereumEventLog)(nil),          // 2: EthereumEventLog
 }
-var file_blocks_transactions_proto_depIdxs = []int32{
-	0, // 0: Block.transactions:type_name -> SingleTransaction
+var file_ethereum_index_types_proto_depIdxs = []int32{
+	0, // 0: EthereumBlock.transactions:type_name -> EthereumSingleTransaction
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -617,14 +630,14 @@ var file_blocks_transactions_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_blocks_transactions_proto_init() }
-func file_blocks_transactions_proto_init() {
-	if File_blocks_transactions_proto != nil {
+func init() { file_ethereum_index_types_proto_init() }
+func file_ethereum_index_types_proto_init() {
+	if File_ethereum_index_types_proto != nil {
 		return
 	}
 	if !protoimpl.UnsafeEnabled {
-		file_blocks_transactions_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SingleTransaction); i {
+		file_ethereum_index_types_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*EthereumSingleTransaction); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -635,8 +648,8 @@ func file_blocks_transactions_proto_init() {
 				return nil
 			}
 		}
-		file_blocks_transactions_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Block); i {
+		file_ethereum_index_types_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*EthereumBlock); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -647,8 +660,8 @@ func file_blocks_transactions_proto_init() {
 				return nil
 			}
 		}
-		file_blocks_transactions_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*EventLog); i {
+		file_ethereum_index_types_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*EthereumEventLog); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -664,18 +677,18 @@ func file_blocks_transactions_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: file_blocks_transactions_proto_rawDesc,
+			RawDescriptor: file_ethereum_index_types_proto_rawDesc,
 			NumEnums:      0,
 			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_blocks_transactions_proto_goTypes,
-		DependencyIndexes: file_blocks_transactions_proto_depIdxs,
-		MessageInfos:      file_blocks_transactions_proto_msgTypes,
+		GoTypes:           file_ethereum_index_types_proto_goTypes,
+		DependencyIndexes: file_ethereum_index_types_proto_depIdxs,
+		MessageInfos:      file_ethereum_index_types_proto_msgTypes,
 	}.Build()
-	File_blocks_transactions_proto = out.File
-	file_blocks_transactions_proto_rawDesc = nil
-	file_blocks_transactions_proto_goTypes = nil
-	file_blocks_transactions_proto_depIdxs = nil
+	File_ethereum_index_types_proto = out.File
+	file_ethereum_index_types_proto_rawDesc = nil
+	file_ethereum_index_types_proto_goTypes = nil
+	file_ethereum_index_types_proto_depIdxs = nil
 }
