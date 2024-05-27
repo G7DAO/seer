@@ -72,13 +72,13 @@ func GetDBConnections(uuids []string) (map[string]string, error) {
 func GetDBConnection(uuid string) (string, error) {
 
 	// Create the request
-	req, err := http.NewRequest("GET", MOONSTREAM_DB_MANAGER_API+"/customers/"+uuid+"/instances/1/creds/seer/url", nil)
+	req, err := http.NewRequest("GET", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid+"/instances/1/creds/seer/url", nil)
 	if err != nil {
 		return "", err
 	}
 
 	// Set the authorization header
-	req.Header.Set("Authorization", "Bearer "+MOONSTREAM_DB_MANAGER_ACCESS_TOKEN)
+	req.Header.Set("Authorization", "Bearer "+MOONSTREAM_DB_CONTROLLER_SEER_ACCESS_TOKEN)
 
 	// Perform the request
 	resp, err := http.DefaultClient.Do(req)

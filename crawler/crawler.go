@@ -94,17 +94,8 @@ func (c *Crawler) Start() {
 		panic(err)
 	}
 
-	var url string
-
-	fmt.Printf("providerURI: %s\n", c.providerURI)
-	if c.providerURI != "" {
-		url = c.providerURI
-	} else {
-		url = InfuraURLs[chainType]
-	}
-
-	log.Printf("Starting crawler using blockchain URL: %s", url)
-	client, err := common.NewClient(chainType, url)
+	log.Printf("Starting crawler using blockchain URL: %s", c.providerURI)
+	client, err := common.NewClient(chainType, c.providerURI)
 	if err != nil {
 		log.Fatal(err)
 	}

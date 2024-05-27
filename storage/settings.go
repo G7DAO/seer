@@ -10,7 +10,7 @@ var (
 	SeerCrawlerStorageType            string
 	SeerCrawlerStorageBucket          string
 	GCPStorageServiceAccountCredsPath string
-	SeerCrawlerStoragePath            string
+	SeerCrawlerStoragePath            string = "data"
 )
 
 func SetStorageBucketFromEnv() error {
@@ -49,10 +49,10 @@ func CheckVariablesForStorage() error {
 		log.Printf("SEER_CRAWLER_STORAGE_TYPE environment variable is not set or unknown, using default: %s", SeerCrawlerStorageType)
 	}
 
-	SeerCrawlerStoragePath = os.Getenv("SEER_CRAWLER_STORAGE_PATH")
-	if SeerCrawlerStoragePath == "" {
-		SeerCrawlerStoragePath = "data"
-		log.Printf("Set default seer crawler storage path to '%s'", SeerCrawlerStoragePath)
+	SeerCrawlerStoragePathEnvVar := os.Getenv("SEER_CRAWLER_STORAGE_PATH")
+	if SeerCrawlerStoragePathEnvVar != "" {
+		SeerCrawlerStoragePath = SeerCrawlerStoragePathEnvVar
+		log.Printf("Default seer crawler storage path set to '%s'", SeerCrawlerStoragePath)
 	}
 
 	return nil

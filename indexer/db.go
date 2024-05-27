@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -58,13 +57,7 @@ func NewPostgreSQLpgx() (*PostgreSQLpgx, error) {
 
 	defer cancel()
 
-	connect := os.Getenv("MOONSTREAM_INDEX_URI")
-
-	if connect == "" {
-		panic("MOONSTREAM_INDEX_URI is not set")
-	}
-
-	pool, err := pgxpool.New(ctx, os.Getenv("MOONSTREAM_INDEX_URI"))
+	pool, err := pgxpool.New(ctx, MOONSTREAM_DB_V3_INDEXES_URI)
 	if err != nil {
 		return nil, err
 	}

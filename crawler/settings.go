@@ -1,24 +1,23 @@
 package crawler
 
-import "os"
+import (
+	"fmt"
+	"os"
+)
 
 var (
-	InfuraURLs               map[string]string
-	infuraKey                string
-	SeerCrawlerStoragePrefix string
+	SeerCrawlerStoragePrefix string = "dev"
 )
 
 func CheckVariablesForCrawler() error {
-	SeerCrawlerStoragePrefix = os.Getenv("SEER_CRAWLER_STORAGE_PREFIX")
-	if SeerCrawlerStoragePrefix == "" {
+	SeerCrawlerStoragePrefixEnvVar := os.Getenv("SEER_CRAWLER_STORAGE_PREFIX")
+	switch SeerCrawlerStoragePrefixEnvVar {
+	case "dev":
 		SeerCrawlerStoragePrefix = "dev"
-	}
-
-	infuraKey = os.Getenv("INFURA_KEY")
-
-	InfuraURLs = map[string]string{
-		"ethereum": "https://mainnet.infura.io/v3/" + infuraKey,
-		"polygon":  "https://polygon-mainnet.infura.io/v3/" + infuraKey,
+	case "prod":
+		SeerCrawlerStoragePrefix = "prod"
+	default:
+		return fmt.Errorf("unknown storage prefix set: %s", SeerCrawlerStoragePrefixEnvVar)
 	}
 
 	return nil
