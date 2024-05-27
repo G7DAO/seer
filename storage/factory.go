@@ -29,6 +29,7 @@ func NewStorage(storageType ...string) (Storer, error) {
 	case "filesystem":
 		return NewFileStorage(baseDir), nil
 	case "gcs":
+		// Google Cloud Storage
 		// Initialize the GCS client once
 		serviceAccountKeyPath := GCSServiceFilePath
 		if serviceAccountKeyPath == "" {
@@ -43,6 +44,7 @@ func NewStorage(storageType ...string) (Storer, error) {
 
 		return NewGCSStorage(client, baseDir), nil
 	case "s3":
+		// Amazon S3
 		return NewS3Storage(), nil
 	default:
 		return nil, fmt.Errorf("unsupported storage type: %s", stype)

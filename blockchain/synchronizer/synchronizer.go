@@ -3,7 +3,7 @@ package synchronizer
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -11,29 +11,24 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/moonstream-to/seer/blockchain/common"
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/storage"
 )
 
 type Synchronizer struct {
-	blockchain   string
-	addresses    []string
-	abis         map[string]abi.ABI
-	start_block  uint64
-	end_block    uint64
-	index_path   string
-	storage_path string
-	providerURI  string
+	blockchain  string
+	startBlock  uint64
+	endBlock    uint64
+	providerURI string
 }
 
 // NewSynchronizer creates a new synchronizer instance with the given blockchain handler.
 func NewSynchronizer(chain string, startBlock uint64, endBlock uint64) *Synchronizer {
 
 	return &Synchronizer{
-		blockchain:  chain,
-		start_block: startBlock,
+		blockchain: chain,
+		startBlock: startBlock,
 	}
 }
 
@@ -97,7 +92,7 @@ func GetDBConnection(uuid string) (string, error) {
 	}
 
 	// Read string from body
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
@@ -198,7 +193,7 @@ func (d *Synchronizer) syncCycle() error {
 		return err
 	}
 
-	if d.start_block == 0 {
+	if d.startBlock == 0 {
 
 		var latestCustomerBlocks []uint64
 		for _, id := range customerIds {
@@ -230,21 +225,21 @@ func (d *Synchronizer) syncCycle() error {
 
 		// Determine the start block as the maximum of the latest blocks of all customers
 		for _, block := range latestCustomerBlocks {
-			if block > d.start_block {
-				d.start_block = block - 100
+			if block > d.startBlock {
+				d.startBlock = block - 100
 			}
 		}
 	}
 
 	// In case start block is still 0, get the latest block from the blockchain
-	if d.start_block == 0 {
+	if d.startBlock == 0 {
 		log.Println("Start block is 0, RDS not contain any blocks yet. Sync indexers then.")
 		latestBlock, err := indexer.Actions.GetLatestBlockNumber(d.blockchain)
 		if err != nil {
 			return err
 		}
-		d.start_block = latestBlock - 100
-		d.end_block = latestBlock
+		d.startBlock = latestBlock - 100
+		d.endBlock = latestBlock
 	}
 
 	// Get the latest block from indexer
@@ -253,7 +248,7 @@ func (d *Synchronizer) syncCycle() error {
 	if err != nil {
 		return err
 	}
-	d.end_block = latestBlock
+	d.endBlock = latestBlock
 
 	// Main loop Steps:
 	// 1. Read updates from the indexer db
@@ -261,7 +256,7 @@ func (d *Synchronizer) syncCycle() error {
 	// 3. Decode input data using ABIs
 	// 4. Write updates to the user RDS
 
-	for i := d.start_block; i < d.end_block; i += 100 {
+	for i := d.startBlock; i < d.endBlock; i += 100 {
 		endBlock := i + 100
 
 		// Read updates from the indexer db
@@ -412,7 +407,7 @@ func (d *Synchronizer) syncCycle() error {
 
 			}(update)
 		}
-		d.start_block = latestBlock
+		d.startBlock = latestBlock
 	}
 
 	// Wait for all goroutines to finish

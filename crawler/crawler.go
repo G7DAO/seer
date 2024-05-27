@@ -159,7 +159,7 @@ func (c *Crawler) Start() {
 	maxWaitForBlocksTime := 12 * retryWaitTime
 	retryAttempts := 3
 
-	c.baseDir = filepath.Join(c.baseDir, SeerCrawlerStoragePrefix, chainType)
+	c.baseDir = filepath.Join(SeerCrawlerStoragePrefix, c.baseDir, chainType)
 
 	// Crawling loop
 	for {
