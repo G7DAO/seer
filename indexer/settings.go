@@ -1,22 +1,20 @@
 package indexer
 
 import (
-	"log"
+	"fmt"
 	"os"
 )
 
 var (
-	InsertBatchSize  int
+	InsertBatchSize  = 1000
 	SeerCrawlerLabel string
 )
 
-func init() {
-	SeerCrawlerLabel = os.Getenv("SEER_CRAWLER_LABEL")
-
+func CheckVariablesForIndexer() error {
+	SeerCrawlerLabel = os.Getenv("SEER_CRAWLER_INDEXER_LABEL")
 	if SeerCrawlerLabel == "" {
-		log.Fatal("SEER_CRAWLER_LABEL environment variable is required")
+		return fmt.Errorf("SEER_CRAWLER_INDEXER_LABEL environment variable is required")
 	}
 
-	InsertBatchSize = 1000
-
+	return nil
 }

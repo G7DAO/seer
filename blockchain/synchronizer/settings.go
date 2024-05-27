@@ -10,7 +10,7 @@ var (
 	MOONSTREAM_DB_MANAGER_ACCESS_TOKEN string
 )
 
-func init() {
+func CheckVariablesForSynchronizer() error {
 	MOONSTREAM_DB_MANAGER_API = os.Getenv("MOONSTREAM_DB_MANAGER_API")
 	if MOONSTREAM_DB_MANAGER_API == "" {
 		log.Fatal("MOONSTREAM_DB_MANAGER_API environment variable is required")
@@ -20,4 +20,5 @@ func init() {
 		log.Fatal("MOONSTREAM_DB_MANAGER_ACCESS_TOKEN environment variable is required")
 	}
 
+	return nil
 }

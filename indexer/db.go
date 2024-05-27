@@ -513,7 +513,7 @@ func (p *PostgreSQLpgx) ReadABIJobs(blockchain string) ([]AbiJob, error) {
 
 	defer conn.Release()
 
-	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, created_at, updated_at FROM abi_jobs where chain=$1 ", storage.Blokchain[blockchain])
+	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, created_at, updated_at FROM abi_jobs where chain=$1 ", storage.Blokchains[blockchain])
 
 	if err != nil {
 		return nil, err
@@ -783,7 +783,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, toBlock
 	GROUP BY
 		customer_id`, blocksTableName, transactionsTableName, logsTableName)
 
-	rows, err := conn.Query(context.Background(), query, fromBlock, toBlock, storage.Blokchain[blockchain])
+	rows, err := conn.Query(context.Background(), query, fromBlock, toBlock, storage.Blokchains[blockchain])
 
 	if err != nil {
 		log.Println("Error querying abi jobs from database", err)

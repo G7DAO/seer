@@ -16,6 +16,7 @@ import (
 	"github.com/moonstream-to/seer/evm"
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/starknet"
+	"github.com/moonstream-to/seer/storage"
 	"github.com/moonstream-to/seer/version"
 )
 
@@ -33,10 +34,9 @@ func CreateRootCommand() *cobra.Command {
 	versionCmd := CreateVersionCommand()
 	starknetCmd := CreateStarknetCommand()
 	crawlerCmd := CreateCrawlerCommand()
-	// synchronizerCmd := CreatesynchronizerCommand()
 	indexCmd := CreateIndexCommand()
 	evmCmd := CreateEVMCommand()
-	synchronizerCmd := CreatesynchronizerCommand()
+	synchronizerCmd := CreateSynchronizerCommand()
 	rootCmd.AddCommand(completionCmd, versionCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd, synchronizerCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
@@ -136,7 +136,25 @@ func CreateCrawlerCommand() *cobra.Command {
 
 	crawlerCmd := &cobra.Command{
 		Use:   "crawler",
-		Short: "Generate crawlers for various blockchains",
+		Short: "Start crawlers for various blockchains",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
+			return nil
+		},
 		Run: func(cmd *cobra.Command, args []string) {
 
 			indexer.InitDBConnection()
@@ -163,7 +181,7 @@ func CreateCrawlerCommand() *cobra.Command {
 	return crawlerCmd
 }
 
-func CreatesynchronizerCommand() *cobra.Command {
+func CreateSynchronizerCommand() *cobra.Command {
 	var startBlock, endBlock uint64
 	// var startBlockBig, endBlockBig big.Int
 	var baseDir, output, abi_source string
@@ -171,6 +189,29 @@ func CreatesynchronizerCommand() *cobra.Command {
 	synchronizerCmd := &cobra.Command{
 		Use:   "synchronizer",
 		Short: "Decode the crawled data from various blockchains",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
+			syncErr := synchronizer.CheckVariablesForSynchronizer()
+			if syncErr != nil {
+				return syncErr
+			}
+
+			return nil
+		},
 		Run: func(cmd *cobra.Command, args []string) {
 			indexer.InitDBConnection()
 

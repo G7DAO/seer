@@ -515,7 +515,7 @@ func (c *Client) DecodeProtoEventsToLabels(events []string, blocksCache map[uint
 
 		// Convert event to label
 		eventLabel := indexer.EventLabel{
-			Label:           "seer",
+			Label:           indexer.SeerCrawlerLabel,
 			LabelName:       abiMap[checksumAddress][topicSelector]["abi_name"],
 			LabelType:       "event",
 			BlockNumber:     event.BlockNumber,

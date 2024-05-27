@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"cloud.google.com/go/storage"
+	gcp_storage "cloud.google.com/go/storage"
 	"google.golang.org/api/option"
 )
 
@@ -14,9 +14,6 @@ func NewStorage(storageType ...string) (Storer, error) {
 		stype = storageType[0]
 	} else {
 		stype = SeerCrawlerStorageType
-		if stype == "" {
-			stype = "filesystem" // Default to filesystem
-		}
 	}
 
 	baseDir := SeerCrawlerStoragePath
@@ -28,22 +25,23 @@ func NewStorage(storageType ...string) (Storer, error) {
 	switch stype {
 	case "filesystem":
 		return NewFileStorage(baseDir), nil
-	case "gcs":
+	case "gcp-bucket":
 		// Google Cloud Storage
-		// Initialize the GCS client once
-		serviceAccountKeyPath := GCSServiceFilePath
-		if serviceAccountKeyPath == "" {
-			return nil, fmt.Errorf("missing GOOGLE_APPLICATION_CREDENTIALS environment variable")
-		}
-
 		ctx := context.Background()
-		client, err := storage.NewClient(ctx, option.WithCredentialsFile(serviceAccountKeyPath))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create GCS client: %v", err)
+
+		var client *gcp_storage.Client
+		var clientErr error
+		if GCPStorageServiceAccountCredsPath != "" {
+			client, clientErr = gcp_storage.NewClient(ctx, option.WithCredentialsFile(GCPStorageServiceAccountCredsPath))
+		} else {
+			client, clientErr = gcp_storage.NewClient(ctx)
+		}
+		if clientErr != nil {
+			return nil, fmt.Errorf("failed to create GCS client: %v", clientErr)
 		}
 
 		return NewGCSStorage(client, baseDir), nil
-	case "s3":
+	case "aws-bucket":
 		// Amazon S3
 		return NewS3Storage(), nil
 	default:

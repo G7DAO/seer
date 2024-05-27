@@ -6,6 +6,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // S3 implements the Storer interface for Amazon S3
@@ -16,6 +17,7 @@ type S3 struct {
 
 func NewS3Storage() *S3 {
 	// Implement the NewS3 function
+	log.Warn("AWS bucket support not implemented yet")
 	return &S3{}
 }
 
