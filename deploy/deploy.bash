@@ -63,7 +63,7 @@ echo
 echo -e "${PREFIX_INFO} Build seer binary"
 EXEC_DIR=$(pwd)
 cd "${APP_DIR}"
-HOME=/home/ubuntu /usr/local/go/bin/go build -o "${APP_DIR}/seer" "${APP_DIR}/*.go"
+HOME=/home/ubuntu /usr/local/go/bin/go build -o "${APP_DIR}/seer" .
 chmod +x "${APP_DIR}/seer"
 chown ubuntu:ubuntu "${APP_DIR}/seer"
 cd "${EXEC_DIR}"
