@@ -25,11 +25,10 @@ type Crawler struct {
 	endBlock       uint64
 	force          bool
 	baseDir        string
-	providerURI    string
 }
 
 // NewCrawler creates a new crawler instance with the given blockchain handler.
-func NewCrawler(chain string, startBlock uint64, endBlock uint64, timeout int, batchSize int, confirmations int, baseDir string, force bool, providerURI string) *Crawler {
+func NewCrawler(chain string, startBlock uint64, endBlock uint64, timeout int, batchSize int, confirmations int, baseDir string, force bool) *Crawler {
 	fmt.Printf("Start block: %d\n", startBlock)
 	return &Crawler{
 		blockchain:     chain,
@@ -40,7 +39,6 @@ func NewCrawler(chain string, startBlock uint64, endBlock uint64, timeout int, b
 		confirmations:  confirmations,
 		baseDir:        baseDir,
 		force:          force,
-		providerURI:    providerURI,
 	}
 
 }
@@ -94,8 +92,7 @@ func (c *Crawler) Start() {
 		panic(err)
 	}
 
-	log.Printf("Starting crawler using blockchain URL: %s", c.providerURI)
-	client, err := common.NewClient(chainType, c.providerURI)
+	client, err := common.NewClient(chainType, BlockchainURLs[chainType])
 	if err != nil {
 		log.Fatal(err)
 	}

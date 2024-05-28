@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer crawler --web3 "${MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI}"
+ExecStart=/home/ubuntu/seer/seer crawler --chain polygon
 SyslogIdentifier=seer-crawler-polygon
 
 [Install]

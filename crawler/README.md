@@ -20,7 +20,6 @@ Set environment variables:
 
 ```bash
 export MOONSTREAM_DB_V3_INDEXES_URI="driver://user:pass@localhost/dbname"
-export WEB3_JSON_RPC_URI="http://localhost:8545"
 ```
 
 ## Generate crawler {chain} interface
@@ -28,7 +27,7 @@ export WEB3_JSON_RPC_URI="http://localhost:8545"
 note: You need add the chain endpoint it will fetch the data from endpoints.
 
 ```bash
-./seer crawler generate --web3 $WEB3_JSON_RPC_URI
+./seer crawler generate --chain polygon
 ```
 
 Will generate the following files:
@@ -54,5 +53,5 @@ protoc --go_out=. --go_opt=paths=source_relative \
 Before running the crawler, you need initialize the database with the following command:
 
 ```bash
-./seer crawler --web3 $WEB3_JSON_RPC_URI --start-block 53922484 --force
+./seer crawler --chain polygon --start-block 53922484 --force
 ```

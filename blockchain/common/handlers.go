@@ -15,7 +15,6 @@ import (
 )
 
 func wrapClient(url, chain string) (BlockchainClient, error) {
-	fmt.Println("chain", chain, "url", url)
 	if chain == "ethereum" {
 		client, err := ethereum.NewClient(url)
 		return client, err

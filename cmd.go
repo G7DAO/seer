@@ -131,7 +131,7 @@ func CreateStarknetCommand() *cobra.Command {
 func CreateCrawlerCommand() *cobra.Command {
 	var startBlock, endBlock uint64
 	var batchSize, confirmations, timeout int
-	var chain, baseDir, web3 string
+	var chain, baseDir string
 	var force bool
 
 	crawlerCmd := &cobra.Command{
@@ -153,10 +153,6 @@ func CreateCrawlerCommand() *cobra.Command {
 				return crawlerErr
 			}
 
-			if web3 == "" {
-				return fmt.Errorf("flag --web3 should be set")
-			}
-
 			return nil
 		},
 		Run: func(cmd *cobra.Command, args []string) {
@@ -165,7 +161,7 @@ func CreateCrawlerCommand() *cobra.Command {
 
 			// read the blockchain url from $INFURA_URL
 			// if it is not set, use the default url
-			crawler := crawler.NewCrawler(chain, startBlock, endBlock, timeout, batchSize, confirmations, baseDir, force, web3)
+			crawler := crawler.NewCrawler(chain, startBlock, endBlock, timeout, batchSize, confirmations, baseDir, force)
 
 			crawler.Start()
 
@@ -180,7 +176,6 @@ func CreateCrawlerCommand() *cobra.Command {
 	crawlerCmd.Flags().IntVar(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
 	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "data", "The base directory to store the crawled data (default: data)")
 	crawlerCmd.Flags().BoolVar(&force, "force", false, "Set this flag to force the crawler start from the start block (default: false)")
-	crawlerCmd.Flags().StringVar(&web3, "web3", "", "Web3 JSON RPC provider endpoint")
 
 	return crawlerCmd
 }
