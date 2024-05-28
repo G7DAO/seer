@@ -21,8 +21,8 @@ PARAMETERS_ENV_PATH="${SECRETS_DIR}/app.env"
 SCRIPT_DIR="$(realpath $(dirname $0))"
 USER_SYSTEMD_DIR="${USER_SYSTEMD_DIR:-/home/ubuntu/.config/systemd/user}"
 
-# Service file
-SEER_CRAWLERS_SERVICE_FILE="seer-crawlers.service"
+# Service files
+SEER_CRAWLER_POLYGON_SERVICE_FILE="seer-crawler-polygon.service"
 
 set -eu
 
@@ -57,8 +57,8 @@ fi
 
 echo
 echo
-echo -e "${PREFIX_INFO} Replacing existing seer crawlers service definition with ${SEER_CRAWLERS_SERVICE_FILE}"
-chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLERS_SERVICE_FILE}"
-cp "${SCRIPT_DIR}/${SEER_CRAWLERS_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLERS_SERVICE_FILE}"
+echo -e "${PREFIX_INFO} Replacing existing seer crawler for polygon blockchain service definition with ${SEER_CRAWLER_POLYGON_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_POLYGON_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_CRAWLER_POLYGON_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_POLYGON_SERVICE_FILE}"
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
-XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLERS_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_POLYGON_SERVICE_FILE}"
