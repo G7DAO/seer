@@ -122,7 +122,7 @@ func (c *Crawler) Start() {
 		}
 
 	} else {
-		latestIndexedBlock, err := indexer.Actions.GetLatestBlockNumber(chainType)
+		latestIndexedBlock, err := indexer.DBConnection.GetLatestBlockNumber(chainType)
 
 		// if err no rows in result set then set startBlock to latestBlockNumber from the blockchain
 

@@ -25,7 +25,7 @@ func NewStorage(storageType ...string) (Storer, error) {
 	switch stype {
 	case "filesystem":
 		return NewFileStorage(baseDir), nil
-	case "gcp-bucket":
+	case "gcp-storage":
 		// Google Cloud Storage
 		ctx := context.Background()
 

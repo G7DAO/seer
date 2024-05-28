@@ -9,16 +9,16 @@ import (
 	"strings"
 )
 
-var Actions *PostgreSQLpgx
+var DBConnection *PostgreSQLpgx
 var err error
 
-// init initializes the Actions variable with a new PostgreSQLpgx instance.
+// init initializes the DBConnection variable with a new PostgreSQLpgx instance.
 func InitDBConnection() {
 
-	Actions, err = NewPostgreSQLpgx()
+	DBConnection, err = NewPostgreSQLpgx()
 
 	if err != nil {
-		fmt.Println("Error initializing Actions: ", err)
+		fmt.Println("Error initializing DBConnection: ", err)
 	}
 }
 
@@ -164,7 +164,7 @@ func WriteIndexesToDatabase(blockchain string, indexes []interface{}, indexType 
 			index.chain = blockchain
 			blockIndexes = append(blockIndexes, index)
 		}
-		return Actions.writeBlockIndexToDB(blockchain+"_blocks", blockIndexes)
+		return DBConnection.writeBlockIndexToDB(blockchain+"_blocks", blockIndexes)
 
 	case "transaction":
 		var transactionIndexes []TransactionIndex
@@ -176,7 +176,7 @@ func WriteIndexesToDatabase(blockchain string, indexes []interface{}, indexType 
 			index.chain = blockchain
 			transactionIndexes = append(transactionIndexes, index)
 		}
-		return Actions.writeTransactionIndexToDB(blockchain+"_transactions", transactionIndexes)
+		return DBConnection.writeTransactionIndexToDB(blockchain+"_transactions", transactionIndexes)
 
 	case "log":
 		var logIndexes []LogIndex
@@ -188,7 +188,7 @@ func WriteIndexesToDatabase(blockchain string, indexes []interface{}, indexType 
 			index.chain = blockchain
 			logIndexes = append(logIndexes, index)
 		}
-		return Actions.writeLogIndexToDB(blockchain+"_logs", logIndexes)
+		return DBConnection.writeLogIndexToDB(blockchain+"_logs", logIndexes)
 
 	default:
 		return errors.New("unsupported index type")

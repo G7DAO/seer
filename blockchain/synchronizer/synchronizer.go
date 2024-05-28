@@ -110,7 +110,7 @@ func GetDBConnection(uuid string) (string, error) {
 func (d *Synchronizer) ReadAbiJobsFromDatabase(blockchain string) ([]indexer.AbiJob, error) {
 	// Simulate reading ABI jobs from the database for a given blockchain.
 	// This function will need to interact with a real database or an internal API in the future.
-	abiJobs, err := indexer.Actions.ReadABIJobs(blockchain)
+	abiJobs, err := indexer.DBConnection.ReadABIJobs(blockchain)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +234,7 @@ func (d *Synchronizer) syncCycle() error {
 	// In case start block is still 0, get the latest block from the blockchain
 	if d.startBlock == 0 {
 		log.Println("Start block is 0, RDS not contain any blocks yet. Sync indexers then.")
-		latestBlock, err := indexer.Actions.GetLatestBlockNumber(d.blockchain)
+		latestBlock, err := indexer.DBConnection.GetLatestBlockNumber(d.blockchain)
 		if err != nil {
 			return err
 		}
@@ -243,7 +243,7 @@ func (d *Synchronizer) syncCycle() error {
 	}
 
 	// Get the latest block from indexer
-	latestBlock, err := indexer.Actions.GetLatestBlockNumber(d.blockchain)
+	latestBlock, err := indexer.DBConnection.GetLatestBlockNumber(d.blockchain)
 
 	if err != nil {
 		return err
@@ -261,7 +261,7 @@ func (d *Synchronizer) syncCycle() error {
 
 		// Read updates from the indexer db
 		// This function will return a list of customer updates 1 update is 1 customer
-		updates, err := indexer.Actions.ReadUpdates(d.blockchain, i, endBlock, customerIds)
+		updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, i, endBlock, customerIds)
 		if err != nil {
 			return fmt.Errorf("error reading updates: %w", err)
 		}

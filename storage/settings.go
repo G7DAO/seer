@@ -26,8 +26,8 @@ func CheckVariablesForStorage() error {
 	switch SeerCrawlerStorageTypeEnvVar {
 	case "filesystem":
 		SeerCrawlerStorageType = "filesystem"
-	case "gcp-bucket":
-		SeerCrawlerStorageType = "gcp-bucket"
+	case "gcp-storage":
+		SeerCrawlerStorageType = "gcp-storage"
 
 		bucketError := SetStorageBucketFromEnv()
 		if bucketError != nil {
@@ -59,7 +59,7 @@ func CheckVariablesForStorage() error {
 }
 
 // Blockchains map for storage or database models
-var Blokchains = map[string]string{
+var Blockchains = map[string]string{
 	"ethereum": "ethereum_smartcontract",
 	"polygon":  "polygon_smartcontract",
 }
