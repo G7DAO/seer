@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"go/format"
 	"io"
 	"os"
@@ -10,8 +11,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/moonstream-to/seer/blockchain/synchronizer"
+	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/evm"
+	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/starknet"
+	"github.com/moonstream-to/seer/storage"
 	"github.com/moonstream-to/seer/version"
 )
 
@@ -28,8 +33,11 @@ func CreateRootCommand() *cobra.Command {
 	completionCmd := CreateCompletionCommand(rootCmd)
 	versionCmd := CreateVersionCommand()
 	starknetCmd := CreateStarknetCommand()
+	crawlerCmd := CreateCrawlerCommand()
+	indexCmd := CreateIndexCommand()
 	evmCmd := CreateEVMCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, starknetCmd, evmCmd)
+	synchronizerCmd := CreateSynchronizerCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd, synchronizerCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -118,6 +126,141 @@ func CreateStarknetCommand() *cobra.Command {
 	starknetCmd.AddCommand(starknetABIParseCmd, starknetABIGenGoCmd)
 
 	return starknetCmd
+}
+
+func CreateCrawlerCommand() *cobra.Command {
+	var startBlock, endBlock uint64
+	var batchSize, confirmations, timeout int
+	var chain, baseDir string
+	var force bool
+
+	crawlerCmd := &cobra.Command{
+		Use:   "crawler",
+		Short: "Start crawlers for various blockchains",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
+			return nil
+		},
+		Run: func(cmd *cobra.Command, args []string) {
+
+			indexer.InitDBConnection()
+
+			// read the blockchain url from $INFURA_URL
+			// if it is not set, use the default url
+			crawler := crawler.NewCrawler(chain, startBlock, endBlock, timeout, batchSize, confirmations, baseDir, force)
+
+			crawler.Start()
+
+		},
+	}
+
+	crawlerCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	crawlerCmd.Flags().Uint64Var(&startBlock, "start-block", 0, "The block number to start crawling from (default: latest block)")
+	crawlerCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end crawling at (default: latest block)")
+	crawlerCmd.Flags().IntVar(&timeout, "timeout", 0, "The timeout for the crawler in seconds (default: 0 - no timeout)")
+	crawlerCmd.Flags().IntVar(&batchSize, "batch-size", 10, "The number of blocks to crawl in each batch (default: 10)")
+	crawlerCmd.Flags().IntVar(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
+	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "data", "The base directory to store the crawled data (default: data)")
+	crawlerCmd.Flags().BoolVar(&force, "force", false, "Set this flag to force the crawler start from the start block (default: false)")
+
+	return crawlerCmd
+}
+
+func CreateSynchronizerCommand() *cobra.Command {
+	var startBlock, endBlock uint64
+	// var startBlockBig, endBlockBig big.Int
+	var baseDir, output, abi_source string
+
+	synchronizerCmd := &cobra.Command{
+		Use:   "synchronizer",
+		Short: "Decode the crawled data from various blockchains",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
+			syncErr := synchronizer.CheckVariablesForSynchronizer()
+			if syncErr != nil {
+				return syncErr
+			}
+
+			return nil
+		},
+		Run: func(cmd *cobra.Command, args []string) {
+			indexer.InitDBConnection()
+
+			// convert the start and end block to big.Int
+
+			// read the blockchain url from $INFURA_URL
+			// if it is not set, use the default url
+			synchronizer := synchronizer.NewSynchronizer("polygon", startBlock, endBlock)
+
+			synchronizer.SyncCustomers()
+		},
+	}
+
+	synchronizerCmd.Flags().Uint64Var(&startBlock, "start-block", 0, "The block number to start decoding from (default: latest block)")
+	synchronizerCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end decoding at (default: latest block)")
+	synchronizerCmd.Flags().StringVar(&baseDir, "base-dir", "data", "The base directory to store the crawled data (default: data)")
+	synchronizerCmd.Flags().StringVar(&output, "output", "output", "The output directory to store the decoded data (default: output)")
+	synchronizerCmd.Flags().StringVar(&abi_source, "abi-source", "abi", "The source of the ABI (default: abi)")
+
+	return synchronizerCmd
+}
+
+func CreateIndexCommand() *cobra.Command {
+
+	indexCommand := &cobra.Command{
+		Use:   "index",
+		Short: "Index storage of moonstream blockstore",
+	}
+
+	// subcommands
+
+	initializeCommand := &cobra.Command{
+		Use:   "initialize",
+		Short: "Initialize the index storage",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("Initializing index storage from go")
+		},
+	}
+
+	readCommand := &cobra.Command{
+		Use:   "read",
+		Short: "Read the index storage",
+		Run: func(cmd *cobra.Command, args []string) {
+			// index.Read()
+		},
+	}
+
+	indexCommand.AddCommand(initializeCommand, readCommand)
+
+	return indexCommand
 }
 
 func CreateStarknetParseCommand() *cobra.Command {
