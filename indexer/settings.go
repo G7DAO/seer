@@ -17,7 +17,7 @@ func CheckVariablesForIndexer() error {
 		return fmt.Errorf("SEER_CRAWLER_INDEXER_LABEL environment variable is required")
 	}
 
-	MOONSTREAM_DB_V3_INDEXES_URI := os.Getenv("MOONSTREAM_DB_V3_INDEXES_URI")
+	MOONSTREAM_DB_V3_INDEXES_URI = os.Getenv("MOONSTREAM_DB_V3_INDEXES_URI")
 	if MOONSTREAM_DB_V3_INDEXES_URI == "" {
 		return fmt.Errorf("MOONSTREAM_DB_V3_INDEXES_URI environment variable is required")
 	}
