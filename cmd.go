@@ -370,9 +370,10 @@ func CreateEVMCommand() *cobra.Command {
 
 func CreateEVMGenerateCommand() *cobra.Command {
 	var cli, noformat, includemain bool
-	var infile, packageName, structName, bytecodefile, outfile string
+	var infile, packageName, structName, bytecodefile, outfile, foundryBuildFile, hardhatBuildFile string
 	var rawABI, bytecode []byte
 	var readErr error
+	var aliases map[string]string
 
 	evmGenerateCmd := &cobra.Command{
 		Use:   "generate",
@@ -385,7 +386,43 @@ func CreateEVMGenerateCommand() *cobra.Command {
 				return errors.New("struct name is required via --struct/-s")
 			}
 
-			if infile != "" {
+			if foundryBuildFile != "" {
+				var contents []byte
+				contents, readErr = os.ReadFile(foundryBuildFile)
+				if readErr != nil {
+					return readErr
+				}
+
+				type foundryBytecodeObject struct {
+					Object string `json:"object"`
+				}
+
+				type foundryBuildArtifact struct {
+					ABI      json.RawMessage       `json:"abi"`
+					Bytecode foundryBytecodeObject `json:"bytecode"`
+				}
+
+				var artifact foundryBuildArtifact
+				readErr = json.Unmarshal(contents, &artifact)
+				rawABI = []byte(artifact.ABI)
+				bytecode = []byte(artifact.Bytecode.Object)
+			} else if hardhatBuildFile != "" {
+				var contents []byte
+				contents, readErr = os.ReadFile(hardhatBuildFile)
+				if readErr != nil {
+					return readErr
+				}
+
+				type hardhatBuildArtifact struct {
+					ABI      json.RawMessage `json:"abi"`
+					Bytecode string          `json:"bytecode"`
+				}
+
+				var artifact hardhatBuildArtifact
+				readErr = json.Unmarshal(contents, &artifact)
+				rawABI = []byte(artifact.ABI)
+				bytecode = []byte(artifact.Bytecode)
+			} else if infile != "" {
 				rawABI, readErr = os.ReadFile(infile)
 			} else {
 				rawABI, readErr = io.ReadAll(os.Stdin)
@@ -398,10 +435,18 @@ func CreateEVMGenerateCommand() *cobra.Command {
 			return readErr
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			code, codeErr := evm.GenerateTypes(structName, rawABI, bytecode, packageName)
+
+			code, codeErr := evm.GenerateTypes(structName, rawABI, bytecode, packageName, aliases)
 			if codeErr != nil {
 				return codeErr
 			}
+
+			header, headerErr := evm.GenerateHeader(packageName, cli, includemain, foundryBuildFile, infile, bytecodefile, structName, outfile, noformat)
+			if headerErr != nil {
+				return headerErr
+			}
+
+			code = header + code
 
 			if cli {
 				code, readErr = evm.AddCLI(code, structName, noformat, includemain)
@@ -430,6 +475,9 @@ func CreateEVMGenerateCommand() *cobra.Command {
 	evmGenerateCmd.Flags().BoolVar(&noformat, "noformat", false, "Set this flag if you do not want the generated code to be formatted (useful to debug errors)")
 	evmGenerateCmd.Flags().BoolVar(&includemain, "includemain", false, "Set this flag if you want to generate a \"main\" function to execute the CLI and make the generated code self-contained - this option is ignored if --cli is not set")
 	evmGenerateCmd.Flags().StringVarP(&outfile, "output", "o", "", "Path to output file (default stdout)")
+	evmGenerateCmd.Flags().StringVar(&foundryBuildFile, "foundry", "", "If your contract is compiled using Foundry, you can specify a path to the build file here (typically \"<foundry project root>/out/<solidity filename>/<contract name>.json\") instead of specifying --abi and --bytecode separately")
+	evmGenerateCmd.Flags().StringVar(&hardhatBuildFile, "hardhat", "", "If your contract is compiled using Hardhat, you can specify a path to the build file here (typically \"<path to solidity file in hardhat artifact directory>/<contract name>.json\") instead of specifying --abi and --bytecode separately")
+	evmGenerateCmd.Flags().StringToStringVar(&aliases, "alias", nil, "A map of identifier aliases (e.g. --alias name=somename)")
 
 	return evmGenerateCmd
 }

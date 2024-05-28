@@ -590,6 +590,7 @@ var {{.EventHashVar}} string = "{{.EventHash}}"
 
 // {{.GoName}} is the Go struct corresponding to the {{.OriginalName}} event.
 type {{.GoName}} struct {
+	BlockNumber uint64
 	{{range .Definition.Members}}
 	{{(CamelCase .Name)}} {{(GenerateGoNameForType .Type)}}
 	{{- end}}
@@ -660,6 +661,7 @@ func (p *EventParser) Parse(event RawEvent) (ParsedEvent, error) {
 		if parseErr != nil {
 			return defaultResult, parseErr
 		}
+		parsedEvent.BlockNumber = event.BlockNumber
 		return ParsedEvent{Name: {{.EventNameVar}}, Event: parsedEvent}, nil
 	}
 	{{- end}}
