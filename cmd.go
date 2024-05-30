@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
 
@@ -142,7 +143,8 @@ func CreateBlockchainGenerateCommand() *cobra.Command {
 		Use:   "generate",
 		Short: "Generate methods and types for different blockchains from template",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			blockchainNameFilePath := fmt.Sprintf("blockchain/%s/%s.go", blockchainNameLower, blockchainNameLower)
+			dirPath := filepath.Join(".", "blockchain", blockchainNameLower)
+			blockchainNameFilePath := filepath.Join(dirPath, fmt.Sprintf("%s.go", blockchainNameLower))
 
 			var blockchainName string
 			blockchainNameList := strings.Split(blockchainNameLower, "_")
@@ -157,10 +159,13 @@ func CreateBlockchainGenerateCommand() *cobra.Command {
 			}
 
 			// Create output file
-			mkdirErr := os.Mkdir(blockchainNameLower, 0775)
-			if mkdirErr != nil {
-				return mkdirErr
+			if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
+				mkdirErr := os.Mkdir(dirPath, 0775)
+				if mkdirErr != nil {
+					return mkdirErr
+				}
 			}
+
 			outputFile, createErr := os.Create(blockchainNameFilePath)
 			if createErr != nil {
 				return createErr

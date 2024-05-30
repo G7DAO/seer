@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log"
 	"math/big"
-	"strings"
 	"os"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -30,7 +30,7 @@ type BlockJson struct {
 	Timestamp        uint64 `json:"timestamp"`
 	TotalDifficulty  string `json:"totalDifficulty"`
 	TransactionsRoot string `json:"transactionsRoot"`
-	Size             uint32 `json:"size"`
+	Size             uint64 `json:"size"`
 	BaseFeePerGas    string `json:"baseFeePerGas"`
 	IndexedAt        uint64 `json:"indexed_at"`
 
@@ -60,7 +60,7 @@ type TransactionJson struct {
 	S                    string       `json:"s"`
 	ToAddress            string       `json:"to"`
 	TransactionIndex     uint64       `json:"transactionIndex"`
-	TransactionType      uint32       `json:"type"`
+	TransactionType      uint64       `json:"type"`
 	Value                string       `json:"value"`
 	IndexedAt            uint64       `json:"indexed_at"`
 	BlockTimestamp       uint64       `json:"block_timestamp"`
@@ -155,7 +155,6 @@ func ReadJsonEventLogs() []*EventJson {
 
 	return eventLogs
 }
-
 
 func DecodeTransactionInputDataToInterface(contractABI *abi.ABI, data []byte) (map[string]interface{}, error) {
 	methodSigData := data[:4]

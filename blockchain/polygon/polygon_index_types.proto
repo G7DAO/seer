@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-option go_package = "./";
+option go_package = "polygon";
 
 
 // Represents a single transaction within a block
-message PolygonSingleTransaction {
+message PolygonTransaction {
   string hash = 1;
   uint64 block_number = 2;
   string from_address = 3;
@@ -16,7 +16,7 @@ message PolygonSingleTransaction {
   string input = 9; // could be a long text
   string nonce = 10;
   uint64 transaction_index = 11;
-  uint32 transaction_type = 12;
+  uint64 transaction_type = 12;
   string value = 13; // using string to handle big numeric values
   uint64 indexed_at = 14; // using uint64 to represent timestamp
   uint64 block_timestamp = 15; // using uint64 to represent timestam
@@ -37,14 +37,14 @@ message PolygonBlock {
   string nonce = 10;
   string parent_hash = 11;
   string receipt_root = 12;
-  string uncles = 13;
+  string sha3_uncles = 13;
   uint64 size = 14;
   string state_root = 15;
   uint64 timestamp = 16;
   string total_difficulty = 17;
   string transactions_root = 18;
   uint64 indexed_at = 19; // using uint64 to represent timestamp
-  repeated PolygonSingleTransaction transactions = 20;
+  repeated PolygonTransaction transactions = 20;
 }
 
 
