@@ -6,17 +6,19 @@ import (
 	"fmt"
 	"go/format"
 	"io"
+	"log"
 	"os"
 	"strings"
+	"text/template"
 
 	"github.com/spf13/cobra"
 
-	"github.com/moonstream-to/seer/blockchain/synchronizer"
 	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/evm"
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/starknet"
 	"github.com/moonstream-to/seer/storage"
+	"github.com/moonstream-to/seer/synchronizer"
 	"github.com/moonstream-to/seer/version"
 )
 
@@ -32,12 +34,13 @@ func CreateRootCommand() *cobra.Command {
 
 	completionCmd := CreateCompletionCommand(rootCmd)
 	versionCmd := CreateVersionCommand()
+	blockchainCmd := CreateBlockchainCommand()
 	starknetCmd := CreateStarknetCommand()
 	crawlerCmd := CreateCrawlerCommand()
 	indexCmd := CreateIndexCommand()
 	evmCmd := CreateEVMCommand()
 	synchronizerCmd := CreateSynchronizerCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd, synchronizerCmd)
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd, synchronizerCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -110,6 +113,76 @@ func CreateVersionCommand() *cobra.Command {
 	}
 
 	return versionCmd
+}
+
+func CreateBlockchainCommand() *cobra.Command {
+	blockchainCmd := &cobra.Command{
+		Use:   "blockchain",
+		Short: "Generate methods and types for different blockchains",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	blockchainGenerateCmd := CreateBlockchainGenerateCommand()
+	blockchainCmd.AddCommand(blockchainGenerateCmd)
+
+	return blockchainCmd
+}
+
+type BlockchainTemplateData struct {
+	BlockchainName      string
+	BlockchainNameLower string
+}
+
+func CreateBlockchainGenerateCommand() *cobra.Command {
+	var blockchainNameLower string
+
+	blockchainGenerateCmd := &cobra.Command{
+		Use:   "generate",
+		Short: "Generate methods and types for different blockchains from template",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			blockchainNameFilePath := fmt.Sprintf("blockchain/%s/%s.go", blockchainNameLower, blockchainNameLower)
+
+			var blockchainName string
+			blockchainNameList := strings.Split(blockchainNameLower, "_")
+			for _, w := range blockchainNameList {
+				blockchainName += strings.Title(w)
+			}
+
+			// Read and parse the template file
+			tmpl, parseErr := template.ParseFiles("blockchain/blockchain.go.tmpl")
+			if parseErr != nil {
+				return parseErr
+			}
+
+			// Create output file
+			mkdirErr := os.Mkdir(blockchainNameLower, 0775)
+			if mkdirErr != nil {
+				return mkdirErr
+			}
+			outputFile, createErr := os.Create(blockchainNameFilePath)
+			if createErr != nil {
+				return createErr
+			}
+			defer outputFile.Close()
+
+			// Execute template and write to output file
+			data := BlockchainTemplateData{BlockchainName: blockchainName, BlockchainNameLower: blockchainNameLower}
+			execErr := tmpl.Execute(outputFile, data)
+			if execErr != nil {
+				return execErr
+			}
+
+			log.Printf("Blockchain file generated successfully: %s", blockchainNameFilePath)
+
+			return nil
+		},
+	}
+
+	blockchainGenerateCmd.Flags().StringVarP(&blockchainNameLower, "name", "n", "", "The name of the blockchain to generate lowercase (example: 'arbitrum_one')")
+
+	return blockchainGenerateCmd
 }
 
 func CreateStarknetCommand() *cobra.Command {

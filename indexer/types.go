@@ -110,7 +110,7 @@ const (
 	LogIndexType         IndexType = "logs"
 )
 
-type BlockCahche struct {
+type BlockCache struct {
 	BlockNumber    uint64
 	BlockTimestamp uint64
 	BlockHash      string

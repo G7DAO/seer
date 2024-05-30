@@ -43,6 +43,8 @@ Will generate the following files:
 
 ## Regenerate proto interface
 
+Proto compiler docs: https://protobuf.dev/reference/go/go-generated/
+
 ```bash
 protoc --go_out=. --go_opt=paths=source_relative \
     blocks_transactions_<chain>.proto

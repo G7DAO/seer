@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moonstream-to/seer/blockchain/common"
+	"github.com/moonstream-to/seer/blockchain"
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/storage"
 )
@@ -154,7 +154,7 @@ func (d *Synchronizer) syncCycle() error {
 	errChan := make(chan error, 1) // Buffered channel for error handling
 
 	// Read client
-	client, err := common.NewClient(d.blockchain, "")
+	client, err := blockchain.NewClient(d.blockchain, "")
 	if err != nil {
 		log.Println("Error initializing blockchain client:", err)
 		log.Fatal(err)
