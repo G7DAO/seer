@@ -24,7 +24,7 @@ type BlockJson struct {
 	Nonce            string `json:"nonce"`
 	BlockNumber      uint64 `json:"number"`
 	ParentHash       string `json:"parentHash"`
-	ReceiptRoot      string `json:"receiptRoot"`
+	ReceiptsRoot     string `json:"receiptsRoot"`
 	Sha3Uncles       string `json:"sha3Uncles"`
 	StateRoot        string `json:"stateRoot"`
 	Timestamp        uint64 `json:"timestamp"`

@@ -43,11 +43,25 @@ Will generate the following files:
 
 ## Regenerate proto interface
 
-Proto compiler docs: https://protobuf.dev/reference/go/go-generated/
+1. Go to chain directory, for example:
+
+```bash
+cd blockchain/ethereum
+```
+
+2. Generate code with proto compiler, docs: https://protobuf.dev/reference/go/go-generated/
 
 ```bash
 protoc --go_out=. --go_opt=paths=source_relative \
-    blocks_transactions_<chain>.proto
+    ethereum_index_types.proto
+```
+
+3. Rename generated file similar to chain package.
+4. Generate interface with seer, if chain is L2, specify flag `--side-chain`:
+
+```bash
+cd ../..
+./seer blockchain generate -n ethereum
 ```
 
 ## Run crawler

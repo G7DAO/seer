@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = "polygon";
+option go_package = ".polygon";
 
 
 // Represents a single transaction within a block
@@ -21,6 +21,11 @@ message PolygonTransaction {
   uint64 indexed_at = 14; // using uint64 to represent timestamp
   uint64 block_timestamp = 15; // using uint64 to represent timestam
   string block_hash = 16; // Added field for block hash
+  string chain_id = 17;  // Used as a field to match potential EIP-1559 transaction types
+  string v = 18;  // Used as a field to match potential EIP-1559 transaction types
+  string r = 19;  // Used as a field to match potential EIP-1559 transaction types
+  string s = 20;  // Used as a field to match potential EIP-1559 transaction types
+  repeated string access_list = 21;
 }
 
 // Represents a single blockchain block
@@ -36,7 +41,7 @@ message PolygonBlock {
   string miner = 9;
   string nonce = 10;
   string parent_hash = 11;
-  string receipt_root = 12;
+  string receipts_root = 12;
   string sha3_uncles = 13;
   uint64 size = 14;
   string state_root = 15;

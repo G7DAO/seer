@@ -134,10 +134,12 @@ func CreateBlockchainCommand() *cobra.Command {
 type BlockchainTemplateData struct {
 	BlockchainName      string
 	BlockchainNameLower string
+	IsSideChain         bool
 }
 
 func CreateBlockchainGenerateCommand() *cobra.Command {
 	var blockchainNameLower string
+	var sideChain bool
 
 	blockchainGenerateCmd := &cobra.Command{
 		Use:   "generate",
@@ -173,7 +175,11 @@ func CreateBlockchainGenerateCommand() *cobra.Command {
 			defer outputFile.Close()
 
 			// Execute template and write to output file
-			data := BlockchainTemplateData{BlockchainName: blockchainName, BlockchainNameLower: blockchainNameLower}
+			data := BlockchainTemplateData{
+				BlockchainName:      blockchainName,
+				BlockchainNameLower: blockchainNameLower,
+				IsSideChain:         sideChain,
+			}
 			execErr := tmpl.Execute(outputFile, data)
 			if execErr != nil {
 				return execErr
@@ -186,6 +192,7 @@ func CreateBlockchainGenerateCommand() *cobra.Command {
 	}
 
 	blockchainGenerateCmd.Flags().StringVarP(&blockchainNameLower, "name", "n", "", "The name of the blockchain to generate lowercase (example: 'arbitrum_one')")
+	blockchainGenerateCmd.Flags().BoolVar(&sideChain, "side-chain", false, "Set this flag to extend Blocks and Transactions with additional fields for side chains (default: false)")
 
 	return blockchainGenerateCmd
 }

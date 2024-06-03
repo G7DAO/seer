@@ -353,18 +353,18 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 }
 func ToProtoSingleBlock(obj *seer_common.BlockJson) *{{.BlockchainName}}Block {
 	return &{{.BlockchainName}}Block{
-		BlockNumber:   obj.BlockNumber,
-		Difficulty:    obj.Difficulty,
-		ExtraData:     obj.ExtraData,
-		GasLimit:      obj.GasLimit,
-		GasUsed:       obj.GasUsed,
-		BaseFeePerGas: obj.BaseFeePerGas,
-		Hash:          obj.Hash,
-		LogsBloom:     obj.LogsBloom,
-		Miner:         obj.Miner,
-		Nonce:         obj.Nonce,
-		ParentHash:    obj.ParentHash,
-		ReceiptRoot:   obj.ReceiptRoot,
+		BlockNumber:      obj.BlockNumber,
+		Difficulty:       obj.Difficulty,
+		ExtraData:        obj.ExtraData,
+		GasLimit:         obj.GasLimit,
+		GasUsed:          obj.GasUsed,
+		BaseFeePerGas:    obj.BaseFeePerGas,
+		Hash:             obj.Hash,
+		LogsBloom:        obj.LogsBloom,
+		Miner:            obj.Miner,
+		Nonce:            obj.Nonce,
+		ParentHash:       obj.ParentHash,
+		ReceiptsRoot:     obj.ReceiptsRoot,
 		Sha3Uncles:       obj.Sha3Uncles,
 		Size:             obj.Size,
 		StateRoot:        obj.StateRoot,
@@ -372,6 +372,11 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *{{.BlockchainName}}Block {
 		TotalDifficulty:  obj.TotalDifficulty,
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        obj.IndexedAt,
+
+		{{if .IsSideChain -}} MixHash:       obj.MixHash, {{end}}
+		{{if .IsSideChain -}} SendCount:     obj.SendCount, {{end}}
+		{{if .IsSideChain -}} SendRoot:      obj.SendRoot, {{end}}
+		{{if .IsSideChain -}} L1BlockNumber: obj.L1BlockNumber, {{end}}
 	}
 }
 
@@ -393,6 +398,13 @@ func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *{{.BlockchainNa
 		Value:                obj.Value,
 		IndexedAt:            obj.IndexedAt,
 		BlockTimestamp:       obj.BlockTimestamp,
+
+		ChainId: obj.ChainId,
+		V:       obj.V,
+		R:       obj.R,
+		S:       obj.S,
+
+		{{if .IsSideChain -}} YParity: obj.YParity, {{end}}
 	}
 }
 

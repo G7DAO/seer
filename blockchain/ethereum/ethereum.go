@@ -364,7 +364,7 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *EthereumBlock {
 		Miner:            obj.Miner,
 		Nonce:            obj.Nonce,
 		ParentHash:       obj.ParentHash,
-		ReceiptRoot:      obj.ReceiptRoot,
+		ReceiptsRoot:     obj.ReceiptsRoot,
 		Sha3Uncles:       obj.Sha3Uncles,
 		Size:             obj.Size,
 		StateRoot:        obj.StateRoot,
@@ -393,6 +393,11 @@ func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *EthereumTransac
 		Value:                obj.Value,
 		IndexedAt:            obj.IndexedAt,
 		BlockTimestamp:       obj.BlockTimestamp,
+
+		ChainId: obj.ChainId,
+		V:       obj.V,
+		R:       obj.R,
+		S:       obj.S,
 	}
 }
 
