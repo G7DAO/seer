@@ -43,29 +43,29 @@ type BlockJson struct {
 }
 
 type TransactionJson struct {
-	AccessList           []AccessList `json:"accessList"`
-	BlockHash            string       `json:"blockHash"`
-	BlockNumber          uint64       `json:"blockNumber"`
-	ChainId              string       `json:"chainId"`
-	FromAddress          string       `json:"from"`
-	Gas                  string       `json:"gas"`
-	GasPrice             string       `json:"gasPrice"`
-	Hash                 string       `json:"hash"`
-	Input                string       `json:"input"`
-	MaxFeePerGas         string       `json:"maxFeePerGas"`
-	MaxPriorityFeePerGas string       `json:"maxPriorityFeePerGas"`
-	Nonce                string       `json:"nonce"`
-	V                    string       `json:"v"`
-	R                    string       `json:"r"`
-	S                    string       `json:"s"`
-	ToAddress            string       `json:"to"`
-	TransactionIndex     uint64       `json:"transactionIndex"`
-	TransactionType      uint64       `json:"type"`
-	Value                string       `json:"value"`
-	IndexedAt            uint64       `json:"indexed_at"`
-	BlockTimestamp       uint64       `json:"block_timestamp"`
+	BlockHash            string `json:"blockHash"`
+	BlockNumber          uint64 `json:"blockNumber"`
+	ChainId              string `json:"chainId"`
+	FromAddress          string `json:"from"`
+	Gas                  string `json:"gas"`
+	GasPrice             string `json:"gasPrice"`
+	Hash                 string `json:"hash"`
+	Input                string `json:"input"`
+	MaxFeePerGas         string `json:"maxFeePerGas"`
+	MaxPriorityFeePerGas string `json:"maxPriorityFeePerGas"`
+	Nonce                string `json:"nonce"`
+	V                    string `json:"v"`
+	R                    string `json:"r"`
+	S                    string `json:"s"`
+	ToAddress            string `json:"to"`
+	TransactionIndex     uint64 `json:"transactionIndex"`
+	TransactionType      uint64 `json:"type"`
+	Value                string `json:"value"`
+	IndexedAt            uint64 `json:"indexed_at"`
+	BlockTimestamp       uint64 `json:"block_timestamp"`
 
-	YParity string `json:"yParity,omitempty"`
+	AccessList []string `json:"accessList,omitempty"` // TODO(kompotkot): Use AccessList struct
+	YParity    string   `json:"yParity,omitempty"`
 }
 
 type AccessList struct {

@@ -25,7 +25,9 @@ message PolygonTransaction {
   string v = 18;  // Used as a field to match potential EIP-1559 transaction types
   string r = 19;  // Used as a field to match potential EIP-1559 transaction types
   string s = 20;  // Used as a field to match potential EIP-1559 transaction types
+  
   repeated string access_list = 21;
+  string y_parity = 22; // Used as a field to match potential EIP-1559 transaction types
 }
 
 // Represents a single blockchain block

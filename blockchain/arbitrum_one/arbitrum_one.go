@@ -404,7 +404,8 @@ func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *ArbitrumOneTran
 		R:       obj.R,
 		S:       obj.S,
 
-		YParity: obj.YParity,
+		AccessList: obj.AccessList,
+		YParity:    obj.YParity,
 	}
 }
 

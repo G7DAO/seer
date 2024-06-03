@@ -398,6 +398,9 @@ func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *PolygonTransact
 		V:       obj.V,
 		R:       obj.R,
 		S:       obj.S,
+
+		AccessList: obj.AccessList,
+		YParity:    obj.YParity,
 	}
 }
 

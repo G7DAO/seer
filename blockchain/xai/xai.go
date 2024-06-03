@@ -1,4 +1,4 @@
-package {{.BlockchainNameLower}}
+package xai
 
 import (
 	"context"
@@ -37,7 +37,7 @@ type Client struct {
 
 // ChainType returns the chain type.
 func (c *Client) ChainType() string {
-	return "{{.BlockchainNameLower}}"
+	return "xai"
 }
 
 // Close closes the underlying RPC client.
@@ -199,14 +199,14 @@ func (c *Client) FetchBlocksInRange(from, to *big.Int) ([]*seer_common.BlockJson
 
 // ParseBlocksAndTransactions parses blocks and their transactions into custom data structures.
 // This method showcases how to handle and transform detailed block and transaction data.
-func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*{{.BlockchainName}}Block, []*{{.BlockchainName}}Transaction, error) {
+func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*XaiBlock, []*XaiTransaction, error) {
 	blocksJson, err := c.FetchBlocksInRange(from, to)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var parsedBlocks []*{{.BlockchainName}}Block
-	var parsedTransactions []*{{.BlockchainName}}Transaction
+	var parsedBlocks []*XaiBlock
+	var parsedTransactions []*XaiTransaction
 	for _, blockJson := range blocksJson {
 		// Convert BlockJson to Block and Transactions as required.
 		parsedBlock := ToProtoSingleBlock(blockJson)
@@ -226,7 +226,7 @@ func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*{{.Blockchain
 	return parsedBlocks, parsedTransactions, nil
 }
 
-func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache) ([]*{{.BlockchainName}}EventLog, error) {
+func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache) ([]*XaiEventLog, error) {
 
 	logs, err := c.ClientFilterLogs(context.Background(), ethereum.FilterQuery{
 		FromBlock: from,
@@ -238,7 +238,7 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 		return nil, err
 	}
 
-	var parsedEvents []*{{.BlockchainName}}EventLog
+	var parsedEvents []*XaiEventLog
 	for _, log := range logs {
 		parsedEvent := ToProtoSingleEventLog(log)
 		parsedEvents = append(parsedEvents, parsedEvent)
@@ -265,7 +265,7 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int) ([]proto.Message, []proto
 			BlockHash:      block.Hash,
 			BlockTimestamp: block.Timestamp,
 		} // Assuming block.BlockNumber is int64 and block.Hash is string
-		blockIndex = append(blockIndex, indexer.NewBlockIndex("{{.BlockchainNameLower}}",
+		blockIndex = append(blockIndex, indexer.NewBlockIndex("xai",
 			block.BlockNumber,
 			block.Hash,
 			block.Timestamp,
@@ -351,8 +351,8 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 	return eventsProto, eventsIndex, nil
 
 }
-func ToProtoSingleBlock(obj *seer_common.BlockJson) *{{.BlockchainName}}Block {
-	return &{{.BlockchainName}}Block{
+func ToProtoSingleBlock(obj *seer_common.BlockJson) *XaiBlock {
+	return &XaiBlock{
 		BlockNumber:      obj.BlockNumber,
 		Difficulty:       obj.Difficulty,
 		ExtraData:        obj.ExtraData,
@@ -373,15 +373,15 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *{{.BlockchainName}}Block {
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        obj.IndexedAt,
 
-		{{if .IsSideChain -}} MixHash:       obj.MixHash, {{end}}
-		{{if .IsSideChain -}} SendCount:     obj.SendCount, {{end}}
-		{{if .IsSideChain -}} SendRoot:      obj.SendRoot, {{end}}
-		{{if .IsSideChain -}} L1BlockNumber: obj.L1BlockNumber, {{end}}
+		MixHash:       obj.MixHash,
+		SendCount:     obj.SendCount,
+		SendRoot:      obj.SendRoot,
+		L1BlockNumber: obj.L1BlockNumber,
 	}
 }
 
-func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *{{.BlockchainName}}Transaction {
-	return &{{.BlockchainName}}Transaction{
+func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *XaiTransaction {
+	return &XaiTransaction{
 		Hash:                 obj.Hash,
 		BlockNumber:          obj.BlockNumber,
 		BlockHash:            obj.BlockHash,
@@ -409,9 +409,9 @@ func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *{{.BlockchainNa
 	}
 }
 
-func ToProtoSingleEventLog(obj *seer_common.EventJson) *{{.BlockchainName}}EventLog {
+func ToProtoSingleEventLog(obj *seer_common.EventJson) *XaiEventLog {
 
-	return &{{.BlockchainName}}EventLog{
+	return &XaiEventLog{
 		Address:         obj.Address,
 		Topics:          obj.Topics,
 		Data:            obj.Data,
@@ -423,10 +423,10 @@ func ToProtoSingleEventLog(obj *seer_common.EventJson) *{{.BlockchainName}}Event
 	}
 }
 
-func (c *Client) DecodeProtoEventLogs(data []string) ([]*{{.BlockchainName}}EventLog, error) {
-	var events []*{{.BlockchainName}}EventLog
+func (c *Client) DecodeProtoEventLogs(data []string) ([]*XaiEventLog, error) {
+	var events []*XaiEventLog
 	for _, d := range data {
-		var event {{.BlockchainName}}EventLog
+		var event XaiEventLog
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -439,10 +439,10 @@ func (c *Client) DecodeProtoEventLogs(data []string) ([]*{{.BlockchainName}}Even
 	return events, nil
 }
 
-func (c *Client) DecodeProtoTransactions(data []string) ([]*{{.BlockchainName}}Transaction, error) {
-	var transactions []*{{.BlockchainName}}Transaction
+func (c *Client) DecodeProtoTransactions(data []string) ([]*XaiTransaction, error) {
+	var transactions []*XaiTransaction
 	for _, d := range data {
-		var transaction {{.BlockchainName}}Transaction
+		var transaction XaiTransaction
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -455,10 +455,10 @@ func (c *Client) DecodeProtoTransactions(data []string) ([]*{{.BlockchainName}}T
 	return transactions, nil
 }
 
-func (c *Client) DecodeProtoBlocks(data []string) ([]*{{.BlockchainName}}Block, error) {
-	var blocks []*{{.BlockchainName}}Block
+func (c *Client) DecodeProtoBlocks(data []string) ([]*XaiBlock, error) {
+	var blocks []*XaiBlock
 	for _, d := range data {
-		var block {{.BlockchainName}}Block
+		var block XaiBlock
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
