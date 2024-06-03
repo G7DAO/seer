@@ -11,6 +11,7 @@ import (
 	"github.com/moonstream-to/seer/blockchain/arbitrum_one"
 	"github.com/moonstream-to/seer/blockchain/arbitrum_sepolia"
 	"github.com/moonstream-to/seer/blockchain/ethereum"
+	"github.com/moonstream-to/seer/blockchain/game7_orbit_arbitrum_sepolia"
 	"github.com/moonstream-to/seer/blockchain/polygon"
 	"github.com/moonstream-to/seer/indexer"
 	"google.golang.org/protobuf/proto"
@@ -27,6 +28,21 @@ func wrapClient(url, chain string) (BlockchainClient, error) {
 		client, err := arbitrum_one.NewClient(url)
 		return client, err
 	} else if chain == "arbitrum_sepolia" {
+		client, err := arbitrum_one.NewClient(url)
+		return client, err
+	} else if chain == "game7_orbit_arbitrum_sepolia" {
+		client, err := game7_orbit_arbitrum_sepolia.NewClient(url)
+		return client, err
+	} else if chain == "mantle" {
+		client, err := arbitrum_sepolia.NewClient(url)
+		return client, err
+	} else if chain == "mantle_sepolia" {
+		client, err := arbitrum_sepolia.NewClient(url)
+		return client, err
+	} else if chain == "xai" {
+		client, err := arbitrum_sepolia.NewClient(url)
+		return client, err
+	} else if chain == "xai_sepolia" {
 		client, err := arbitrum_sepolia.NewClient(url)
 		return client, err
 	} else {

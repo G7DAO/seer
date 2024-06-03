@@ -26,11 +26,7 @@ export MOONSTREAM_DB_V3_INDEXES_URI="driver://user:pass@localhost/dbname"
 
 note: You need add the chain endpoint it will fetch the data from endpoints.
 
-```bash
-./seer crawler generate --chain polygon
-```
-
-Will generate the following files:
+Blockchain structure:
 
 ```bash
 ├── blockchain
@@ -38,7 +34,6 @@ Will generate the following files:
 │   │   ├── blocks_transactions_polygon.proto
 │   │   ├── blocks_transactions_polygon.pb.go
 │   │   ├── polygon.go
-│   │   ├── types.go
 ```
 
 ## Regenerate proto interface
