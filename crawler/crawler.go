@@ -92,8 +92,6 @@ func (c *Crawler) Start() {
 		panic(err)
 	}
 
-	fmt.Println(chainType, BlockchainURLs[chainType])
-
 	client, err := blockchain.NewClient(chainType, BlockchainURLs[chainType])
 	if err != nil {
 		log.Fatal(err)
