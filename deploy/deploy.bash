@@ -32,6 +32,9 @@ SEER_CRAWLER_POLYGON_SERVICE_FILE="seer-crawler-polygon.service"
 SEER_CRAWLER_XAI_SEPOLIA_SERVICE_FILE="seer-crawler-xai-sepolia.service"
 SEER_CRAWLER_XAI_SERVICE_FILE="seer-crawler-xai.service"
 
+SEER_SYNCHRONIZER_ETHEREUM_SERVICE_FILE="seer-synchronizer-ethereum.service"
+SEER_SYNCHRONIZER_POLYGON_SERVICE_FILE="seer-synchronizer-polygon.service"
+
 set -eu
 
 if [ ! -d "${SECRETS_DIR}" ]; then
@@ -174,3 +177,21 @@ chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_XAI_SERVICE_FILE}"
 cp "${SCRIPT_DIR}/${SEER_CRAWLER_XAI_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_XAI_SERVICE_FILE}"
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_XAI_SERVICE_FILE}"
+
+# Synchronizers
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Ethereum blockchain service definition with ${SEER_SYNCHRONIZER_ETHEREUM_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_ETHEREUM_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_ETHEREUM_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_ETHEREUM_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_ETHEREUM_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Polygon blockchain service definition with ${SEER_SYNCHRONIZER_POLYGON_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_POLYGON_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_POLYGON_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_POLYGON_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_POLYGON_SERVICE_FILE}"

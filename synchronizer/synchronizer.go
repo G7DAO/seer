@@ -78,7 +78,7 @@ func GetDBConnection(uuid string) (string, error) {
 	}
 
 	// Set the authorization header
-	req.Header.Set("Authorization", "Bearer "+MOONSTREAM_DB_CONTROLLER_SEER_ACCESS_TOKEN)
+	req.Header.Set("Authorization", "Bearer "+MOONSTREAM_DB_V3_CONTROLLER_SEER_ACCESS_TOKEN)
 
 	// Perform the request
 	resp, err := http.DefaultClient.Do(req)
