@@ -183,7 +183,7 @@ func CreateCrawlerCommand() *cobra.Command {
 func CreateSynchronizerCommand() *cobra.Command {
 	var startBlock, endBlock uint64
 	// var startBlockBig, endBlockBig big.Int
-	var baseDir, output, abi_source string
+	var chain, baseDir, output, abi_source string
 
 	synchronizerCmd := &cobra.Command{
 		Use:   "synchronizer",
@@ -218,7 +218,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 
 			// read the blockchain url from $INFURA_URL
 			// if it is not set, use the default url
-			synchronizer := synchronizer.NewSynchronizer("polygon", startBlock, endBlock)
+			synchronizer := synchronizer.NewSynchronizer(chain, startBlock, endBlock)
 
 			synchronizer.SyncCustomers()
 		},
@@ -229,6 +229,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 	synchronizerCmd.Flags().StringVar(&baseDir, "base-dir", "data", "The base directory to store the crawled data (default: data)")
 	synchronizerCmd.Flags().StringVar(&output, "output", "output", "The output directory to store the decoded data (default: output)")
 	synchronizerCmd.Flags().StringVar(&abi_source, "abi-source", "abi", "The source of the ABI (default: abi)")
+	synchronizerCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to decode (default: ethereum)")
 
 	return synchronizerCmd
 }
