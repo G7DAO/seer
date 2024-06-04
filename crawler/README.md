@@ -2,6 +2,18 @@
 
 That part of seer responsible for crawling raw blocks,tx_calls and events from the blockchain.
 
+List of supported blockchains:
+
+- arbitrum_one
+- arbitrum_sepolia
+- ethereum
+- game7_orbit_arbitrum_sepolia
+- mantle
+- mantle_sepolia
+- polygon
+- xai
+- xai_sepolia
+
 ## Build
 
 You can use `make` to build `crawler`. From the root of this project, run:
@@ -14,6 +26,12 @@ Or build with go tools:
 
 ```bash
 go build -o seer .
+```
+
+Or use dev script:
+
+```bash
+./dev.sh --help
 ```
 
 Set environment variables:

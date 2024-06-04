@@ -272,6 +272,7 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int) ([]proto.Message, []proto
 			block.ParentHash,
 			uint64(index),
 			"",
+			0,
 		))
 	}
 
