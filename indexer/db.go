@@ -295,7 +295,7 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(blockchain string, indexes []BlockIn
 	// Loop through indexes to append values and parameters
 	for i, index := range indexes {
 		if isBlockchainWithL1Chain {
-			query += fmt.Sprintf("( $%d, $%d, $%d, $%d, $%d, $%d, $%d),", i*6+1, i*6+2, i*6+3, i*6+4, i*6+5, i*6+6, i*6+7)
+			query += fmt.Sprintf("( $%d, $%d, $%d, $%d, $%d, $%d, $%d),", i*7+1, i*7+2, i*7+3, i*7+4, i*7+5, i*7+6, i*7+7)
 			params = append(params, index.BlockNumber, index.BlockHash, index.BlockTimestamp, index.ParentHash, index.RowID, index.Path, index.L1BlockNumber)
 		} else {
 			query += fmt.Sprintf("( $%d, $%d, $%d, $%d, $%d, $%d),", i*6+1, i*6+2, i*6+3, i*6+4, i*6+5, i*6+6)
