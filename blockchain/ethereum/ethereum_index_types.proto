@@ -1,10 +1,15 @@
 syntax = "proto3";
 
-option go_package = "seer.blockchain.ethereum";
+option go_package = "github.com/moonstream-to/seer/blockchain/ethereum";
 
+
+message EthereumTransactionAccessList {
+  string address = 1;
+  repeated string storage_keys = 2;
+}
 
 // Represents a single transaction within a block
-message EthereumSingleTransaction {
+message EthereumTransaction {
   string hash = 1;
   uint64 block_number = 2;
   string from_address = 3;
@@ -16,11 +21,18 @@ message EthereumSingleTransaction {
   string input = 9; // could be a long text
   string nonce = 10;
   uint64 transaction_index = 11;
-  uint32 transaction_type = 12;
+  uint64 transaction_type = 12;
   string value = 13; // using string to handle big numeric values
   uint64 indexed_at = 14; // using uint64 to represent timestamp
   uint64 block_timestamp = 15; // using uint64 to represent timestam
   string block_hash = 16; // Added field for block hash
+  string chain_id = 17;  // Used as a field to match potential EIP-1559 transaction types
+  string v = 18;  // Used as a field to match potential EIP-1559 transaction types
+  string r = 19;  // Used as a field to match potential EIP-1559 transaction types
+  string s = 20;  // Used as a field to match potential EIP-1559 transaction types
+  
+  repeated EthereumTransactionAccessList access_list = 21;
+  string y_parity = 22; // Used as a field to match potential EIP-1559 transaction types
 }
 
 // Represents a single blockchain block
@@ -36,17 +48,16 @@ message EthereumBlock {
   string miner = 9;
   string nonce = 10;
   string parent_hash = 11;
-  string receipt_root = 12;
-  string uncles = 13;
+  string receipts_root = 12;
+  string sha3_uncles = 13;
   uint64 size = 14;
   string state_root = 15;
   uint64 timestamp = 16;
   string total_difficulty = 17;
   string transactions_root = 18;
   uint64 indexed_at = 19; // using uint64 to represent timestamp
-  repeated EthereumSingleTransaction transactions = 20;
+  repeated EthereumTransaction transactions = 20;
 }
-
 
 message EthereumEventLog {
   string address = 1; // The address of the contract that generated the log

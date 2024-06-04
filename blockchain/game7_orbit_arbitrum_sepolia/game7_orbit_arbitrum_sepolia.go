@@ -1,4 +1,4 @@
-package polygon
+package game7_orbit_arbitrum_sepolia
 
 import (
 	"context"
@@ -37,7 +37,7 @@ type Client struct {
 
 // ChainType returns the chain type.
 func (c *Client) ChainType() string {
-	return "polygon"
+	return "game7_orbit_arbitrum_sepolia"
 }
 
 // Close closes the underlying RPC client.
@@ -199,14 +199,14 @@ func (c *Client) FetchBlocksInRange(from, to *big.Int) ([]*seer_common.BlockJson
 
 // ParseBlocksAndTransactions parses blocks and their transactions into custom data structures.
 // This method showcases how to handle and transform detailed block and transaction data.
-func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*PolygonBlock, []*PolygonTransaction, error) {
+func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*Game7OrbitArbitrumSepoliaBlock, []*Game7OrbitArbitrumSepoliaTransaction, error) {
 	blocksJson, err := c.FetchBlocksInRange(from, to)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var parsedBlocks []*PolygonBlock
-	var parsedTransactions []*PolygonTransaction
+	var parsedBlocks []*Game7OrbitArbitrumSepoliaBlock
+	var parsedTransactions []*Game7OrbitArbitrumSepoliaTransaction
 	for _, blockJson := range blocksJson {
 		// Convert BlockJson to Block and Transactions as required.
 		parsedBlock := ToProtoSingleBlock(blockJson)
@@ -226,7 +226,7 @@ func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*PolygonBlock,
 	return parsedBlocks, parsedTransactions, nil
 }
 
-func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache) ([]*PolygonEventLog, error) {
+func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache) ([]*Game7OrbitArbitrumSepoliaEventLog, error) {
 
 	logs, err := c.ClientFilterLogs(context.Background(), ethereum.FilterQuery{
 		FromBlock: from,
@@ -238,7 +238,7 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 		return nil, err
 	}
 
-	var parsedEvents []*PolygonEventLog
+	var parsedEvents []*Game7OrbitArbitrumSepoliaEventLog
 	for _, log := range logs {
 		parsedEvent := ToProtoSingleEventLog(log)
 		parsedEvents = append(parsedEvents, parsedEvent)
@@ -265,14 +265,14 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int) ([]proto.Message, []proto
 			BlockHash:      block.Hash,
 			BlockTimestamp: block.Timestamp,
 		} // Assuming block.BlockNumber is int64 and block.Hash is string
-		blockIndex = append(blockIndex, indexer.NewBlockIndex("polygon",
+		blockIndex = append(blockIndex, indexer.NewBlockIndex("game7_orbit_arbitrum_sepolia",
 			block.BlockNumber,
 			block.Hash,
 			block.Timestamp,
 			block.ParentHash,
 			uint64(index),
 			"",
-			0,
+			block.L1BlockNumber,
 		))
 	}
 
@@ -352,8 +352,8 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 	return eventsProto, eventsIndex, nil
 
 }
-func ToProtoSingleBlock(obj *seer_common.BlockJson) *PolygonBlock {
-	return &PolygonBlock{
+func ToProtoSingleBlock(obj *seer_common.BlockJson) *Game7OrbitArbitrumSepoliaBlock {
+	return &Game7OrbitArbitrumSepoliaBlock{
 		BlockNumber:      fromHex(obj.BlockNumber).Uint64(),
 		Difficulty:       fromHex(obj.Difficulty).Uint64(),
 		ExtraData:        obj.ExtraData,
@@ -373,19 +373,24 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *PolygonBlock {
 		TotalDifficulty:  obj.TotalDifficulty,
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        fromHex(obj.IndexedAt).Uint64(),
+
+		MixHash:       obj.MixHash,
+		SendCount:     obj.SendCount,
+		SendRoot:      obj.SendRoot,
+		L1BlockNumber: fromHex(obj.L1BlockNumber).Uint64(),
 	}
 }
 
-func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *PolygonTransaction {
-	var accessList []*PolygonTransactionAccessList
+func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *Game7OrbitArbitrumSepoliaTransaction {
+	var accessList []*Game7OrbitArbitrumSepoliaTransactionAccessList
 	for _, al := range obj.AccessList {
-		accessList = append(accessList, &PolygonTransactionAccessList{
+		accessList = append(accessList, &Game7OrbitArbitrumSepoliaTransactionAccessList{
 			Address:     al.Address,
 			StorageKeys: al.StorageKeys,
 		})
 	}
 
-	return &PolygonTransaction{
+	return &Game7OrbitArbitrumSepoliaTransaction{
 		Hash:                 obj.Hash,
 		BlockNumber:          fromHex(obj.BlockNumber).Uint64(),
 		BlockHash:            obj.BlockHash,
@@ -413,9 +418,9 @@ func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *PolygonTransact
 	}
 }
 
-func ToProtoSingleEventLog(obj *seer_common.EventJson) *PolygonEventLog {
+func ToProtoSingleEventLog(obj *seer_common.EventJson) *Game7OrbitArbitrumSepoliaEventLog {
 
-	return &PolygonEventLog{
+	return &Game7OrbitArbitrumSepoliaEventLog{
 		Address:         obj.Address,
 		Topics:          obj.Topics,
 		Data:            obj.Data,
@@ -427,10 +432,10 @@ func ToProtoSingleEventLog(obj *seer_common.EventJson) *PolygonEventLog {
 	}
 }
 
-func (c *Client) DecodeProtoEventLogs(data []string) ([]*PolygonEventLog, error) {
-	var events []*PolygonEventLog
+func (c *Client) DecodeProtoEventLogs(data []string) ([]*Game7OrbitArbitrumSepoliaEventLog, error) {
+	var events []*Game7OrbitArbitrumSepoliaEventLog
 	for _, d := range data {
-		var event PolygonEventLog
+		var event Game7OrbitArbitrumSepoliaEventLog
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -443,10 +448,10 @@ func (c *Client) DecodeProtoEventLogs(data []string) ([]*PolygonEventLog, error)
 	return events, nil
 }
 
-func (c *Client) DecodeProtoTransactions(data []string) ([]*PolygonTransaction, error) {
-	var transactions []*PolygonTransaction
+func (c *Client) DecodeProtoTransactions(data []string) ([]*Game7OrbitArbitrumSepoliaTransaction, error) {
+	var transactions []*Game7OrbitArbitrumSepoliaTransaction
 	for _, d := range data {
-		var transaction PolygonTransaction
+		var transaction Game7OrbitArbitrumSepoliaTransaction
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -459,10 +464,10 @@ func (c *Client) DecodeProtoTransactions(data []string) ([]*PolygonTransaction, 
 	return transactions, nil
 }
 
-func (c *Client) DecodeProtoBlocks(data []string) ([]*PolygonBlock, error) {
-	var blocks []*PolygonBlock
+func (c *Client) DecodeProtoBlocks(data []string) ([]*Game7OrbitArbitrumSepoliaBlock, error) {
+	var blocks []*Game7OrbitArbitrumSepoliaBlock
 	for _, d := range data {
-		var block PolygonBlock
+		var block Game7OrbitArbitrumSepoliaBlock
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err

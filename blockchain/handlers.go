@@ -1,25 +1,52 @@
-package common
+package blockchain
 
 import (
 	"errors"
 	"fmt"
 	"log"
 	"math/big"
-	"os"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/moonstream-to/seer/blockchain/arbitrum_one"
+	"github.com/moonstream-to/seer/blockchain/arbitrum_sepolia"
 	"github.com/moonstream-to/seer/blockchain/ethereum"
+	"github.com/moonstream-to/seer/blockchain/game7_orbit_arbitrum_sepolia"
+	"github.com/moonstream-to/seer/blockchain/mantle"
+	"github.com/moonstream-to/seer/blockchain/mantle_sepolia"
 	"github.com/moonstream-to/seer/blockchain/polygon"
+	"github.com/moonstream-to/seer/blockchain/xai"
+	"github.com/moonstream-to/seer/blockchain/xai_sepolia"
 	"github.com/moonstream-to/seer/indexer"
 	"google.golang.org/protobuf/proto"
 )
 
-func wrapClient(url, chain string) (BlockchainClient, error) {
+func NewClient(chain, url string) (BlockchainClient, error) {
 	if chain == "ethereum" {
 		client, err := ethereum.NewClient(url)
 		return client, err
 	} else if chain == "polygon" {
 		client, err := polygon.NewClient(url)
+		return client, err
+	} else if chain == "arbitrum_one" {
+		client, err := arbitrum_one.NewClient(url)
+		return client, err
+	} else if chain == "arbitrum_sepolia" {
+		client, err := arbitrum_sepolia.NewClient(url)
+		return client, err
+	} else if chain == "game7_orbit_arbitrum_sepolia" {
+		client, err := game7_orbit_arbitrum_sepolia.NewClient(url)
+		return client, err
+	} else if chain == "mantle" {
+		client, err := mantle.NewClient(url)
+		return client, err
+	} else if chain == "mantle_sepolia" {
+		client, err := mantle_sepolia.NewClient(url)
+		return client, err
+	} else if chain == "xai" {
+		client, err := xai.NewClient(url)
+		return client, err
+	} else if chain == "xai_sepolia" {
+		client, err := xai_sepolia.NewClient(url)
 		return client, err
 	} else {
 		return nil, errors.New("unsupported chain type")
@@ -37,39 +64,15 @@ type BlockData struct {
 type BlockchainClient interface {
 	// GetBlockByNumber(ctx context.Context, number *big.Int) (*proto.Message, error)
 	GetLatestBlockNumber() (*big.Int, error)
-	FetchAsProtoEvents(*big.Int, *big.Int, map[uint64]indexer.BlockCahche) ([]proto.Message, []indexer.LogIndex, error)
-	FetchAsProtoBlocks(*big.Int, *big.Int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCahche, error)
+	FetchAsProtoEvents(*big.Int, *big.Int, map[uint64]indexer.BlockCache) ([]proto.Message, []indexer.LogIndex, error)
+	FetchAsProtoBlocks(*big.Int, *big.Int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error)
 	DecodeProtoEventsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.EventLabel, error)
 	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error)
 	ChainType() string
 }
 
-// return client depends on the blockchain type
-func NewClient(chainType string, url string) (BlockchainClient, error) {
-
-	// case statement for url
-	if url == "" {
-		switch chainType {
-		case "ethereum":
-			url = os.Getenv("MOONSTREAM_ETHEREUM_URL")
-		case "polygon":
-			url = os.Getenv("MOONSTREAM_POLYGON_URL")
-		default:
-			return nil, errors.New("unsupported chain type can't get url")
-		}
-	}
-
-	client, err := wrapClient(url, chainType)
-	if err != nil {
-		fmt.Println("error", err)
-		return nil, errors.New("unsupported chain type")
-	}
-
-	return client, nil
-}
-
 // crawl blocks
-func CrawlBlocks(client BlockchainClient, startBlock *big.Int, endBlock *big.Int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCahche, error) {
+func CrawlBlocks(client BlockchainClient, startBlock *big.Int, endBlock *big.Int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error) {
 	blocks, transactions, blocksIndex, transactionsIndex, blocksCache, err := client.FetchAsProtoBlocks(startBlock, endBlock)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
@@ -81,7 +84,7 @@ func CrawlBlocks(client BlockchainClient, startBlock *big.Int, endBlock *big.Int
 
 }
 
-func CrawlEvents(client BlockchainClient, startBlock *big.Int, endBlock *big.Int, BlockCahche map[uint64]indexer.BlockCahche) ([]proto.Message, []indexer.LogIndex, error) {
+func CrawlEvents(client BlockchainClient, startBlock *big.Int, endBlock *big.Int, BlockCahche map[uint64]indexer.BlockCache) ([]proto.Message, []indexer.LogIndex, error) {
 
 	events, eventsIndex, err := client.FetchAsProtoEvents(startBlock, endBlock, BlockCahche)
 	if err != nil {
