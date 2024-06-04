@@ -62,13 +62,13 @@ func CheckVariablesForCrawler() error {
 	BlockchainURLs = map[string]string{
 		"ethereum":                     MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI,
 		"polygon":                      MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI,
-		"arbitrum_one":                 MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI,
-		"arbitrum_sepolia":             MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI,
-		"game7_orbit_arbitrum_sepolia": MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI,
-		"xai":                          MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI,
-		"xai_sepolia":                  MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI,
-		"mantle":                       MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI,
-		"mantle_sepolia":               MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI,
+		"arbitrum_one":                 MOONSTREAM_NODE_ARBITRUM_ONE_A_EXTERNAL_URI,
+		"arbitrum_sepolia":             MOONSTREAM_NODE_ARBITRUM_SEPOLIA_A_EXTERNAL_URI,
+		"game7_orbit_arbitrum_sepolia": MOONSTREAM_NODE_GAME7_ORBIT_ARBITRUM_SEPOLIA_A_EXTERNAL_URI,
+		"xai":                          MOONSTREAM_NODE_XAI_A_EXTERNAL_URI,
+		"xai_sepolia":                  MOONSTREAM_NODE_XAI_SEPOLIA_A_EXTERNAL_URI,
+		"mantle":                       MOONSTREAM_NODE_MANTLE_A_EXTERNAL_URI,
+		"mantle_sepolia":               MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI,
 	}
 
 	return nil

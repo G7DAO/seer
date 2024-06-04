@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"math/big"
-	"os"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/moonstream-to/seer/blockchain/arbitrum_one"
@@ -21,7 +20,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func wrapClient(url, chain string) (BlockchainClient, error) {
+func NewClient(chain, url string) (BlockchainClient, error) {
 	if chain == "ethereum" {
 		client, err := ethereum.NewClient(url)
 		return client, err
@@ -70,30 +69,6 @@ type BlockchainClient interface {
 	DecodeProtoEventsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.EventLabel, error)
 	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error)
 	ChainType() string
-}
-
-// return client depends on the blockchain type
-func NewClient(chainType string, url string) (BlockchainClient, error) {
-
-	// case statement for url
-	if url == "" {
-		switch chainType {
-		case "ethereum":
-			url = os.Getenv("MOONSTREAM_ETHEREUM_URL")
-		case "polygon":
-			url = os.Getenv("MOONSTREAM_POLYGON_URL")
-		default:
-			return nil, errors.New("unsupported chain type can't get url")
-		}
-	}
-
-	client, err := wrapClient(url, chainType)
-	if err != nil {
-		fmt.Println("error", err)
-		return nil, errors.New("unsupported chain type")
-	}
-
-	return client, nil
 }
 
 // crawl blocks
