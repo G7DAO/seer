@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+option go_package = "github.com/moonstream-to/seer/blockchain/mantle";
+
+
+message MantleTransactionAccessList {
+  string address = 1;
+  repeated string storage_keys = 2;
+}
+
+// Represents a single transaction within a block
+message MantleTransaction {
+  string hash = 1;  // The hash of the transaction
+  uint64 block_number = 2;  // The block number the transaction is in
+  string from_address = 3;  // The address the transaction is sent from
+  string to_address = 4;  // The address the transaction is sent to
+  string gas = 5;  // The gas limit of the transaction
+  string gas_price = 6;  // The gas price of the transaction
+  string max_fee_per_gas = 7;  // Used as a field to match potential EIP-1559 transaction types
+  string max_priority_fee_per_gas = 8;  // Used as a field to match potential EIP-1559 transaction types
+  string input = 9;  // The input data of the transaction
+  string nonce = 10;  // The nonce of the transaction
+  uint64 transaction_index = 11;  // The index of the transaction in the block
+  uint64 transaction_type = 12;  // Field to match potential EIP-1559 transaction types
+  string value = 13;  // The value of the transaction
+  uint64 indexed_at = 14; // When the transaction was indexed by crawler
+  uint64 block_timestamp = 15; // The timestamp of this block
+  string block_hash = 16;  // The hash of the block the transaction is in
+  string chain_id = 17;  // Used as a field to match potential EIP-1559 transaction types
+  string v = 18;  // Used as a field to match potential EIP-1559 transaction types
+  string r = 19;  // Used as a field to match potential EIP-1559 transaction types
+  string s = 20;  // Used as a field to match potential EIP-1559 transaction types
+  
+  repeated MantleTransactionAccessList access_list = 21;
+  string y_parity = 22; // Used as a field to match potential EIP-1559 transaction types
+}
+
+// Represents a block in the blockchain
+message MantleBlock {
+  uint64 block_number = 1; // The block number
+  uint64 difficulty = 2; // The difficulty of this block
+  string extra_data = 3; // Extra data included in the block
+  uint64 gas_limit = 4; // The gas limit for this block
+  uint64 gas_used = 5;  // The total gas used by all transactions in this block
+  string base_fee_per_gas = 6; // The base fee per gas for this block
+  string hash = 7; // The hash of this block
+  string logs_bloom = 8; // The logs bloom filter for this block
+  string miner = 9;  // The address of the miner who mined this block
+  string nonce = 10; // The nonce of this block
+  string parent_hash = 11; // The hash of the parent block
+  string receipts_root = 12;  // The root hash of the receipts trie
+  string sha3_uncles = 13;  // The SHA3 hash of the uncles data in this block
+  uint64 size = 14;  // The size of this block
+  string state_root = 15;  // The root hash of the state trie
+  uint64 timestamp = 16;
+  string total_difficulty = 17;  // The total difficulty of the chain until this block
+  string transactions_root = 18;  // The root hash of the transactions trie
+  uint64 indexed_at = 19; // When the block was indexed by crawler
+  repeated MantleTransaction transactions = 20;  // The transactions included in this block
+}
+
+message MantleEventLog {
+  string address = 1; // The address of the contract that generated the log
+  repeated string topics = 2; // Topics are indexed parameters during log generation
+  string data = 3; // The data field from the log
+  uint64 block_number = 4; // The block number where this log was in
+  string transaction_hash = 5; // The hash of the transaction that generated this log
+  string block_hash = 6; // The hash of the block where this log was in
+  bool removed = 7; // True if the log was reverted due to a chain reorganization
+  uint64 log_index = 8; // The index of the log in the block
+  uint64 transaction_index = 9; // The index of the transaction in the block
+}

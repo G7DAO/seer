@@ -14,6 +14,7 @@ type BlockIndex struct {
 	ParentHash     string
 	RowID          uint64
 	Path           string
+	L1BlockNumber  uint64
 }
 
 func (b *BlockIndex) SetChain(chain string) {
@@ -21,7 +22,7 @@ func (b *BlockIndex) SetChain(chain string) {
 }
 
 // NewBlockIndex creates a new instance of BlockIndex with the chain set.
-func NewBlockIndex(chain string, blockNumber uint64, blockHash string, blockTimestamp uint64, parentHash string, row_id uint64, path string) BlockIndex {
+func NewBlockIndex(chain string, blockNumber uint64, blockHash string, blockTimestamp uint64, parentHash string, row_id uint64, path string, l1BlockNumber uint64) BlockIndex {
 	return BlockIndex{
 		chain:          chain,
 		BlockNumber:    blockNumber,
@@ -30,6 +31,7 @@ func NewBlockIndex(chain string, blockNumber uint64, blockHash string, blockTime
 		ParentHash:     parentHash,
 		RowID:          row_id,
 		Path:           path,
+		L1BlockNumber:  l1BlockNumber,
 	}
 }
 
@@ -44,7 +46,7 @@ type TransactionIndex struct {
 	Selector         string
 	TransactionHash  string // TODO: Rename this to Hash
 	TransactionIndex uint64 // TODO: Rename this to Index
-	Type             uint32
+	Type             uint64
 	Path             string
 }
 
@@ -53,7 +55,7 @@ func (t TransactionIndex) TableName() string {
 	return t.chain + "_transaction_index"
 }
 
-func NewTransactionIndex(chain string, blockNumber uint64, blockHash string, blockTimestamp uint64, fromAddress string, toAddress string, selector string, row_id uint64, transactionHash string, transactionIndex uint64, tx_type uint32, path string) TransactionIndex {
+func NewTransactionIndex(chain string, blockNumber uint64, blockHash string, blockTimestamp uint64, fromAddress string, toAddress string, selector string, row_id uint64, transactionHash string, transactionIndex uint64, tx_type uint64, path string) TransactionIndex {
 	return TransactionIndex{
 		chain:            chain,
 		BlockNumber:      blockNumber,
@@ -110,7 +112,7 @@ const (
 	LogIndexType         IndexType = "logs"
 )
 
-type BlockCahche struct {
+type BlockCache struct {
 	BlockNumber    uint64
 	BlockTimestamp uint64
 	BlockHash      string

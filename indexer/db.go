@@ -47,6 +47,31 @@ func hexStringToInt(hexString string) (int64, error) {
 	return intValue, nil
 }
 
+func IsBlockchainWithL1Chain(blockchain string) bool {
+	switch blockchain {
+	case "ethereum":
+		return false
+	case "polygon":
+		return false
+	case "arbitrum_one":
+		return true
+	case "arbitrum_sepolia":
+		return true
+	case "game7_orbit_arbitrum_sepolia":
+		return true
+	case "xai":
+		return true
+	case "xai_sepolia":
+		return true
+	case "mantle":
+		return false
+	case "mantle_sepolia":
+		return false
+	default:
+		return false
+	}
+}
+
 type PostgreSQLpgx struct {
 	pool *pgxpool.Pool
 }
@@ -245,7 +270,8 @@ func (p *PostgreSQLpgx) ReadLastLabel(blockchain string) (uint64, error) {
 	return label, nil
 }
 
-func (p *PostgreSQLpgx) writeBlockIndexToDB(tableName string, indexes []BlockIndex) error {
+func (p *PostgreSQLpgx) writeBlockIndexToDB(blockchain string, indexes []BlockIndex) error {
+	tableName := blockchain + "_blocks"
 	pool := p.GetPool()
 
 	conn, err := pool.Acquire(context.Background())
@@ -256,15 +282,25 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(tableName string, indexes []BlockInd
 	defer conn.Release()
 
 	// Start building the bulk insert query
-	query := fmt.Sprintf("INSERT INTO %s ( block_number, block_hash, block_timestamp, parent_hash, row_id, path) VALUES ", tableName)
+	var query string
+	isBlockchainWithL1Chain := IsBlockchainWithL1Chain(blockchain)
+	if isBlockchainWithL1Chain {
+		query = fmt.Sprintf("INSERT INTO %s (block_number,block_hash,block_timestamp,parent_hash,row_id,path,l1_block_number) VALUES ", tableName)
+	} else {
+		query = fmt.Sprintf("INSERT INTO %s (block_number,block_hash,block_timestamp,parent_hash,row_id,path) VALUES ", tableName)
+	}
 	// Placeholder slice for query parameters
 	var params []interface{}
 
 	// Loop through indexes to append values and parameters
 	for i, index := range indexes {
-
-		query += fmt.Sprintf("( $%d, $%d, $%d, $%d, $%d, $%d),", i*6+1, i*6+2, i*6+3, i*6+4, i*6+5, i*6+6)
-		params = append(params, index.BlockNumber, index.BlockHash, index.BlockTimestamp, index.ParentHash, index.RowID, index.Path)
+		if isBlockchainWithL1Chain {
+			query += fmt.Sprintf("( $%d, $%d, $%d, $%d, $%d, $%d, $%d),", i*7+1, i*7+2, i*7+3, i*7+4, i*7+5, i*7+6, i*7+7)
+			params = append(params, index.BlockNumber, index.BlockHash, index.BlockTimestamp, index.ParentHash, index.RowID, index.Path, index.L1BlockNumber)
+		} else {
+			query += fmt.Sprintf("( $%d, $%d, $%d, $%d, $%d, $%d),", i*6+1, i*6+2, i*6+3, i*6+4, i*6+5, i*6+6)
+			params = append(params, index.BlockNumber, index.BlockHash, index.BlockTimestamp, index.ParentHash, index.RowID, index.Path)
+		}
 	}
 
 	// Remove the last comma from the query

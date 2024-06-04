@@ -1,4 +1,4 @@
-package polygon
+package mantle
 
 import (
 	"context"
@@ -37,7 +37,7 @@ type Client struct {
 
 // ChainType returns the chain type.
 func (c *Client) ChainType() string {
-	return "polygon"
+	return "mantle"
 }
 
 // Close closes the underlying RPC client.
@@ -199,14 +199,14 @@ func (c *Client) FetchBlocksInRange(from, to *big.Int) ([]*seer_common.BlockJson
 
 // ParseBlocksAndTransactions parses blocks and their transactions into custom data structures.
 // This method showcases how to handle and transform detailed block and transaction data.
-func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*PolygonBlock, []*PolygonTransaction, error) {
+func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*MantleBlock, []*MantleTransaction, error) {
 	blocksJson, err := c.FetchBlocksInRange(from, to)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var parsedBlocks []*PolygonBlock
-	var parsedTransactions []*PolygonTransaction
+	var parsedBlocks []*MantleBlock
+	var parsedTransactions []*MantleTransaction
 	for _, blockJson := range blocksJson {
 		// Convert BlockJson to Block and Transactions as required.
 		parsedBlock := ToProtoSingleBlock(blockJson)
@@ -226,7 +226,7 @@ func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*PolygonBlock,
 	return parsedBlocks, parsedTransactions, nil
 }
 
-func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache) ([]*PolygonEventLog, error) {
+func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache) ([]*MantleEventLog, error) {
 
 	logs, err := c.ClientFilterLogs(context.Background(), ethereum.FilterQuery{
 		FromBlock: from,
@@ -238,7 +238,7 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 		return nil, err
 	}
 
-	var parsedEvents []*PolygonEventLog
+	var parsedEvents []*MantleEventLog
 	for _, log := range logs {
 		parsedEvent := ToProtoSingleEventLog(log)
 		parsedEvents = append(parsedEvents, parsedEvent)
@@ -265,7 +265,7 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int) ([]proto.Message, []proto
 			BlockHash:      block.Hash,
 			BlockTimestamp: block.Timestamp,
 		} // Assuming block.BlockNumber is int64 and block.Hash is string
-		blockIndex = append(blockIndex, indexer.NewBlockIndex("polygon",
+		blockIndex = append(blockIndex, indexer.NewBlockIndex("mantle",
 			block.BlockNumber,
 			block.Hash,
 			block.Timestamp,
@@ -352,8 +352,8 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 	return eventsProto, eventsIndex, nil
 
 }
-func ToProtoSingleBlock(obj *seer_common.BlockJson) *PolygonBlock {
-	return &PolygonBlock{
+func ToProtoSingleBlock(obj *seer_common.BlockJson) *MantleBlock {
+	return &MantleBlock{
 		BlockNumber:      fromHex(obj.BlockNumber).Uint64(),
 		Difficulty:       fromHex(obj.Difficulty).Uint64(),
 		ExtraData:        obj.ExtraData,
@@ -376,16 +376,16 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *PolygonBlock {
 	}
 }
 
-func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *PolygonTransaction {
-	var accessList []*PolygonTransactionAccessList
+func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *MantleTransaction {
+	var accessList []*MantleTransactionAccessList
 	for _, al := range obj.AccessList {
-		accessList = append(accessList, &PolygonTransactionAccessList{
+		accessList = append(accessList, &MantleTransactionAccessList{
 			Address:     al.Address,
 			StorageKeys: al.StorageKeys,
 		})
 	}
 
-	return &PolygonTransaction{
+	return &MantleTransaction{
 		Hash:                 obj.Hash,
 		BlockNumber:          fromHex(obj.BlockNumber).Uint64(),
 		BlockHash:            obj.BlockHash,
@@ -413,9 +413,9 @@ func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *PolygonTransact
 	}
 }
 
-func ToProtoSingleEventLog(obj *seer_common.EventJson) *PolygonEventLog {
+func ToProtoSingleEventLog(obj *seer_common.EventJson) *MantleEventLog {
 
-	return &PolygonEventLog{
+	return &MantleEventLog{
 		Address:         obj.Address,
 		Topics:          obj.Topics,
 		Data:            obj.Data,
@@ -427,10 +427,10 @@ func ToProtoSingleEventLog(obj *seer_common.EventJson) *PolygonEventLog {
 	}
 }
 
-func (c *Client) DecodeProtoEventLogs(data []string) ([]*PolygonEventLog, error) {
-	var events []*PolygonEventLog
+func (c *Client) DecodeProtoEventLogs(data []string) ([]*MantleEventLog, error) {
+	var events []*MantleEventLog
 	for _, d := range data {
-		var event PolygonEventLog
+		var event MantleEventLog
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -443,10 +443,10 @@ func (c *Client) DecodeProtoEventLogs(data []string) ([]*PolygonEventLog, error)
 	return events, nil
 }
 
-func (c *Client) DecodeProtoTransactions(data []string) ([]*PolygonTransaction, error) {
-	var transactions []*PolygonTransaction
+func (c *Client) DecodeProtoTransactions(data []string) ([]*MantleTransaction, error) {
+	var transactions []*MantleTransaction
 	for _, d := range data {
-		var transaction PolygonTransaction
+		var transaction MantleTransaction
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -459,10 +459,10 @@ func (c *Client) DecodeProtoTransactions(data []string) ([]*PolygonTransaction, 
 	return transactions, nil
 }
 
-func (c *Client) DecodeProtoBlocks(data []string) ([]*PolygonBlock, error) {
-	var blocks []*PolygonBlock
+func (c *Client) DecodeProtoBlocks(data []string) ([]*MantleBlock, error) {
+	var blocks []*MantleBlock
 	for _, d := range data {
-		var block PolygonBlock
+		var block MantleBlock
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err

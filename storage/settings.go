@@ -60,6 +60,13 @@ func CheckVariablesForStorage() error {
 
 // Blockchains map for storage or database models
 var Blockchains = map[string]string{
-	"ethereum": "ethereum_smartcontract",
-	"polygon":  "polygon_smartcontract",
+	"ethereum":                     "ethereum_smartcontract",
+	"polygon":                      "polygon_smartcontract",
+	"arbitrum_one":                 "arbitrum_one_smartcontract",
+	"arbitrum_sepolia":             "arbitrum_sepolia_smartcontract",
+	"game7_orbit_arbitrum_sepolia": "game7_orbit_arbitrum_sepolia_smartcontract",
+	"xai":                          "xai_smartcontract",
+	"xai_sepolia":                  "xai_sepolia_smartcontract",
+	"mantle":                       "mantle_smartcontract",
+	"mantle_sepolia":               "mantle_sepolia_smartcontract",
 }

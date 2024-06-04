@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/moonstream-to/seer/blockchain/common"
+	"github.com/moonstream-to/seer/blockchain"
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/storage"
 	"google.golang.org/protobuf/proto"
@@ -92,7 +92,7 @@ func (c *Crawler) Start() {
 		panic(err)
 	}
 
-	client, err := common.NewClient(chainType, BlockchainURLs[chainType])
+	client, err := blockchain.NewClient(chainType, BlockchainURLs[chainType])
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func (c *Crawler) Start() {
 
 		// Retry the operation in case of failure with cumulative attempts
 		err = retryOperation(retryAttempts, retryWaitTime, func() error {
-			blocks, transactions, blockIndex, transactionIndex, blocksCache, err := common.CrawlBlocks(client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(endBlock)))
+			blocks, transactions, blockIndex, transactionIndex, blocksCache, err := blockchain.CrawlBlocks(client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(endBlock)))
 			if err != nil {
 				return fmt.Errorf("failed to crawl blocks: %w", err)
 			}
@@ -247,7 +247,7 @@ func (c *Crawler) Start() {
 				return fmt.Errorf("failed to write transaction index to database: %w", err)
 			}
 
-			events, eventsIndex, err := common.CrawlEvents(client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(endBlock)), blocksCache)
+			events, eventsIndex, err := blockchain.CrawlEvents(client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(endBlock)), blocksCache)
 			if err != nil {
 				return fmt.Errorf("failed to crawl events: %w", err)
 			}
@@ -289,5 +289,5 @@ func (c *Crawler) Start() {
 	}
 }
 
-// You can add more methods here for additional functionalities
+// TODO: methods here for additional functionalities
 // such as handling reconnection logic, managing crawler state, etc.

@@ -6,17 +6,20 @@ import (
 	"fmt"
 	"go/format"
 	"io"
+	"log"
 	"os"
+	"path/filepath"
 	"strings"
+	"text/template"
 
 	"github.com/spf13/cobra"
 
-	"github.com/moonstream-to/seer/blockchain/synchronizer"
 	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/evm"
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/starknet"
 	"github.com/moonstream-to/seer/storage"
+	"github.com/moonstream-to/seer/synchronizer"
 	"github.com/moonstream-to/seer/version"
 )
 
@@ -32,12 +35,13 @@ func CreateRootCommand() *cobra.Command {
 
 	completionCmd := CreateCompletionCommand(rootCmd)
 	versionCmd := CreateVersionCommand()
+	blockchainCmd := CreateBlockchainCommand()
 	starknetCmd := CreateStarknetCommand()
 	crawlerCmd := CreateCrawlerCommand()
 	indexCmd := CreateIndexCommand()
 	evmCmd := CreateEVMCommand()
 	synchronizerCmd := CreateSynchronizerCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd, synchronizerCmd)
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd, synchronizerCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -112,6 +116,87 @@ func CreateVersionCommand() *cobra.Command {
 	return versionCmd
 }
 
+func CreateBlockchainCommand() *cobra.Command {
+	blockchainCmd := &cobra.Command{
+		Use:   "blockchain",
+		Short: "Generate methods and types for different blockchains",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	blockchainGenerateCmd := CreateBlockchainGenerateCommand()
+	blockchainCmd.AddCommand(blockchainGenerateCmd)
+
+	return blockchainCmd
+}
+
+type BlockchainTemplateData struct {
+	BlockchainName      string
+	BlockchainNameLower string
+	IsSideChain         bool
+}
+
+func CreateBlockchainGenerateCommand() *cobra.Command {
+	var blockchainNameLower string
+	var sideChain bool
+
+	blockchainGenerateCmd := &cobra.Command{
+		Use:   "generate",
+		Short: "Generate methods and types for different blockchains from template",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dirPath := filepath.Join(".", "blockchain", blockchainNameLower)
+			blockchainNameFilePath := filepath.Join(dirPath, fmt.Sprintf("%s.go", blockchainNameLower))
+
+			var blockchainName string
+			blockchainNameList := strings.Split(blockchainNameLower, "_")
+			for _, w := range blockchainNameList {
+				blockchainName += strings.Title(w)
+			}
+
+			// Read and parse the template file
+			tmpl, parseErr := template.ParseFiles("blockchain/blockchain.go.tmpl")
+			if parseErr != nil {
+				return parseErr
+			}
+
+			// Create output file
+			if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
+				mkdirErr := os.Mkdir(dirPath, 0775)
+				if mkdirErr != nil {
+					return mkdirErr
+				}
+			}
+
+			outputFile, createErr := os.Create(blockchainNameFilePath)
+			if createErr != nil {
+				return createErr
+			}
+			defer outputFile.Close()
+
+			// Execute template and write to output file
+			data := BlockchainTemplateData{
+				BlockchainName:      blockchainName,
+				BlockchainNameLower: blockchainNameLower,
+				IsSideChain:         sideChain,
+			}
+			execErr := tmpl.Execute(outputFile, data)
+			if execErr != nil {
+				return execErr
+			}
+
+			log.Printf("Blockchain file generated successfully: %s", blockchainNameFilePath)
+
+			return nil
+		},
+	}
+
+	blockchainGenerateCmd.Flags().StringVarP(&blockchainNameLower, "name", "n", "", "The name of the blockchain to generate lowercase (example: 'arbitrum_one')")
+	blockchainGenerateCmd.Flags().BoolVar(&sideChain, "side-chain", false, "Set this flag to extend Blocks and Transactions with additional fields for side chains (default: false)")
+
+	return blockchainGenerateCmd
+}
+
 func CreateStarknetCommand() *cobra.Command {
 	starknetCmd := &cobra.Command{
 		Use:   "starknet",
@@ -183,7 +268,7 @@ func CreateCrawlerCommand() *cobra.Command {
 func CreateSynchronizerCommand() *cobra.Command {
 	var startBlock, endBlock uint64
 	// var startBlockBig, endBlockBig big.Int
-	var baseDir, output, abi_source string
+	var chain, baseDir, output, abi_source string
 
 	synchronizerCmd := &cobra.Command{
 		Use:   "synchronizer",
@@ -218,12 +303,13 @@ func CreateSynchronizerCommand() *cobra.Command {
 
 			// read the blockchain url from $INFURA_URL
 			// if it is not set, use the default url
-			synchronizer := synchronizer.NewSynchronizer("polygon", startBlock, endBlock)
+			synchronizer := synchronizer.NewSynchronizer(chain, startBlock, endBlock)
 
 			synchronizer.SyncCustomers()
 		},
 	}
 
+	synchronizerCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
 	synchronizerCmd.Flags().Uint64Var(&startBlock, "start-block", 0, "The block number to start decoding from (default: latest block)")
 	synchronizerCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end decoding at (default: latest block)")
 	synchronizerCmd.Flags().StringVar(&baseDir, "base-dir", "data", "The base directory to store the crawled data (default: data)")

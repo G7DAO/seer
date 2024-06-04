@@ -164,7 +164,7 @@ func WriteIndexesToDatabase(blockchain string, indexes []interface{}, indexType 
 			index.chain = blockchain
 			blockIndexes = append(blockIndexes, index)
 		}
-		return DBConnection.writeBlockIndexToDB(blockchain+"_blocks", blockIndexes)
+		return DBConnection.writeBlockIndexToDB(blockchain, blockIndexes)
 
 	case "transaction":
 		var transactionIndexes []TransactionIndex
