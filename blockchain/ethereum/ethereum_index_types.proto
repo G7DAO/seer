@@ -1,7 +1,12 @@
 syntax = "proto3";
 
-option go_package = ".ethereum";
+option go_package = "github.com/moonstream-to/seer/blockchain/ethereum";
 
+
+message EthereumTransactionAccessList {
+  string address = 1;
+  repeated string storage_keys = 2;
+}
 
 // Represents a single transaction within a block
 message EthereumTransaction {
@@ -26,7 +31,7 @@ message EthereumTransaction {
   string r = 19;  // Used as a field to match potential EIP-1559 transaction types
   string s = 20;  // Used as a field to match potential EIP-1559 transaction types
   
-  repeated string access_list = 21;
+  repeated EthereumTransactionAccessList access_list = 21;
   string y_parity = 22; // Used as a field to match potential EIP-1559 transaction types
 }
 
@@ -53,7 +58,6 @@ message EthereumBlock {
   uint64 indexed_at = 19; // using uint64 to represent timestamp
   repeated EthereumTransaction transactions = 20;
 }
-
 
 message EthereumEventLog {
   string address = 1; // The address of the contract that generated the log

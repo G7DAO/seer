@@ -353,11 +353,11 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 }
 func ToProtoSingleBlock(obj *seer_common.BlockJson) *EthereumBlock {
 	return &EthereumBlock{
-		BlockNumber:      obj.BlockNumber,
-		Difficulty:       obj.Difficulty,
+		BlockNumber:      fromHex(obj.BlockNumber).Uint64(),
+		Difficulty:       fromHex(obj.Difficulty).Uint64(),
 		ExtraData:        obj.ExtraData,
-		GasLimit:         obj.GasLimit,
-		GasUsed:          obj.GasUsed,
+		GasLimit:         fromHex(obj.GasLimit).Uint64(),
+		GasUsed:          fromHex(obj.GasUsed).Uint64(),
 		BaseFeePerGas:    obj.BaseFeePerGas,
 		Hash:             obj.Hash,
 		LogsBloom:        obj.LogsBloom,
@@ -366,19 +366,27 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *EthereumBlock {
 		ParentHash:       obj.ParentHash,
 		ReceiptsRoot:     obj.ReceiptsRoot,
 		Sha3Uncles:       obj.Sha3Uncles,
-		Size:             obj.Size,
+		Size:             fromHex(obj.Size).Uint64(),
 		StateRoot:        obj.StateRoot,
-		Timestamp:        obj.Timestamp,
+		Timestamp:        fromHex(obj.Timestamp).Uint64(),
 		TotalDifficulty:  obj.TotalDifficulty,
 		TransactionsRoot: obj.TransactionsRoot,
-		IndexedAt:        obj.IndexedAt,
+		IndexedAt:        fromHex(obj.IndexedAt).Uint64(),
 	}
 }
 
 func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *EthereumTransaction {
+	var accessList []*EthereumTransactionAccessList
+	for _, al := range obj.AccessList {
+		accessList = append(accessList, &EthereumTransactionAccessList{
+			Address:     al.Address,
+			StorageKeys: al.StorageKeys,
+		})
+	}
+
 	return &EthereumTransaction{
 		Hash:                 obj.Hash,
-		BlockNumber:          obj.BlockNumber,
+		BlockNumber:          fromHex(obj.BlockNumber).Uint64(),
 		BlockHash:            obj.BlockHash,
 		FromAddress:          obj.FromAddress,
 		ToAddress:            obj.ToAddress,
@@ -388,18 +396,18 @@ func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *EthereumTransac
 		MaxPriorityFeePerGas: obj.MaxPriorityFeePerGas,
 		Input:                obj.Input,
 		Nonce:                obj.Nonce,
-		TransactionIndex:     obj.TransactionIndex,
-		TransactionType:      obj.TransactionType,
+		TransactionIndex:     fromHex(obj.TransactionIndex).Uint64(),
+		TransactionType:      fromHex(obj.TransactionType).Uint64(),
 		Value:                obj.Value,
-		IndexedAt:            obj.IndexedAt,
-		BlockTimestamp:       obj.BlockTimestamp,
+		IndexedAt:            fromHex(obj.IndexedAt).Uint64(),
+		BlockTimestamp:       fromHex(obj.BlockTimestamp).Uint64(),
 
 		ChainId: obj.ChainId,
 		V:       obj.V,
 		R:       obj.R,
 		S:       obj.S,
 
-		AccessList: obj.AccessList,
+		AccessList: accessList,
 		YParity:    obj.YParity,
 	}
 }
@@ -410,9 +418,9 @@ func ToProtoSingleEventLog(obj *seer_common.EventJson) *EthereumEventLog {
 		Address:         obj.Address,
 		Topics:          obj.Topics,
 		Data:            obj.Data,
-		BlockNumber:     obj.BlockNumber,
+		BlockNumber:     fromHex(obj.BlockNumber).Uint64(),
 		TransactionHash: obj.TransactionHash,
-		LogIndex:        obj.LogIndex,
+		LogIndex:        fromHex(obj.LogIndex).Uint64(),
 		BlockHash:       obj.BlockHash,
 		Removed:         obj.Removed,
 	}

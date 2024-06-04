@@ -1,7 +1,12 @@
 syntax = "proto3";
 
-option go_package = ".game7_orbit_arbitrum_sepolia";
+option go_package = "github.com/moonstream-to/seer/blockchain/game7_orbit_arbitrum_sepolia";
 
+
+message Game7OrbitArbitrumSepoliaTransactionAccessList {
+  string address = 1;
+  repeated string storage_keys = 2;
+}
 
 // Represents a single transaction within a block
 message Game7OrbitArbitrumSepoliaTransaction {
@@ -26,7 +31,7 @@ message Game7OrbitArbitrumSepoliaTransaction {
   string r = 19;  // Used as a field to match potential EIP-1559 transaction types
   string s = 20;  // Used as a field to match potential EIP-1559 transaction types
   
-  repeated string access_list = 21;
+  repeated Game7OrbitArbitrumSepoliaTransactionAccessList access_list = 21;
   string y_parity = 22; // Used as a field to match potential EIP-1559 transaction types
 }
 

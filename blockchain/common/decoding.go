@@ -14,37 +14,37 @@ import (
 )
 
 type BlockJson struct {
-	Difficulty       uint64 `json:"difficulty"`
+	Difficulty       string `json:"difficulty"`
 	ExtraData        string `json:"extraData"`
-	GasLimit         uint64 `json:"gasLimit"`
-	GasUsed          uint64 `json:"gasUsed"`
+	GasLimit         string `json:"gasLimit"`
+	GasUsed          string `json:"gasUsed"`
 	Hash             string `json:"hash"`
 	LogsBloom        string `json:"logsBloom"`
 	Miner            string `json:"miner"`
 	Nonce            string `json:"nonce"`
-	BlockNumber      uint64 `json:"number"`
+	BlockNumber      string `json:"number"`
 	ParentHash       string `json:"parentHash"`
 	ReceiptsRoot     string `json:"receiptsRoot"`
 	Sha3Uncles       string `json:"sha3Uncles"`
 	StateRoot        string `json:"stateRoot"`
-	Timestamp        uint64 `json:"timestamp"`
+	Timestamp        string `json:"timestamp"`
 	TotalDifficulty  string `json:"totalDifficulty"`
 	TransactionsRoot string `json:"transactionsRoot"`
-	Size             uint64 `json:"size"`
+	Size             string `json:"size"`
 	BaseFeePerGas    string `json:"baseFeePerGas"`
-	IndexedAt        uint64 `json:"indexed_at"`
+	IndexedAt        string `json:"indexed_at"`
 
 	MixHash       string `json:"mixHash,omitempty"`
 	SendCount     string `json:"sendCount,omitempty"`
 	SendRoot      string `json:"sendRoot,omitempty"`
-	L1BlockNumber uint64 `json:"l1BlockNumber,omitempty"`
+	L1BlockNumber string `json:"l1BlockNumber,omitempty"`
 
 	Transactions []TransactionJson `json:"transactions,omitempty"`
 }
 
 type TransactionJson struct {
 	BlockHash            string `json:"blockHash"`
-	BlockNumber          uint64 `json:"blockNumber"`
+	BlockNumber          string `json:"blockNumber"`
 	ChainId              string `json:"chainId"`
 	FromAddress          string `json:"from"`
 	Gas                  string `json:"gas"`
@@ -58,14 +58,14 @@ type TransactionJson struct {
 	R                    string `json:"r"`
 	S                    string `json:"s"`
 	ToAddress            string `json:"to"`
-	TransactionIndex     uint64 `json:"transactionIndex"`
-	TransactionType      uint64 `json:"type"`
+	TransactionIndex     string `json:"transactionIndex"`
+	TransactionType      string `json:"type"`
 	Value                string `json:"value"`
-	IndexedAt            uint64 `json:"indexed_at"`
-	BlockTimestamp       uint64 `json:"block_timestamp"`
+	IndexedAt            string `json:"indexed_at"`
+	BlockTimestamp       string `json:"block_timestamp"`
 
-	AccessList []string `json:"accessList,omitempty"` // TODO(kompotkot): Use AccessList struct
-	YParity    string   `json:"yParity,omitempty"`
+	AccessList []AccessList `json:"accessList,omitempty"`
+	YParity    string       `json:"yParity,omitempty"`
 }
 
 type AccessList struct {
@@ -78,12 +78,12 @@ type EventJson struct {
 	Address          string   `json:"address"`
 	Topics           []string `json:"topics"`
 	Data             string   `json:"data"`
-	BlockNumber      uint64   `json:"blockNumber"`
+	BlockNumber      string   `json:"blockNumber"`
 	TransactionHash  string   `json:"transactionHash"`
 	BlockHash        string   `json:"blockHash"`
 	Removed          bool     `json:"removed"`
-	LogIndex         uint64   `json:"logIndex"`
-	TransactionIndex uint64   `json:"transactionIndex"`
+	LogIndex         string   `json:"logIndex"`
+	TransactionIndex string   `json:"transactionIndex"`
 }
 
 type QueryFilter struct {

@@ -12,7 +12,11 @@ import (
 	"github.com/moonstream-to/seer/blockchain/arbitrum_sepolia"
 	"github.com/moonstream-to/seer/blockchain/ethereum"
 	"github.com/moonstream-to/seer/blockchain/game7_orbit_arbitrum_sepolia"
+	"github.com/moonstream-to/seer/blockchain/mantle"
+	"github.com/moonstream-to/seer/blockchain/mantle_sepolia"
 	"github.com/moonstream-to/seer/blockchain/polygon"
+	"github.com/moonstream-to/seer/blockchain/xai"
+	"github.com/moonstream-to/seer/blockchain/xai_sepolia"
 	"github.com/moonstream-to/seer/indexer"
 	"google.golang.org/protobuf/proto"
 )
@@ -28,22 +32,22 @@ func wrapClient(url, chain string) (BlockchainClient, error) {
 		client, err := arbitrum_one.NewClient(url)
 		return client, err
 	} else if chain == "arbitrum_sepolia" {
-		client, err := arbitrum_one.NewClient(url)
+		client, err := arbitrum_sepolia.NewClient(url)
 		return client, err
 	} else if chain == "game7_orbit_arbitrum_sepolia" {
 		client, err := game7_orbit_arbitrum_sepolia.NewClient(url)
 		return client, err
 	} else if chain == "mantle" {
-		client, err := arbitrum_sepolia.NewClient(url)
+		client, err := mantle.NewClient(url)
 		return client, err
 	} else if chain == "mantle_sepolia" {
-		client, err := arbitrum_sepolia.NewClient(url)
+		client, err := mantle_sepolia.NewClient(url)
 		return client, err
 	} else if chain == "xai" {
-		client, err := arbitrum_sepolia.NewClient(url)
+		client, err := xai.NewClient(url)
 		return client, err
 	} else if chain == "xai_sepolia" {
-		client, err := arbitrum_sepolia.NewClient(url)
+		client, err := xai_sepolia.NewClient(url)
 		return client, err
 	} else {
 		return nil, errors.New("unsupported chain type")

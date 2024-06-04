@@ -38,25 +38,24 @@ Blockchain structure:
 
 ## Regenerate proto interface
 
-1. Go to chain directory, for example:
-
-```bash
-cd blockchain/ethereum
-```
-
-2. Generate code with proto compiler, docs: https://protobuf.dev/reference/go/go-generated/
+1. Generate code with proto compiler, docs: https://protobuf.dev/reference/go/go-generated/
 
 ```bash
 protoc --go_out=. --go_opt=paths=source_relative \
-    ethereum_index_types.proto
+    blockchain/ethereum/ethereum_index_types.proto
 ```
 
-3. Rename generated file similar to chain package.
-4. Generate interface with seer, if chain is L2, specify flag `--side-chain`:
+2. Rename generated file similar to chain package.
+3. Generate interface with seer, if chain is L2, specify flag `--side-chain`:
 
 ```bash
-cd ../..
 ./seer blockchain generate -n ethereum
+```
+
+Or use bash script to do all job. But be careful it by default generates interfaces for L1 chains with additional fields, for side chains this script requires modification:
+
+```bash
+./prepare_blockchains.sh
 ```
 
 ## Run crawler
