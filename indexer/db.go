@@ -303,9 +303,6 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(blockchain string, indexes []BlockIn
 		}
 	}
 
-	fmt.Println(query)
-	fmt.Println(params)
-
 	// Remove the last comma from the query
 	query = query[:len(query)-1]
 
