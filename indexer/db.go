@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/moonstream-to/seer/storage"
 )
 
 // DB is a global variable to hold the GORM database connection.
@@ -542,7 +541,7 @@ func (p *PostgreSQLpgx) ReadABIJobs(blockchain string) ([]AbiJob, error) {
 
 	defer conn.Release()
 
-	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, created_at, updated_at FROM abi_jobs where chain=$1 ", storage.Blockchains[blockchain])
+	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, created_at, updated_at FROM abi_jobs where chain=$1 ", blockchain)
 
 	if err != nil {
 		return nil, err
@@ -618,201 +617,216 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, toBlock
 
 	blocksTableName := BlocksTableName(blockchain)
 
-	query := fmt.Sprintf(`
-	WITH blocks as (
-		SELECT
-			block_number,
-			block_hash,
-			block_timestamp
-		from
-			%s
-		WHERE
-			block_number >= $1
-			and block_number <= $2
-	),
-	transactions AS (
-		SELECT
-			bk.block_number,
-			bk.block_hash,
-			bk.block_timestamp,
-			tx.hash AS transaction_hash,
-			tx.to_address AS transaction_address,
-			tx.selector AS transaction_selector,
-			tx.row_id AS transaction_row_id,
-			tx.path AS transaction_path
-		FROM
-			blocks bk
-			LEFT JOIN %s tx ON tx.block_hash = bk.block_hash
-	),
-	events AS (
-		SELECT
-			bk.block_number,
-			bk.block_hash,
-			bk.block_timestamp,
-			logs.transaction_hash AS transaction_hash,
-			logs.address AS event_address,
-			LEFT(logs.selector, 10) AS event_selector,
-			logs.row_id AS event_row_id,
-			logs.path AS event_path
-		FROM
-			blocks bk
-			LEFT JOIN %s logs ON logs.block_hash = bk.block_hash
-	),
-	jobs AS (
-		SELECT
-			decode(REPLACE(address, '0x', ''), 'hex') as address,
-			address as address_str,
-			customer_id,
-			abi_selector,
-			abi_name,
-			abi
-		FROM
-			abi_jobs
-		WHERE
-			chain = $3
-	),
-	address_abis AS (
-		SELECT
-			address_str,
-			customer_id,
-			json_object_agg(
-				abi_selector,
-				json_build_object(
-					'abi', '[' || abi || ']',
-					'abi_name', abi_name
-				)
-			) AS abis_per_address
-		FROM
-			jobs
-		GROUP BY
-			address_str, customer_id
-	),
-	reformatted_jobs AS (
-		SELECT
-			customer_id,
-			json_object_agg(
-				address_str,
-				abis_per_address
-			) AS abis
-		FROM
-			address_abis
-		GROUP BY
-			customer_id
-	),
-	abi_transactions AS (
-		SELECT
-			transactions.block_number,
-			transactions.block_timestamp,
-			jobs.customer_id,
-			jobs.abi_name,
-			jobs.address_str,
-			transactions.transaction_hash,
-			transactions.transaction_address,
-			transactions.transaction_selector,
-			transactions.transaction_row_id,
-			transactions.transaction_path
-		FROM
-			transactions
-			inner JOIN jobs ON transactions.transaction_address = jobs.address
-			AND transactions.transaction_selector = jobs.abi_selector
-	),
-	abi_events AS (
-		SELECT
-			events.block_number,
-			events.block_timestamp,
-			jobs.customer_id,
-			jobs.abi_name,
-			jobs.address_str,
-			events.transaction_hash,
-			events.block_hash,
-			events.event_address,
-			events.event_selector,
-			events.event_row_id,
-			events.event_path
-		FROM
-			events
-			inner JOIN jobs ON events.event_address = jobs.address
-			AND events.event_selector = jobs.abi_selector
-	),
-	combined AS (
-		SELECT
-			block_number,
-			block_timestamp,
-			customer_id,
-			'transaction' AS type,
-			abi_name,
-			address_str,
-			transaction_hash AS hash,
-			transaction_address AS address,
-			transaction_selector AS selector,
-			transaction_row_id AS row_id,
-			transaction_path AS path
-		FROM
-			abi_transactions
-		where
-			transaction_hash is not null
-		UNION
-		ALL
-		SELECT
-			block_number,
-			block_timestamp,
-			customer_id,
-			'event' AS type,
-			abi_name,
-			address_str,
-			transaction_hash AS hash,
-			event_address AS address,
-			event_selector AS selector,
-			event_row_id AS row_id,
-			event_path AS path
-		FROM
-			abi_events
-		where
-			transaction_hash is not null
-	)
-	SELECT
-		customer_id,
-		(
-			SELECT abis from reformatted_jobs where reformatted_jobs.customer_id = combined.customer_id
-		) as abis,
-		json_object_agg(block_number, block_timestamp) AS blocks_cache,
-		json_build_object(
-			'transactions',
-			COALESCE(
-			json_agg(
-				json_build_object(
-					'hash', hash,
-					'address', address_str,
-					'selector', selector,
-					'row_id', row_id,
-					'path', path
-				)
-			) FILTER (WHERE type = 'transaction'), '[]'),
-			'events',
-			COALESCE(
-			json_agg(
-				CASE
-					WHEN type = 'event' THEN json_build_object(
-						'hash',
-						hash,
-						'address',
-						address_str,
-						'selector',
-						selector,
-						'row_id',
-						row_id,
-						'path',
-						path
-					)
-				END
-			) FILTER (WHERE type = 'event'), '[]')
-		) AS data
-	FROM
-		combined
-	GROUP BY
-		customer_id`, blocksTableName, transactionsTableName, logsTableName)
+	query := fmt.Sprintf(`WITH blocks as (
+        SELECT
+            block_number,
+            block_hash,
+            block_timestamp
+        from
+            %s
+        WHERE
+            block_number >= $1
+            and block_number <= $2
+    ),
+    transactions AS (
+        SELECT
+            bk.block_number,
+            bk.block_hash,
+            bk.block_timestamp,
+            tx.hash AS transaction_hash,
+            tx.to_address AS transaction_address,
+            tx.selector AS transaction_selector,
+            tx.row_id AS transaction_row_id,
+            tx.path AS transaction_path
+        FROM
+            blocks bk
+            LEFT JOIN %s tx ON tx.block_hash = bk.block_hash
+    ),
+    events AS (
+        SELECT
+            bk.block_number,
+            bk.block_hash,
+            bk.block_timestamp,
+            logs.transaction_hash AS transaction_hash,
+            logs.address AS event_address,
+            logs.selector AS event_selector,
+            logs.row_id AS event_row_id,
+            logs.path AS event_path
+        FROM
+            blocks bk
+            LEFT JOIN %s logs ON logs.block_hash = bk.block_hash
+    ),
+    jobs AS (
+        SELECT
+            address as address,
+            '0x' || encode(address, 'hex') as address_str,
+            customer_id,
+            abi_selector,
+            abi_name,
+            abi
+        FROM
+            abi_jobs
+        WHERE
+            chain = $3
+    ),
+    address_abis AS (
+        SELECT
+            address_str,
+            customer_id,
+            json_object_agg(
+                abi_selector,
+                json_build_object(
+                    'abi',
+                    '[' || abi || ']',
+                    'abi_name',
+                    abi_name
+                )
+            ) AS abis_per_address
+        FROM
+            jobs
+        GROUP BY
+            address_str,
+            customer_id
+    ),
+    reformatted_jobs AS (
+        SELECT
+            customer_id,
+            json_object_agg(address_str, abis_per_address) AS abis
+        FROM
+            address_abis
+        GROUP BY
+            customer_id
+    ),
+    abi_transactions AS (
+        SELECT
+            transactions.block_number,
+            transactions.block_timestamp,
+            jobs.customer_id,
+            jobs.abi_name,
+            jobs.address_str,
+            transactions.transaction_hash,
+            transactions.transaction_address,
+            transactions.transaction_selector,
+            transactions.transaction_row_id,
+            transactions.transaction_path
+        FROM
+            transactions
+            inner JOIN jobs ON transactions.transaction_address = jobs.address
+            AND transactions.transaction_selector = jobs.abi_selector
+    ),
+    abi_events AS (
+        SELECT
+            events.block_number,
+            events.block_timestamp,
+            jobs.customer_id,
+            jobs.abi_name,
+            jobs.address_str,
+            events.transaction_hash,
+            events.block_hash,
+            events.event_address,
+            events.event_selector,
+            events.event_row_id,
+            events.event_path
+        FROM
+            events
+            inner JOIN jobs ON events.event_address = jobs.address
+            AND events.event_selector = jobs.abi_selector
+    ),
+    combined AS (
+        SELECT
+            block_number,
+            block_timestamp,
+            customer_id,
+            'transaction' AS type,
+            abi_name,
+            address_str,
+            transaction_hash AS hash,
+            transaction_address AS address,
+            transaction_selector AS selector,
+            transaction_row_id AS row_id,
+            transaction_path AS path
+        FROM
+            abi_transactions
+        UNION
+        ALL
+        SELECT
+            block_number,
+            block_timestamp,
+            customer_id,
+            'event' AS type,
+            abi_name,
+            address_str,
+            transaction_hash AS hash,
+            event_address AS address,
+            event_selector AS selector,
+            event_row_id AS row_id,
+            event_path AS path
+        FROM
+            abi_events
+    )
+    SELECT
+        customer_id,
+        (
+            SELECT
+                abis
+            from
+                reformatted_jobs
+            where
+                reformatted_jobs.customer_id = combined.customer_id
+        ) as abis,
+        json_object_agg(block_number, block_timestamp) AS blocks_cache,
+        json_build_object(
+            'transactions',
+            COALESCE(
+                json_agg(
+                    json_build_object(
+                        'hash',
+                        hash,
+                        'address',
+                        address_str,
+                        'selector',
+                        selector,
+                        'row_id',
+                        row_id,
+                        'path',
+                        path
+                    )
+                ) FILTER (
+                    WHERE
+                        type = 'transaction'
+                ),
+                '[]'
+            ),
+            'events',
+            COALESCE(
+                json_agg(
+                    CASE
+                        WHEN type = 'event' THEN json_build_object(
+                            'hash',
+                            hash,
+                            'address',
+                            address_str,
+                            'selector',
+                            selector,
+                            'row_id',
+                            row_id,
+                            'path',
+                            path
+                        )
+                    END
+                ) FILTER (
+                    WHERE
+                        type = 'event'
+                ),
+                '[]'
+            )
+        ) AS data
+    FROM
+        combined
+    GROUP BY
+        customer_id`, blocksTableName, transactionsTableName, logsTableName)
 
-	rows, err := conn.Query(context.Background(), query, fromBlock, toBlock, storage.Blockchains[blockchain])
+	rows, err := conn.Query(context.Background(), query, fromBlock, toBlock, blockchain)
 
 	if err != nil {
 		log.Println("Error querying abi jobs from database", err)
