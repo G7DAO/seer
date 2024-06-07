@@ -335,14 +335,11 @@ func (d *Synchronizer) syncCycle() error {
 				}
 
 				// Union all keys values into a single slice
-
 				var all_events []string
 
 				for _, data := range encodedEvents {
 					all_events = append(all_events, data...)
 				}
-
-				// write abis to file
 
 				// Decode the events using ABIs
 				decodedEvents, err := client.DecodeProtoEventsToLabels(all_events, update.BlocksCache, update.Abis)
@@ -401,12 +398,6 @@ func (d *Synchronizer) syncCycle() error {
 					errChan <- fmt.Errorf("error decoding transactions for customer %s: %w", update.CustomerID, err)
 					return
 				}
-
-				log.Println("Decoded transactions amount: ", len(decodedTransactions))
-
-				// Read all rowIds for each path
-
-				// insert decoded labels into the user RDS
 
 				pgx.WriteTransactions(
 					d.blockchain,

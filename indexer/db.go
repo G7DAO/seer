@@ -920,6 +920,10 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 		}
 	}()
 
+	tableName := LabelsTableName(blockchain)
+
+	// Too many parameters error
+	// Batch insert events calculated as parameters_amount_per_row*batch_size <= 65535 (max number of parameters in a single query)
 	for i := 0; i < len(events); i += InsertBatchSize {
 		// Determine the end of the current batch
 		end := i + InsertBatchSize
@@ -928,10 +932,8 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 		}
 
 		// Start building the bulk insert query
-		tableName := LabelsTableName(blockchain)
 		query := fmt.Sprintf("INSERT INTO %s (id, label, transaction_hash, log_index, block_number, block_hash, block_timestamp, caller_address, origin_address, address, label_name, label_type, label_data) VALUES ", tableName)
 
-		// Placeholder slice for query parameters
 		var params []interface{}
 
 		// Loop through labels to append values and parameters
@@ -942,19 +944,19 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 			params = append(params, id, label.Label, label.TransactionHash, label.LogIndex, label.BlockNumber, label.BlockHash, label.BlockTimestamp, label.CallerAddress, label.OriginAddress, label.Address, label.LabelName, label.LabelType, label.LabelData)
 		}
 
-		// Remove the last comma from the query
+		// Remove the last comma
 		query = query[:len(query)-1]
 
-		// Add the ON CONFLICT clause - adjust based on your conflict resolution strategy
+		// ON CONFLICT clause - skip duplicates
 		query += " ON CONFLICT (transaction_hash, log_index) where label='seer' and label_type = 'event' DO NOTHING"
 
 		if _, err := tx.Exec(ctx, query, params...); err != nil {
 			fmt.Println("Error executing bulk insert", err)
 			return fmt.Errorf("error executing bulk insert for batch: %w", err)
 		}
-
-		log.Println("Records inserted into", tableName)
 	}
+
+	log.Printf("Records %d events inserted into %s", len(events), tableName)
 
 	return nil
 }
@@ -962,11 +964,33 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 func (p *PostgreSQLpgx) WriteTransactions(blockchain string, transactions []TransactionLabel) error {
 	pool := p.GetPool()
 
+	// Create a context with a timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	conn, err := pool.Acquire(context.Background())
 	if err != nil {
 		return err
 	}
 	defer conn.Release()
+
+	// Start a transaction
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	// Ensure the transaction is either committed or rolled back
+	defer func() {
+		if err := recover(); err != nil {
+			tx.Rollback(ctx)
+			panic(err) // re-throw panic after Rollback
+		} else if err != nil {
+			tx.Rollback(ctx) // err is non-nil; don't change it
+		} else {
+			err = tx.Commit(ctx) // err is nil; if Commit returns error update err
+		}
+	}()
 
 	tableName := LabelsTableName(blockchain)
 
@@ -975,27 +999,35 @@ func (p *PostgreSQLpgx) WriteTransactions(blockchain string, transactions []Tran
 	// Placeholder slice for query parameters
 	var params []interface{}
 
-	// Loop through transactions to append values and parameters
-	for i, label := range transactions {
-		id := uuid.New()
-		query += fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d),",
-			i*12+1, i*12+2, i*12+3, i*12+4, i*12+5, i*12+6, i*12+7, i*12+8, i*12+9, i*12+10, i*12+11, i*12+12)
-		params = append(params, id, label.Address, label.BlockNumber, label.BlockHash, label.CallerAddress, label.LabelName, label.LabelType, label.OriginAddress, label.Label, label.TransactionHash, label.LabelData, label.BlockTimestamp)
+	for i := 0; i < len(transactions); i += InsertBatchSize {
+		// Determine the end of the current batch
+		end := i + InsertBatchSize
+		if end > len(transactions) {
+			end = len(transactions)
+		}
+
+		// Loop through transactions to append values and parameters
+		for row, label := range transactions[i:end] {
+			id := uuid.New()
+			query += fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d),",
+				row*12+1, row*12+2, row*12+3, row*12+4, row*12+5, row*12+6, row*12+7, row*12+8, row*12+9, row*12+10, row*12+11, row*12+12)
+			params = append(params, id, label.Address, label.BlockNumber, label.BlockHash, label.CallerAddress, label.LabelName, label.LabelType, label.OriginAddress, label.Label, label.TransactionHash, label.LabelData, label.BlockTimestamp)
+		}
+
+		// Remove the last comma from the query
+		query = query[:len(query)-1]
+
+		// Add the ON CONFLICT clause - skip duplicates
+		query += " ON CONFLICT (transaction_hash) where label='seer' and label_type = 'tx_call' DO NOTHING"
+
+		// Execute the query
+		_, err = conn.Exec(context.Background(), query, params...)
+		if err != nil {
+			log.Println("Error executing bulk insert", err)
+			return err
+		}
 	}
 
-	// Remove the last comma from the query
-	query = query[:len(query)-1]
-
-	// Add the ON CONFLICT clause - adjust based on your conflict resolution strategy
-	query += " ON CONFLICT (transaction_hash) where label='seer' and label_type = 'tx_call' DO NOTHING"
-
-	// Execute the query
-	_, err = conn.Exec(context.Background(), query, params...)
-	if err != nil {
-		log.Println("Error executing bulk insert", err)
-		return err
-	}
-
-	log.Println("Records inserted into", tableName)
+	log.Printf("Records %d transactions inserted into %s", len(transactions), tableName)
 	return nil
 }
