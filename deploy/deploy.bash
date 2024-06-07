@@ -22,6 +22,7 @@ SCRIPT_DIR="$(realpath $(dirname $0))"
 USER_SYSTEMD_DIR="${USER_SYSTEMD_DIR:-/home/ubuntu/.config/systemd/user}"
 
 # Service files
+# Crawler
 SEER_CRAWLER_ARBITRUM_ONE_SERVICE_FILE="seer-crawler-arbitrum-one.service"
 SEER_CRAWLER_ARBITRUM_SEPOLIA_SERVICE_FILE="seer-crawler-arbitrum-sepolia.service"
 SEER_CRAWLER_ETHEREUM_SERVICE_FILE="seer-crawler-ethereum.service"
@@ -32,8 +33,16 @@ SEER_CRAWLER_POLYGON_SERVICE_FILE="seer-crawler-polygon.service"
 SEER_CRAWLER_XAI_SEPOLIA_SERVICE_FILE="seer-crawler-xai-sepolia.service"
 SEER_CRAWLER_XAI_SERVICE_FILE="seer-crawler-xai.service"
 
+# Synchronizer
 SEER_SYNCHRONIZER_ETHEREUM_SERVICE_FILE="seer-synchronizer-ethereum.service"
 SEER_SYNCHRONIZER_POLYGON_SERVICE_FILE="seer-synchronizer-polygon.service"
+SEER_SYNCHRONIZER_ARBITRUM_ONE_SERVICE_FILE="seer-synchronizer-arbitrum-one.service"
+SEER_SYNCHRONIZER_ARBITRUM_SEPOLIA_SERVICE_FILE="seer-synchronizer-arbitrum-sepolia.service"
+SEER_SYNCHRONIZER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE="seer-synchronizer-game7-orbit-arbitrum-sepolia.service"
+SEER_SYNCHRONIZER_MANTLE_SEPOLIA_SERVICE_FILE="seer-synchronizer-mantle-sepolia.service"
+SEER_SYNCHRONIZER_MANTLE_SERVICE_FILE="seer-synchronizer-mantle.service"
+SEER_SYNCHRONIZER_XAI_SEPOLIA_SERVICE_FILE="seer-synchronizer-xai-sepolia.service"
+SEER_SYNCHRONIZER_XAI_SERVICE_FILE="seer-synchronizer-xai.service"
 
 set -eu
 
@@ -198,3 +207,61 @@ chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_POLYGON_SERVICE_FILE}"
 cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_POLYGON_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_POLYGON_SERVICE_FILE}"
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_POLYGON_SERVICE_FILE}"
+
+
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Arbitrum One blockchain service definition with ${SEER_SYNCHRONIZER_ARBITRUM_ONE_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_ARBITRUM_ONE_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_ARBITRUM_ONE_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_ARBITRUM_ONE_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_ARBITRUM_ONE_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Arbitrum Sepolia blockchain service definition with ${SEER_SYNCHRONIZER_ARBITRUM_SEPOLIA_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_ARBITRUM_SEPOLIA_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_ARBITRUM_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_ARBITRUM_SEPOLIA_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_ARBITRUM_SEPOLIA_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Game7 Orbit Arbitrum Sepolia blockchain service definition with ${SEER_SYNCHRONIZER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Mantle Sepolia blockchain service definition with ${SEER_SYNCHRONIZER_MANTLE_SEPOLIA_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_MANTLE_SEPOLIA_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_MANTLE_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_MANTLE_SEPOLIA_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_MANTLE_SEPOLIA_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Mantle blockchain service definition with ${SEER_SYNCHRONIZER_MANTLE_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_MANTLE_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_MANTLE_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_MANTLE_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_MANTLE_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Xai Sepolia blockchain service definition with ${SEER_SYNCHRONIZER_XAI_SEPOLIA_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_XAI_SEPOLIA_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_XAI_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_XAI_SEPOLIA_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_XAI_SEPOLIA_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Xai blockchain service definition with ${SEER_SYNCHRONIZER_XAI_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_XAI_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_XAI_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_XAI_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_XAI_SERVICE_FILE}"

@@ -1,0 +1,16 @@
+[Unit]
+Description=Seer synchronizer service for game7 orbit arbitrum sepolia blockchain
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+WorkingDirectory=/home/ubuntu/seer
+EnvironmentFile=/home/ubuntu/seer-secrets/app.env
+Restart=on-failure
+RestartSec=15s
+ExecStart=/home/ubuntu/seer/seer indexer --chain game7_orbit_arbitrum_sepolia
+SyslogIdentifier=seer-synchronizer-game7-orbit-arbitrum-sepolia
+
+[Install]
+WantedBy=multi-user.target
