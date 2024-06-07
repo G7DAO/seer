@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/moonstream-to/seer/blockchain"
+	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/storage"
 )
@@ -78,7 +79,7 @@ func GetDBConnection(uuid string) (string, error) {
 	}
 
 	// Set the authorization header
-	req.Header.Set("Authorization", "Bearer "+MOONSTREAM_DB_CONTROLLER_SEER_ACCESS_TOKEN)
+	req.Header.Set("Authorization", "Bearer "+MOONSTREAM_DB_V3_CONTROLLER_SEER_ACCESS_TOKEN)
 
 	// Perform the request
 	resp, err := http.DefaultClient.Do(req)
@@ -88,6 +89,7 @@ func GetDBConnection(uuid string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		log.Println("Failed to get connection string for id", uuid, ":", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid+"/instances/1/creds/seer/url")
 		return "", fmt.Errorf("failed to get connection string for id %s: %s", uuid, resp.Status)
 	}
 
@@ -153,8 +155,19 @@ func (d *Synchronizer) syncCycle() error {
 	var wg sync.WaitGroup
 	errChan := make(chan error, 1) // Buffered channel for error handling
 
+	if d.blockchain == "" {
+		return fmt.Errorf("blockchain is not set")
+	}
+	if d.providerURI == "" {
+		url, ok := crawler.BlockchainURLs[d.blockchain]
+		if !ok {
+			return fmt.Errorf("blockchain URL is not set")
+		}
+		d.providerURI = url
+	}
+
 	// Read client
-	client, err := blockchain.NewClient(d.blockchain, "")
+	client, err := blockchain.NewClient(d.blockchain, d.providerURI)
 	if err != nil {
 		log.Println("Error initializing blockchain client:", err)
 		log.Fatal(err)
@@ -312,17 +325,16 @@ func (d *Synchronizer) syncCycle() error {
 						RowIds: rowIds,
 					})
 				}
-
 				// Read all rowIds for each path
 				encodedEvents, err := storageInstance.ReadBatch(eventsReadMap)
 
 				if err != nil {
+					fmt.Println("Error reading events: ", err)
 					errChan <- fmt.Errorf("error reading events for customer %s: %w", update.CustomerID, err)
 					return
 				}
 
 				// Union all keys values into a single slice
-
 				var all_events []string
 
 				for _, data := range encodedEvents {
@@ -333,11 +345,10 @@ func (d *Synchronizer) syncCycle() error {
 				decodedEvents, err := client.DecodeProtoEventsToLabels(all_events, update.BlocksCache, update.Abis)
 
 				if err != nil {
+					fmt.Println("Error decoding events: ", err)
 					errChan <- fmt.Errorf("error decoding events for customer %s: %w", update.CustomerID, err)
 					return
 				}
-
-				log.Println("Decoded events amount: ", len(decodedEvents))
 
 				// try to write to user RDS
 
@@ -366,7 +377,6 @@ func (d *Synchronizer) syncCycle() error {
 						RowIds: rowIds,
 					})
 				}
-
 				encodedTransactions, err := storageInstance.ReadBatch(transactionsReadMap)
 
 				if err != nil {
@@ -389,12 +399,6 @@ func (d *Synchronizer) syncCycle() error {
 					return
 				}
 
-				log.Println("Decoded transactions amount: ", len(decodedTransactions))
-
-				// Read all rowIds for each path
-
-				// insert decoded labels into the user RDS
-
 				pgx.WriteTransactions(
 					d.blockchain,
 					decodedTransactions,
@@ -407,6 +411,9 @@ func (d *Synchronizer) syncCycle() error {
 
 			}(update)
 		}
+
+		wg.Wait()
+
 		d.startBlock = latestBlock
 	}
 
@@ -418,6 +425,7 @@ func (d *Synchronizer) syncCycle() error {
 
 	// Check for errors from goroutines
 	for err := range errChan {
+		fmt.Println("Error during synchronization cycle:", err)
 		if err != nil {
 			return err // Return the first error encountered
 		}

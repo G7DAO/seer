@@ -120,7 +120,7 @@ type BlockCache struct {
 
 type AbiJob struct {
 	ID                    string
-	Address               string
+	Address               []byte
 	UserID                string
 	CustomerID            string
 	AbiSelector           string

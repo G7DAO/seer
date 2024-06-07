@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
+	"strings"
 
 	"cloud.google.com/go/storage"
 )
@@ -106,7 +108,6 @@ func (g *GCS) ReadBatch(readItems []ReadItem) (map[string][]string, error) {
 	result := make(map[string][]string)
 
 	for _, item := range readItems {
-
 		obj := bucket.Object(item.Key)
 
 		r, err := obj.NewReader(ctx)
@@ -115,7 +116,7 @@ func (g *GCS) ReadBatch(readItems []ReadItem) (map[string][]string, error) {
 		}
 		defer r.Close()
 
-		scanner := bufio.NewScanner(r)
+		reader := bufio.NewReader(r)
 
 		rowMap := make(map[uint64]bool)
 		for _, id := range item.RowIds {
@@ -124,18 +125,25 @@ func (g *GCS) ReadBatch(readItems []ReadItem) (map[string][]string, error) {
 
 		var currentRow uint64 = 0
 
-		for scanner.Scan() {
-			if rowMap[currentRow+1] {
+		for {
+			line, err := reader.ReadString('\n')
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return nil, fmt.Errorf("failed to read object from bucket: %v", err)
+			}
+
+			// Remove the newline character from the end of the line if it exists
+			line = strings.TrimSuffix(line, "\n")
+
+			if rowMap[currentRow] {
 				if result[item.Key] == nil {
 					result[item.Key] = make([]string, 0)
 				}
-				result[item.Key] = append(result[item.Key], scanner.Text())
+				result[item.Key] = append(result[item.Key], line)
 			}
 			currentRow++
-		}
-
-		if err := scanner.Err(); err != nil {
-			return nil, fmt.Errorf("failed to read object from bucket: %v", err)
 		}
 	}
 

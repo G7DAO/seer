@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	InsertBatchSize              = 1000
+	InsertBatchSize              = 1000 // Number of rows to insert in a single batch parameters_amount_per_row * InsertBatchSize <= 65535
 	SeerCrawlerLabel             string
 	MOONSTREAM_DB_V3_INDEXES_URI string
 )

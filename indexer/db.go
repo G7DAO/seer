@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/moonstream-to/seer/storage"
 )
 
 // DB is a global variable to hold the GORM database connection.
@@ -542,7 +541,7 @@ func (p *PostgreSQLpgx) ReadABIJobs(blockchain string) ([]AbiJob, error) {
 
 	defer conn.Release()
 
-	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, created_at, updated_at FROM abi_jobs where chain=$1 ", storage.Blockchains[blockchain])
+	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, created_at, updated_at FROM abi_jobs where chain=$1 ", blockchain)
 
 	if err != nil {
 		return nil, err
@@ -618,201 +617,216 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, toBlock
 
 	blocksTableName := BlocksTableName(blockchain)
 
-	query := fmt.Sprintf(`
-	WITH blocks as (
-		SELECT
-			block_number,
-			block_hash,
-			block_timestamp
-		from
-			%s
-		WHERE
-			block_number >= $1
-			and block_number <= $2
-	),
-	transactions AS (
-		SELECT
-			bk.block_number,
-			bk.block_hash,
-			bk.block_timestamp,
-			tx.hash AS transaction_hash,
-			tx.to_address AS transaction_address,
-			tx.selector AS transaction_selector,
-			tx.row_id AS transaction_row_id,
-			tx.path AS transaction_path
-		FROM
-			blocks bk
-			LEFT JOIN %s tx ON tx.block_hash = bk.block_hash
-	),
-	events AS (
-		SELECT
-			bk.block_number,
-			bk.block_hash,
-			bk.block_timestamp,
-			logs.transaction_hash AS transaction_hash,
-			logs.address AS event_address,
-			LEFT(logs.selector, 10) AS event_selector,
-			logs.row_id AS event_row_id,
-			logs.path AS event_path
-		FROM
-			blocks bk
-			LEFT JOIN %s logs ON logs.block_hash = bk.block_hash
-	),
-	jobs AS (
-		SELECT
-			decode(REPLACE(address, '0x', ''), 'hex') as address,
-			address as address_str,
-			customer_id,
-			abi_selector,
-			abi_name,
-			abi
-		FROM
-			abi_jobs
-		WHERE
-			chain = $3
-	),
-	address_abis AS (
-		SELECT
-			address_str,
-			customer_id,
-			json_object_agg(
-				abi_selector,
-				json_build_object(
-					'abi', '[' || abi || ']',
-					'abi_name', abi_name
-				)
-			) AS abis_per_address
-		FROM
-			jobs
-		GROUP BY
-			address_str, customer_id
-	),
-	reformatted_jobs AS (
-		SELECT
-			customer_id,
-			json_object_agg(
-				address_str,
-				abis_per_address
-			) AS abis
-		FROM
-			address_abis
-		GROUP BY
-			customer_id
-	),
-	abi_transactions AS (
-		SELECT
-			transactions.block_number,
-			transactions.block_timestamp,
-			jobs.customer_id,
-			jobs.abi_name,
-			jobs.address_str,
-			transactions.transaction_hash,
-			transactions.transaction_address,
-			transactions.transaction_selector,
-			transactions.transaction_row_id,
-			transactions.transaction_path
-		FROM
-			transactions
-			inner JOIN jobs ON transactions.transaction_address = jobs.address
-			AND transactions.transaction_selector = jobs.abi_selector
-	),
-	abi_events AS (
-		SELECT
-			events.block_number,
-			events.block_timestamp,
-			jobs.customer_id,
-			jobs.abi_name,
-			jobs.address_str,
-			events.transaction_hash,
-			events.block_hash,
-			events.event_address,
-			events.event_selector,
-			events.event_row_id,
-			events.event_path
-		FROM
-			events
-			inner JOIN jobs ON events.event_address = jobs.address
-			AND events.event_selector = jobs.abi_selector
-	),
-	combined AS (
-		SELECT
-			block_number,
-			block_timestamp,
-			customer_id,
-			'transaction' AS type,
-			abi_name,
-			address_str,
-			transaction_hash AS hash,
-			transaction_address AS address,
-			transaction_selector AS selector,
-			transaction_row_id AS row_id,
-			transaction_path AS path
-		FROM
-			abi_transactions
-		where
-			transaction_hash is not null
-		UNION
-		ALL
-		SELECT
-			block_number,
-			block_timestamp,
-			customer_id,
-			'event' AS type,
-			abi_name,
-			address_str,
-			transaction_hash AS hash,
-			event_address AS address,
-			event_selector AS selector,
-			event_row_id AS row_id,
-			event_path AS path
-		FROM
-			abi_events
-		where
-			transaction_hash is not null
-	)
-	SELECT
-		customer_id,
-		(
-			SELECT abis from reformatted_jobs where reformatted_jobs.customer_id = combined.customer_id
-		) as abis,
-		json_object_agg(block_number, block_timestamp) AS blocks_cache,
-		json_build_object(
-			'transactions',
-			COALESCE(
-			json_agg(
-				json_build_object(
-					'hash', hash,
-					'address', address_str,
-					'selector', selector,
-					'row_id', row_id,
-					'path', path
-				)
-			) FILTER (WHERE type = 'transaction'), '[]'),
-			'events',
-			COALESCE(
-			json_agg(
-				CASE
-					WHEN type = 'event' THEN json_build_object(
-						'hash',
-						hash,
-						'address',
-						address_str,
-						'selector',
-						selector,
-						'row_id',
-						row_id,
-						'path',
-						path
-					)
-				END
-			) FILTER (WHERE type = 'event'), '[]')
-		) AS data
-	FROM
-		combined
-	GROUP BY
-		customer_id`, blocksTableName, transactionsTableName, logsTableName)
+	query := fmt.Sprintf(`WITH blocks as (
+        SELECT
+            block_number,
+            block_hash,
+            block_timestamp
+        from
+            %s
+        WHERE
+            block_number >= $1
+            and block_number <= $2
+    ),
+    transactions AS (
+        SELECT
+            bk.block_number,
+            bk.block_hash,
+            bk.block_timestamp,
+            tx.hash AS transaction_hash,
+            tx.to_address AS transaction_address,
+            tx.selector AS transaction_selector,
+            tx.row_id AS transaction_row_id,
+            tx.path AS transaction_path
+        FROM
+            blocks bk
+            LEFT JOIN %s tx ON tx.block_hash = bk.block_hash
+    ),
+    events AS (
+        SELECT
+            bk.block_number,
+            bk.block_hash,
+            bk.block_timestamp,
+            logs.transaction_hash AS transaction_hash,
+            logs.address AS event_address,
+            logs.selector AS event_selector,
+            logs.row_id AS event_row_id,
+            logs.path AS event_path
+        FROM
+            blocks bk
+            LEFT JOIN %s logs ON logs.block_hash = bk.block_hash
+    ),
+    jobs AS (
+        SELECT
+            address as address,
+            '0x' || encode(address, 'hex') as address_str,
+            customer_id,
+            abi_selector,
+            abi_name,
+            abi
+        FROM
+            abi_jobs
+        WHERE
+            chain = $3
+    ),
+    address_abis AS (
+        SELECT
+            address_str,
+            customer_id,
+            json_object_agg(
+                abi_selector,
+                json_build_object(
+                    'abi',
+                    '[' || abi || ']',
+                    'abi_name',
+                    abi_name
+                )
+            ) AS abis_per_address
+        FROM
+            jobs
+        GROUP BY
+            address_str,
+            customer_id
+    ),
+    reformatted_jobs AS (
+        SELECT
+            customer_id,
+            json_object_agg(address_str, abis_per_address) AS abis
+        FROM
+            address_abis
+        GROUP BY
+            customer_id
+    ),
+    abi_transactions AS (
+        SELECT
+            transactions.block_number,
+            transactions.block_timestamp,
+            jobs.customer_id,
+            jobs.abi_name,
+            jobs.address_str,
+            transactions.transaction_hash,
+            transactions.transaction_address,
+            transactions.transaction_selector,
+            transactions.transaction_row_id,
+            transactions.transaction_path
+        FROM
+            transactions
+            inner JOIN jobs ON transactions.transaction_address = jobs.address
+            AND transactions.transaction_selector = jobs.abi_selector
+    ),
+    abi_events AS (
+        SELECT
+            events.block_number,
+            events.block_timestamp,
+            jobs.customer_id,
+            jobs.abi_name,
+            jobs.address_str,
+            events.transaction_hash,
+            events.block_hash,
+            events.event_address,
+            events.event_selector,
+            events.event_row_id,
+            events.event_path
+        FROM
+            events
+            inner JOIN jobs ON events.event_address = jobs.address
+            AND events.event_selector = jobs.abi_selector
+    ),
+    combined AS (
+        SELECT
+            block_number,
+            block_timestamp,
+            customer_id,
+            'transaction' AS type,
+            abi_name,
+            address_str,
+            transaction_hash AS hash,
+            transaction_address AS address,
+            transaction_selector AS selector,
+            transaction_row_id AS row_id,
+            transaction_path AS path
+        FROM
+            abi_transactions
+        UNION
+        ALL
+        SELECT
+            block_number,
+            block_timestamp,
+            customer_id,
+            'event' AS type,
+            abi_name,
+            address_str,
+            transaction_hash AS hash,
+            event_address AS address,
+            event_selector AS selector,
+            event_row_id AS row_id,
+            event_path AS path
+        FROM
+            abi_events
+    )
+    SELECT
+        customer_id,
+        (
+            SELECT
+                abis
+            from
+                reformatted_jobs
+            where
+                reformatted_jobs.customer_id = combined.customer_id
+        ) as abis,
+        json_object_agg(block_number, block_timestamp) AS blocks_cache,
+        json_build_object(
+            'transactions',
+            COALESCE(
+                json_agg(
+                    json_build_object(
+                        'hash',
+                        hash,
+                        'address',
+                        address_str,
+                        'selector',
+                        selector,
+                        'row_id',
+                        row_id,
+                        'path',
+                        path
+                    )
+                ) FILTER (
+                    WHERE
+                        type = 'transaction'
+                ),
+                '[]'
+            ),
+            'events',
+            COALESCE(
+                json_agg(
+                    CASE
+                        WHEN type = 'event' THEN json_build_object(
+                            'hash',
+                            hash,
+                            'address',
+                            address_str,
+                            'selector',
+                            selector,
+                            'row_id',
+                            row_id,
+                            'path',
+                            path
+                        )
+                    END
+                ) FILTER (
+                    WHERE
+                        type = 'event'
+                ),
+                '[]'
+            )
+        ) AS data
+    FROM
+        combined
+    GROUP BY
+        customer_id`, blocksTableName, transactionsTableName, logsTableName)
 
-	rows, err := conn.Query(context.Background(), query, fromBlock, toBlock, storage.Blockchains[blockchain])
+	rows, err := conn.Query(context.Background(), query, fromBlock, toBlock, blockchain)
 
 	if err != nil {
 		log.Println("Error querying abi jobs from database", err)
@@ -906,6 +920,10 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 		}
 	}()
 
+	tableName := LabelsTableName(blockchain)
+
+	// Too many parameters error
+	// Batch insert events calculated as parameters_amount_per_row*batch_size <= 65535 (max number of parameters in a single query)
 	for i := 0; i < len(events); i += InsertBatchSize {
 		// Determine the end of the current batch
 		end := i + InsertBatchSize
@@ -914,10 +932,8 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 		}
 
 		// Start building the bulk insert query
-		tableName := LabelsTableName(blockchain)
 		query := fmt.Sprintf("INSERT INTO %s (id, label, transaction_hash, log_index, block_number, block_hash, block_timestamp, caller_address, origin_address, address, label_name, label_type, label_data) VALUES ", tableName)
 
-		// Placeholder slice for query parameters
 		var params []interface{}
 
 		// Loop through labels to append values and parameters
@@ -928,19 +944,19 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 			params = append(params, id, label.Label, label.TransactionHash, label.LogIndex, label.BlockNumber, label.BlockHash, label.BlockTimestamp, label.CallerAddress, label.OriginAddress, label.Address, label.LabelName, label.LabelType, label.LabelData)
 		}
 
-		// Remove the last comma from the query
+		// Remove the last comma
 		query = query[:len(query)-1]
 
-		// Add the ON CONFLICT clause - adjust based on your conflict resolution strategy
+		// ON CONFLICT clause - skip duplicates
 		query += " ON CONFLICT (transaction_hash, log_index) where label='seer' and label_type = 'event' DO NOTHING"
 
 		if _, err := tx.Exec(ctx, query, params...); err != nil {
 			fmt.Println("Error executing bulk insert", err)
 			return fmt.Errorf("error executing bulk insert for batch: %w", err)
 		}
-
-		log.Println("Records inserted into", tableName)
 	}
+
+	log.Printf("Records %d events inserted into %s", len(events), tableName)
 
 	return nil
 }
@@ -948,11 +964,33 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 func (p *PostgreSQLpgx) WriteTransactions(blockchain string, transactions []TransactionLabel) error {
 	pool := p.GetPool()
 
+	// Create a context with a timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	conn, err := pool.Acquire(context.Background())
 	if err != nil {
 		return err
 	}
 	defer conn.Release()
+
+	// Start a transaction
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	// Ensure the transaction is either committed or rolled back
+	defer func() {
+		if err := recover(); err != nil {
+			tx.Rollback(ctx)
+			panic(err) // re-throw panic after Rollback
+		} else if err != nil {
+			tx.Rollback(ctx) // err is non-nil; don't change it
+		} else {
+			err = tx.Commit(ctx) // err is nil; if Commit returns error update err
+		}
+	}()
 
 	tableName := LabelsTableName(blockchain)
 
@@ -961,27 +999,35 @@ func (p *PostgreSQLpgx) WriteTransactions(blockchain string, transactions []Tran
 	// Placeholder slice for query parameters
 	var params []interface{}
 
-	// Loop through transactions to append values and parameters
-	for i, label := range transactions {
-		id := uuid.New()
-		query += fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d),",
-			i*12+1, i*12+2, i*12+3, i*12+4, i*12+5, i*12+6, i*12+7, i*12+8, i*12+9, i*12+10, i*12+11, i*12+12)
-		params = append(params, id, label.Address, label.BlockNumber, label.BlockHash, label.CallerAddress, label.LabelName, label.LabelType, label.OriginAddress, label.Label, label.TransactionHash, label.LabelData, label.BlockTimestamp)
+	for i := 0; i < len(transactions); i += InsertBatchSize {
+		// Determine the end of the current batch
+		end := i + InsertBatchSize
+		if end > len(transactions) {
+			end = len(transactions)
+		}
+
+		// Loop through transactions to append values and parameters
+		for row, label := range transactions[i:end] {
+			id := uuid.New()
+			query += fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d),",
+				row*12+1, row*12+2, row*12+3, row*12+4, row*12+5, row*12+6, row*12+7, row*12+8, row*12+9, row*12+10, row*12+11, row*12+12)
+			params = append(params, id, label.Address, label.BlockNumber, label.BlockHash, label.CallerAddress, label.LabelName, label.LabelType, label.OriginAddress, label.Label, label.TransactionHash, label.LabelData, label.BlockTimestamp)
+		}
+
+		// Remove the last comma from the query
+		query = query[:len(query)-1]
+
+		// Add the ON CONFLICT clause - skip duplicates
+		query += " ON CONFLICT (transaction_hash) where label='seer' and label_type = 'tx_call' DO NOTHING"
+
+		// Execute the query
+		_, err = conn.Exec(context.Background(), query, params...)
+		if err != nil {
+			log.Println("Error executing bulk insert", err)
+			return err
+		}
 	}
 
-	// Remove the last comma from the query
-	query = query[:len(query)-1]
-
-	// Add the ON CONFLICT clause - adjust based on your conflict resolution strategy
-	query += " ON CONFLICT (transaction_hash) where label='seer' and label_type = 'tx_call' DO NOTHING"
-
-	// Execute the query
-	_, err = conn.Exec(context.Background(), query, params...)
-	if err != nil {
-		log.Println("Error executing bulk insert", err)
-		return err
-	}
-
-	log.Println("Records inserted into", tableName)
+	log.Printf("Records %d transactions inserted into %s", len(transactions), tableName)
 	return nil
 }

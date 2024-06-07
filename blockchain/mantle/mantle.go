@@ -490,15 +490,13 @@ func (c *Client) DecodeProtoEventsToLabels(events []string, blocksCache map[uint
 		var topicSelector string
 
 		if len(event.Topics) > 0 {
-			topicSelector = event.Topics[0][:10]
+			topicSelector = event.Topics[0]
 		} else {
 			continue
 		}
 
-		checksumAddress := common.HexToAddress(event.Address).Hex()
-
 		// Get the ABI string
-		contractAbi, err := abi.JSON(strings.NewReader(abiMap[checksumAddress][topicSelector]["abi"]))
+		contractAbi, err := abi.JSON(strings.NewReader(abiMap[event.Address][topicSelector]["abi"]))
 		if err != nil {
 			fmt.Println("Error initializing contract ABI: ", err)
 			return nil, err
@@ -524,7 +522,7 @@ func (c *Client) DecodeProtoEventsToLabels(events []string, blocksCache map[uint
 		// Convert event to label
 		eventLabel := indexer.EventLabel{
 			Label:           indexer.SeerCrawlerLabel,
-			LabelName:       abiMap[checksumAddress][topicSelector]["abi_name"],
+			LabelName:       abiMap[event.Address][topicSelector]["abi_name"],
 			LabelType:       "event",
 			BlockNumber:     event.BlockNumber,
 			BlockHash:       event.BlockHash,
@@ -556,10 +554,7 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 
 		selector := transaction.Input[:10]
 
-		// To checksum address
-		checksumAddress := common.HexToAddress(transaction.ToAddress).Hex()
-
-		contractAbi, err := abi.JSON(strings.NewReader(abiMap[checksumAddress][selector]["abi"]))
+		contractAbi, err := abi.JSON(strings.NewReader(abiMap[transaction.ToAddress][selector]["abi"]))
 
 		if err != nil {
 			return nil, err
@@ -592,7 +587,7 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 			BlockNumber:     transaction.BlockNumber,
 			BlockHash:       transaction.BlockHash,
 			CallerAddress:   transaction.FromAddress,
-			LabelName:       abiMap[checksumAddress][selector]["abi_name"],
+			LabelName:       abiMap[transaction.ToAddress][selector]["abi_name"],
 			LabelType:       "tx_call",
 			OriginAddress:   transaction.FromAddress,
 			Label:           indexer.SeerCrawlerLabel,
