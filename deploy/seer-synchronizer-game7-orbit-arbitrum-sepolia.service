@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer indexer --chain game7_orbit_arbitrum_sepolia
+ExecStart=/home/ubuntu/seer/seer synchronizer --chain game7_orbit_arbitrum_sepolia
 SyslogIdentifier=seer-synchronizer-game7-orbit-arbitrum-sepolia
 
 [Install]
