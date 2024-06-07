@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"math/big"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -193,9 +192,6 @@ func (c *Crawler) Start() {
 			}
 
 			batchDir := filepath.Join(c.baseDir, fmt.Sprintf("%d-%d", c.startBlock, endBlock))
-			if err := os.MkdirAll(batchDir, 0755); err != nil {
-				return fmt.Errorf("failed to create directory: %w", err)
-			}
 
 			var encodedBytesBlocks []string
 			for _, block := range blocks {
