@@ -91,7 +91,7 @@ func NewPostgreSQLpgx() (*PostgreSQLpgx, error) {
 	}, nil
 }
 
-func CreateCustomConnectionToURI(uri string) (*PostgreSQLpgx, error) {
+func NewPostgreSQLpgxWithCustomURI(uri string) (*PostgreSQLpgx, error) {
 
 	//  create a connection to the database
 
@@ -292,6 +292,7 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(blockchain string, indexes []BlockIn
 	var params []interface{}
 
 	// Loop through indexes to append values and parameters
+	var indexesLen int
 	for i, index := range indexes {
 		if isBlockchainWithL1Chain {
 			query += fmt.Sprintf("( $%d, $%d, $%d, $%d, $%d, $%d, $%d),", i*7+1, i*7+2, i*7+3, i*7+4, i*7+5, i*7+6, i*7+7)
@@ -300,6 +301,7 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(blockchain string, indexes []BlockIn
 			query += fmt.Sprintf("( $%d, $%d, $%d, $%d, $%d, $%d),", i*6+1, i*6+2, i*6+3, i*6+4, i*6+5, i*6+6)
 			params = append(params, index.BlockNumber, index.BlockHash, index.BlockTimestamp, index.ParentHash, index.RowID, index.Path)
 		}
+		indexesLen++
 	}
 
 	// Remove the last comma from the query
@@ -316,7 +318,7 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(blockchain string, indexes []BlockIn
 		return err
 	}
 
-	fmt.Println("Records inserted into", tableName)
+	log.Printf("Saved %d records into %s table", indexesLen, tableName)
 	return nil
 }
 
@@ -342,6 +344,7 @@ func (p *PostgreSQLpgx) writeTransactionIndexToDB(tableName string, indexes []Tr
 	// Loop through indexes to append values and parameters
 	var toAddressBytes, fromAddressBytes []byte
 
+	var indexesLen int
 	for i, index := range indexes {
 		query += fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d),", i*10+1, i*10+2, i*10+3, i*10+4, i*10+5, i*10+6, i*10+7, i*10+8, i*10+9, i*10+10)
 
@@ -370,6 +373,7 @@ func (p *PostgreSQLpgx) writeTransactionIndexToDB(tableName string, indexes []Tr
 
 		// Append the parameters for this record
 		params = append(params, index.BlockNumber, index.BlockHash, index.TransactionHash, index.TransactionIndex, index.Type, fromAddressBytes, toAddressBytes, index.Selector, index.RowID, index.Path)
+		indexesLen++
 	}
 
 	// Remove the last comma from the query
@@ -391,7 +395,7 @@ func (p *PostgreSQLpgx) writeTransactionIndexToDB(tableName string, indexes []Tr
 
 	}
 
-	log.Println("Records inserted into", tableName)
+	log.Printf("Saved %d records into %s table", indexesLen, tableName)
 
 	return nil
 
@@ -451,6 +455,7 @@ func (p *PostgreSQLpgx) writeLogIndexToDB(tableName string, indexes []LogIndex) 
 
 		// Loop through indexes to append values and parameters
 
+		var indexesLen int
 		for i, index := range indexes[i:end] {
 
 			query += fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d),", i*9+1, i*9+2, i*9+3, i*9+4, i*9+5, i*9+6, i*9+7, i*9+8, i*9+9)
@@ -470,7 +475,7 @@ func (p *PostgreSQLpgx) writeLogIndexToDB(tableName string, indexes []LogIndex) 
 			}
 
 			params = append(params, index.TransactionHash, index.BlockHash, addressBytes, index.Selector, index.Topic1, index.Topic2, index.RowID, index.LogIndex, index.Path)
-
+			indexesLen++
 		}
 
 		query = query[:len(query)-1]
@@ -484,7 +489,7 @@ func (p *PostgreSQLpgx) writeLogIndexToDB(tableName string, indexes []LogIndex) 
 			return fmt.Errorf("error executing bulk insert for batch: %w", err)
 		}
 
-		log.Println("Records inserted into", tableName)
+		log.Printf("Saved %d records into %s table", indexesLen, tableName)
 
 	}
 

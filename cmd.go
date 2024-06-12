@@ -214,8 +214,8 @@ func CreateStarknetCommand() *cobra.Command {
 }
 
 func CreateCrawlerCommand() *cobra.Command {
-	var startBlock, endBlock uint64
-	var batchSize, confirmations, timeout int
+	var startBlock, endBlock, batchSize, confirmations uint64
+	var timeout int
 	var chain, baseDir string
 	var force bool
 
@@ -244,12 +244,9 @@ func CreateCrawlerCommand() *cobra.Command {
 
 			indexer.InitDBConnection()
 
-			// read the blockchain url from $INFURA_URL
-			// if it is not set, use the default url
-			crawler := crawler.NewCrawler(chain, startBlock, endBlock, timeout, batchSize, confirmations, baseDir, force)
+			crawler := crawler.NewCrawler(chain, startBlock, endBlock, batchSize, confirmations, timeout, baseDir, force)
 
 			crawler.Start()
-
 		},
 	}
 
@@ -257,10 +254,10 @@ func CreateCrawlerCommand() *cobra.Command {
 	crawlerCmd.Flags().Uint64Var(&startBlock, "start-block", 0, "The block number to start crawling from (default: latest block)")
 	crawlerCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end crawling at (default: latest block)")
 	crawlerCmd.Flags().IntVar(&timeout, "timeout", 0, "The timeout for the crawler in seconds (default: 0 - no timeout)")
-	crawlerCmd.Flags().IntVar(&batchSize, "batch-size", 10, "The number of blocks to crawl in each batch (default: 10)")
-	crawlerCmd.Flags().IntVar(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
-	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "data", "The base directory to store the crawled data (default: data)")
-	crawlerCmd.Flags().BoolVar(&force, "force", false, "Set this flag to force the crawler start from the start block (default: false)")
+	crawlerCmd.Flags().Uint64Var(&batchSize, "batch-size", 10, "The number of blocks to crawl in each batch (default: 10)")
+	crawlerCmd.Flags().Uint64Var(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
+	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	crawlerCmd.Flags().BoolVar(&force, "force", false, "Set this flag to force the crawler start from the specified block, otherwise it checks database latest indexed block number (default: false)")
 
 	return crawlerCmd
 }
@@ -303,7 +300,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 
 			// read the blockchain url from $INFURA_URL
 			// if it is not set, use the default url
-			synchronizer := synchronizer.NewSynchronizer(chain, startBlock, endBlock)
+			synchronizer := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock)
 
 			synchronizer.SyncCustomers()
 		},
@@ -312,7 +309,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 	synchronizerCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
 	synchronizerCmd.Flags().Uint64Var(&startBlock, "start-block", 0, "The block number to start decoding from (default: latest block)")
 	synchronizerCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end decoding at (default: latest block)")
-	synchronizerCmd.Flags().StringVar(&baseDir, "base-dir", "data", "The base directory to store the crawled data (default: data)")
+	synchronizerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
 	synchronizerCmd.Flags().StringVar(&output, "output", "output", "The output directory to store the decoded data (default: output)")
 	synchronizerCmd.Flags().StringVar(&abi_source, "abi-source", "abi", "The source of the ABI (default: abi)")
 

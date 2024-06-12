@@ -1,7 +1,7 @@
 package storage
 
 type Storer interface {
-	Save(key string, data []string) error
+	Save(batchDir, filename string, data []string) error
 	Read(key string) ([]string, error)
 	ReadBatch(readItems []ReadItem) (map[string][]string, error)
 	Delete(key string) error

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -22,14 +23,17 @@ type Synchronizer struct {
 	startBlock  uint64
 	endBlock    uint64
 	providerURI string
+	baseDir     string
 }
 
 // NewSynchronizer creates a new synchronizer instance with the given blockchain handler.
-func NewSynchronizer(chain string, startBlock uint64, endBlock uint64) *Synchronizer {
+func NewSynchronizer(chain, baseDir string, startBlock uint64, endBlock uint64) *Synchronizer {
 
 	return &Synchronizer{
 		blockchain: chain,
 		startBlock: startBlock,
+		endBlock:   endBlock,
+		baseDir:    baseDir,
 	}
 }
 
@@ -174,7 +178,8 @@ func (d *Synchronizer) syncCycle() error {
 	}
 
 	// Initialize storage
-	storageInstance, err := storage.NewStorage()
+	basePath := filepath.Join(d.baseDir, crawler.SeerCrawlerStoragePrefix, "data", d.blockchain)
+	storageInstance, err := storage.NewStorage(storage.SeerCrawlerStorageType, basePath)
 
 	if err != nil {
 		log.Println("Error initializing storage:", err)
@@ -212,7 +217,7 @@ func (d *Synchronizer) syncCycle() error {
 		for _, id := range customerIds {
 			uri := rdsConnections[id]
 
-			pgx, err := indexer.CreateCustomConnectionToURI(uri)
+			pgx, err := indexer.NewPostgreSQLpgxWithCustomURI(uri)
 			if err != nil {
 				log.Println("Error creating RDS connection: ", err)
 				return err // Error creating RDS connection
@@ -291,7 +296,7 @@ func (d *Synchronizer) syncCycle() error {
 				uri := rdsConnections[update.CustomerID]
 
 				// Create a connection to the user RDS
-				pgx, err := indexer.CreateCustomConnectionToURI(uri)
+				pgx, err := indexer.NewPostgreSQLpgxWithCustomURI(uri)
 				if err != nil {
 					errChan <- fmt.Errorf("error creating connection to RDS for customer %s: %w", update.CustomerID, err)
 					return

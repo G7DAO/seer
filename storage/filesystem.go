@@ -4,22 +4,25 @@ import (
 	"bufio"
 	"log"
 	"os"
+	"path/filepath"
 )
 
 type FileStorage struct {
-	basePath string
+	BasePath string
 }
 
 func NewFileStorage(basePath string) *FileStorage {
-	return &FileStorage{basePath: basePath}
+	return &FileStorage{BasePath: basePath}
 }
 
-func (fs *FileStorage) Save(key string, data []string) error {
+func (fs *FileStorage) Save(batchDir, filename string, data []string) error {
+	keyDir := filepath.Join(fs.BasePath, batchDir)
+	key := filepath.Join(keyDir, filename)
 
 	// Check if the directory exists
 	// If not, create it
-	if _, err := os.Stat(fs.basePath); os.IsNotExist(err) {
-		os.MkdirAll(fs.basePath, os.ModePerm)
+	if _, err := os.Stat(keyDir); os.IsNotExist(err) {
+		os.MkdirAll(keyDir, os.ModePerm)
 	}
 
 	file, err := os.OpenFile(key, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644) // that cool

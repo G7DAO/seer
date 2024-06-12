@@ -5,31 +5,32 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"cloud.google.com/go/storage"
 )
 
+// GCS implements the Storer interface for Google Cloud Storage
+type GCS struct {
+	Client   *storage.Client
+	BasePath string
+}
+
 // NewGCSStorage initializes a GCS storage with the provided client
 func NewGCSStorage(client *storage.Client, basePath string) *GCS {
 	return &GCS{
-		client:   client,
-		basePath: basePath,
+		Client:   client,
+		BasePath: basePath,
 	}
 }
 
-// GCS implements the Storer interface for Google Cloud Storage
-
-type GCS struct {
-	client   *storage.Client
-	basePath string
-}
-
-func (g *GCS) Save(key string, data []string) error {
+func (g *GCS) Save(batchDir, filename string, data []string) error {
+	key := filepath.Join(g.BasePath, batchDir, filename)
 
 	ctx := context.Background()
 
-	bucket := g.client.Bucket(SeerCrawlerStorageBucket)
+	bucket := g.Client.Bucket(SeerCrawlerStorageBucket)
 
 	obj := bucket.Object(key)
 
@@ -58,7 +59,7 @@ func (g *GCS) Read(key string) ([]string, error) {
 
 	ctx := context.Background()
 
-	bucket := g.client.Bucket(SeerCrawlerStorageBucket)
+	bucket := g.Client.Bucket(SeerCrawlerStorageBucket)
 
 	obj := bucket.Object(key)
 
@@ -88,7 +89,7 @@ func (g *GCS) Delete(key string) error {
 
 	ctx := context.Background()
 
-	bucket := g.client.Bucket(SeerCrawlerStorageBucket)
+	bucket := g.Client.Bucket(SeerCrawlerStorageBucket)
 
 	obj := bucket.Object(key)
 
@@ -103,7 +104,7 @@ func (g *GCS) Delete(key string) error {
 func (g *GCS) ReadBatch(readItems []ReadItem) (map[string][]string, error) {
 	ctx := context.Background()
 
-	bucket := g.client.Bucket(SeerCrawlerStorageBucket)
+	bucket := g.Client.Bucket(SeerCrawlerStorageBucket)
 
 	result := make(map[string][]string)
 
