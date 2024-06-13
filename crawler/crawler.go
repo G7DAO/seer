@@ -86,9 +86,7 @@ func (c *Crawler) Start() {
 
 	basePath := filepath.Join(c.baseDir, SeerCrawlerStoragePrefix, "data", c.blockchain)
 	storageInstance, err := storage.NewStorage(storage.SeerCrawlerStorageType, basePath)
-
 	if err != nil {
-
 		log.Fatalf("Failed to create storage instance: %v", err)
 		panic(err)
 	}
@@ -99,7 +97,6 @@ func (c *Crawler) Start() {
 	}
 
 	latestBlockNumber, err := client.GetLatestBlockNumber()
-
 	if err != nil {
 		log.Fatalf("Failed to get latest block number: %v", err)
 	}
@@ -107,10 +104,10 @@ func (c *Crawler) Start() {
 	log.Printf("Latest block number at blockchain: %d\n", latestBlockNumber)
 
 	if c.force {
-		if c.startBlock == uint64(0) {
+		// Start form specified startBlock if it is set and not 0
+		if c.startBlock == 0 {
 			c.startBlock = SetDefaultStartBlock(c.confirmations, latestBlockNumber)
 		}
-
 	} else {
 		latestIndexedBlock, err := indexer.DBConnection.GetLatestBlockNumber(c.blockchain)
 
@@ -125,9 +122,9 @@ func (c *Crawler) Start() {
 
 		}
 
-		if latestIndexedBlock != uint64(0) {
-			c.startBlock = latestIndexedBlock
-			log.Printf("Start block fetch from indexes database and set to: %d\n", c.startBlock)
+		if latestIndexedBlock != 0 {
+			c.startBlock = latestIndexedBlock + 1
+			log.Printf("Start block fetched from indexes database and set to: %d\n", c.startBlock)
 		}
 	}
 
