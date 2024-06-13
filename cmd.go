@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -39,9 +41,10 @@ func CreateRootCommand() *cobra.Command {
 	starknetCmd := CreateStarknetCommand()
 	crawlerCmd := CreateCrawlerCommand()
 	indexCmd := CreateIndexCommand()
+	inspectorCmd := CreateInspectorCommand()
 	evmCmd := CreateEVMCommand()
 	synchronizerCmd := CreateSynchronizerCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd, synchronizerCmd)
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd, inspectorCmd, synchronizerCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -314,6 +317,116 @@ func CreateSynchronizerCommand() *cobra.Command {
 	synchronizerCmd.Flags().StringVar(&abi_source, "abi-source", "abi", "The source of the ABI (default: abi)")
 
 	return synchronizerCmd
+}
+
+type BlockInspectItem struct {
+	StartBlock int64
+	EndBlock   int64
+}
+
+func CreateInspectorCommand() *cobra.Command {
+	inspectorCmd := &cobra.Command{
+		Use:   "inspector",
+		Short: "Inspect storage and database consistency",
+	}
+
+	var chain, baseDir, delim, returnFunc string
+	var timeout int
+
+	storageCommand := &cobra.Command{
+		Use:   "storage",
+		Short: "Inspect filesystem, gcp-storage, aws-bucket consistency",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+
+			basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", chain)
+			storageInstance, newStorageErr := storage.NewStorage(storage.SeerCrawlerStorageType, basePath)
+			if newStorageErr != nil {
+				return newStorageErr
+			}
+
+			// Only for gcp-storage type.
+			// Created for different manipulations what requires to list,
+			// if value set to prefix, required to set delim = '/'
+			var listReturnFunc storage.ListReturnFunc
+			switch storage.SeerCrawlerStorageType {
+			case "gcp-storage":
+				switch returnFunc {
+				case "prefix":
+					listReturnFunc = storage.GCSListReturnPrefixFunc
+				default:
+					listReturnFunc = storage.GCSListReturnNameFunc
+				}
+			default:
+				listReturnFunc = func(item any) string { return fmt.Sprintf("%v", item) }
+			}
+
+			items, listErr := storageInstance.List(ctx, delim, timeout, listReturnFunc)
+			if listErr != nil {
+				return listErr
+			}
+
+			itemsMap := make(map[string]BlockInspectItem)
+			previousMapItemKey := ""
+
+			for _, item := range items {
+				itemSlice := strings.Split(item, "/")
+				blockNums := itemSlice[len(itemSlice)-2]
+
+				blockNumsSlice := strings.Split(blockNums, "-")
+
+				blockNumS, atoiErrS := strconv.ParseInt(blockNumsSlice[0], 10, 64)
+				if atoiErrS != nil {
+					log.Printf("Unable to parse blockNumS from %s", blockNumsSlice[0])
+					continue
+				}
+				blockNumF, atoiErrF := strconv.ParseInt(blockNumsSlice[1], 10, 64)
+				if atoiErrF != nil {
+					log.Printf("Unable to parse blockNumS from %s", blockNumsSlice[1])
+					continue
+				}
+
+				if previousMapItemKey != blockNums && previousMapItemKey != "" {
+					diff := blockNumS - itemsMap[previousMapItemKey].EndBlock
+					if diff <= 0 {
+						fmt.Printf("Found incorrect blocks order between batches: %s -> %s\n", previousMapItemKey, blockNums)
+					} else if diff > 1 {
+						fmt.Printf("Found missing %d blocks during batches: %s -> %s\n", diff, previousMapItemKey, blockNums)
+					}
+				}
+
+				previousMapItemKey = blockNums
+				itemsMap[blockNums] = BlockInspectItem{StartBlock: blockNumS, EndBlock: blockNumF}
+			}
+
+			log.Printf("Processed %d items", len(itemsMap))
+
+			return nil
+		},
+	}
+
+	storageCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	storageCommand.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	storageCommand.Flags().StringVar(&delim, "delim", "", "Only for gcp-storage. The delimiter argument can be used to restrict the results to only the objects in the given 'directory'")
+	storageCommand.Flags().StringVar(&returnFunc, "return-func", "", "Which function use for return")
+	storageCommand.Flags().IntVar(&timeout, "timeout", 180, "List timeout (default: 180)")
+
+	inspectorCmd.AddCommand(storageCommand)
+
+	return inspectorCmd
 }
 
 func CreateIndexCommand() *cobra.Command {

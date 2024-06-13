@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"context"
 	"path/filepath"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -86,6 +87,10 @@ func (s *S3) Delete(key string) error {
 
 	return nil
 
+}
+
+func (s *S3) List(ctx context.Context, delim string, timeout int, returnFunc ListReturnFunc) ([]string, error) {
+	return []string{}, nil
 }
 
 func (s *S3) ReadBatch(readItems []ReadItem) (map[string][]string, error) {

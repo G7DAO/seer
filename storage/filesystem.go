@@ -2,6 +2,8 @@ package storage
 
 import (
 	"bufio"
+	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -113,6 +115,28 @@ func (fs *FileStorage) ReadBatch(readItems []ReadItem) (map[string][]string, err
 	}
 
 	return result, nil
+}
+
+func (fs *FileStorage) List(ctx context.Context, delim string, timeout int, returnFunc ListReturnFunc) ([]string, error) {
+	prefix := fmt.Sprintf("%s/", fs.BasePath)
+	log.Printf("Loading directory items with prefix: %s", prefix)
+
+	dirs, readDirErr := os.ReadDir(prefix)
+	if readDirErr != nil {
+		return []string{}, readDirErr
+	}
+
+	var items []string
+	itemsLen := 0
+
+	for _, d := range dirs {
+		items = append(items, fmt.Sprintf("%s%s/", prefix, d.Name()))
+		itemsLen++
+	}
+
+	log.Printf("Listed %d items", itemsLen)
+
+	return items, nil
 }
 
 func (fs *FileStorage) Delete(key string) error {
