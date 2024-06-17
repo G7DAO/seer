@@ -181,13 +181,15 @@ func fromHex(hex string) *big.Int {
 
 // FetchBlocksInRange fetches blocks within a specified range.
 // This could be useful for batch processing or analysis.
-func (c *Client) FetchBlocksInRange(from, to *big.Int) ([]*seer_common.BlockJson, error) {
+func (c *Client) FetchBlocksInRange(from, to *big.Int, debug bool) ([]*seer_common.BlockJson, error) {
 	var blocks []*seer_common.BlockJson
 	ctx := context.Background() // For simplicity, using a background context; consider timeouts for production.
 
 	for i := new(big.Int).Set(from); i.Cmp(to) <= 0; i.Add(i, big.NewInt(1)) {
 		block, err := c.GetBlockByNumber(ctx, i)
-		fmt.Println("Block number: ", i)
+		if debug {
+			fmt.Println("Block number:", i)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -199,8 +201,8 @@ func (c *Client) FetchBlocksInRange(from, to *big.Int) ([]*seer_common.BlockJson
 
 // ParseBlocksAndTransactions parses blocks and their transactions into custom data structures.
 // This method showcases how to handle and transform detailed block and transaction data.
-func (c *Client) ParseBlocksAndTransactions(from, to *big.Int) ([]*PolygonBlock, []*PolygonTransaction, error) {
-	blocksJson, err := c.FetchBlocksInRange(from, to)
+func (c *Client) ParseBlocksAndTransactions(from, to *big.Int, debug bool) ([]*PolygonBlock, []*PolygonTransaction, error) {
+	blocksJson, err := c.FetchBlocksInRange(from, to, debug)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -247,8 +249,8 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 	return parsedEvents, nil
 }
 
-func (c *Client) FetchAsProtoBlocks(from, to *big.Int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error) {
-	parsedBlocks, parsedTransactions, err := c.ParseBlocksAndTransactions(from, to)
+func (c *Client) FetchAsProtoBlocks(from, to *big.Int, debug bool) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error) {
+	parsedBlocks, parsedTransactions, err := c.ParseBlocksAndTransactions(from, to, debug)
 
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
@@ -480,7 +482,6 @@ func (c *Client) DecodeProtoEventsToLabels(events []string, blocksCache map[uint
 	decodedEvents, err := c.DecodeProtoEventLogs(events)
 
 	if err != nil {
-		fmt.Println("Error decoding events: ", err)
 		return nil, err
 	}
 
@@ -498,7 +499,6 @@ func (c *Client) DecodeProtoEventsToLabels(events []string, blocksCache map[uint
 
 		// Get the ABI string
 		contractAbi, err := abi.JSON(strings.NewReader(abiMap[event.Address][topicSelector]["abi"]))
-
 		if err != nil {
 			fmt.Println("Error initializing contract ABI: ", err)
 			return nil, err

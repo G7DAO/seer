@@ -3,12 +3,15 @@ package crawler
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 var (
 	SeerCrawlerStoragePrefix string = "dev"
 
 	BlockchainURLs map[string]string
+
+	SEER_CRAWLER_DEBUG = false
 )
 
 func CheckVariablesForCrawler() error {
@@ -58,6 +61,9 @@ func CheckVariablesForCrawler() error {
 	if MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI == "" {
 		return fmt.Errorf("MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI environment variable is required")
 	}
+
+	SEER_CRAWLER_DEBUG_RAW := os.Getenv("SEER_CRAWLER_DEBUG")
+	SEER_CRAWLER_DEBUG, _ = strconv.ParseBool(SEER_CRAWLER_DEBUG_RAW)
 
 	BlockchainURLs = map[string]string{
 		"ethereum":                     MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI,

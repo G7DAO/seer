@@ -16,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/moonstream-to/seer/blockchain"
 	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/evm"
 	"github.com/moonstream-to/seer/indexer"
@@ -217,7 +218,7 @@ func CreateStarknetCommand() *cobra.Command {
 }
 
 func CreateCrawlerCommand() *cobra.Command {
-	var startBlock, endBlock, batchSize, confirmations uint64
+	var startBlock, endBlock, batchSize, confirmations int64
 	var timeout int
 	var chain, baseDir string
 	var force bool
@@ -243,22 +244,38 @@ func CreateCrawlerCommand() *cobra.Command {
 
 			return nil
 		},
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 
 			indexer.InitDBConnection()
 
-			crawler := crawler.NewCrawler(chain, startBlock, endBlock, batchSize, confirmations, timeout, baseDir, force)
+			newCrawler, crawlerError := crawler.NewCrawler(chain, startBlock, endBlock, batchSize, confirmations, timeout, baseDir, force)
+			if crawlerError != nil {
+				return crawlerError
+			}
 
-			crawler.Start()
+			latestBlockNumber, latestErr := newCrawler.Client.GetLatestBlockNumber()
+			if latestErr != nil {
+				return fmt.Errorf("Failed to get latest block number: %v", latestErr)
+			}
+
+			if startBlock > latestBlockNumber.Int64() {
+				log.Fatalf("Start block could not be greater then latest block number at blockchain")
+			}
+
+			crawler.CurrentBlockchainState.SetLatestBlockNumber(latestBlockNumber)
+
+			newCrawler.Start()
+
+			return nil
 		},
 	}
 
 	crawlerCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
-	crawlerCmd.Flags().Uint64Var(&startBlock, "start-block", 0, "The block number to start crawling from (default: latest block)")
-	crawlerCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end crawling at (default: latest block)")
+	crawlerCmd.Flags().Int64Var(&startBlock, "start-block", 0, "The block number to start crawling from (default: fetch from database, if it is empty, run from latestBlockNumber minus shift)")
+	crawlerCmd.Flags().Int64Var(&endBlock, "end-block", 0, "The block number to end crawling at (default: endless)")
 	crawlerCmd.Flags().IntVar(&timeout, "timeout", 0, "The timeout for the crawler in seconds (default: 0 - no timeout)")
-	crawlerCmd.Flags().Uint64Var(&batchSize, "batch-size", 10, "The number of blocks to crawl in each batch (default: 10)")
-	crawlerCmd.Flags().Uint64Var(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
+	crawlerCmd.Flags().Int64Var(&batchSize, "batch-size", 10, "The number of blocks to crawl in each batch (default: 10)")
+	crawlerCmd.Flags().Int64Var(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
 	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
 	crawlerCmd.Flags().BoolVar(&force, "force", false, "Set this flag to force the crawler start from the specified block, otherwise it checks database latest indexed block number (default: false)")
 
@@ -330,8 +347,71 @@ func CreateInspectorCommand() *cobra.Command {
 		Short: "Inspect storage and database consistency",
 	}
 
-	var chain, baseDir, delim, returnFunc string
-	var timeout int
+	var chain, baseDir, delim, returnFunc, batch, target string
+	var timeout, row int
+
+	decodeCommand := &cobra.Command{
+		Use:   "decode",
+		Short: "Decode proto data from storage",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
+			if target == "" {
+				return errors.New("target is required via --target")
+			} else if target != "blocks" && target != "logs" && target != "transactions" {
+				return errors.New("target should be: blocks or logs or transactions")
+			}
+
+			if batch == "" {
+				return errors.New("batch is required via --batch")
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", chain)
+			storageInstance, newStorageErr := storage.NewStorage(storage.SeerCrawlerStorageType, basePath)
+			if newStorageErr != nil {
+				return newStorageErr
+			}
+
+			targetFile := fmt.Sprintf("%s.proto", target)
+			targetFilePath := filepath.Join(basePath, batch, targetFile)
+			rawData, readErr := storageInstance.Read(targetFilePath)
+			if readErr != nil {
+				return readErr
+			}
+
+			rawDataRowsNum := len(rawData)
+			if rawDataRowsNum-1 < row {
+				log.Printf("File %s contains %d rows, specified row %d not exists", targetFilePath, rawDataRowsNum, row)
+				return nil
+			}
+
+			_, cleintErr := blockchain.NewClient(chain, crawler.BlockchainURLs[chain])
+			if cleintErr != nil {
+				return cleintErr
+			}
+
+			// TOOD
+
+			return nil
+		},
+	}
+
+	decodeCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	decodeCommand.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	decodeCommand.Flags().StringVar(&batch, "batch", "", "What batch to read")
+	decodeCommand.Flags().StringVar(&target, "target", "", "What to read: blocks, logs or transactions")
+	decodeCommand.Flags().IntVar(&row, "row", 0, "Row to read (default: 0)")
 
 	storageCommand := &cobra.Command{
 		Use:   "storage",
@@ -424,7 +504,7 @@ func CreateInspectorCommand() *cobra.Command {
 	storageCommand.Flags().StringVar(&returnFunc, "return-func", "", "Which function use for return")
 	storageCommand.Flags().IntVar(&timeout, "timeout", 180, "List timeout (default: 180)")
 
-	inspectorCmd.AddCommand(storageCommand)
+	inspectorCmd.AddCommand(storageCommand, decodeCommand)
 
 	return inspectorCmd
 }
