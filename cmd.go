@@ -312,18 +312,23 @@ func CreateSynchronizerCommand() *cobra.Command {
 				return syncErr
 			}
 
+			if chain == "" {
+				return fmt.Errorf("blockchain is required via --chain")
+			}
+
 			return nil
 		},
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			indexer.InitDBConnection()
 
-			// convert the start and end block to big.Int
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, timeout)
+			if synchonizerErr != nil {
+				return synchonizerErr
+			}
 
-			// read the blockchain url from $INFURA_URL
-			// if it is not set, use the default url
-			synchronizer := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock)
+			newSynchronizer.SyncCustomers()
 
-			synchronizer.SyncCustomers(timeout)
+			return nil
 		},
 	}
 

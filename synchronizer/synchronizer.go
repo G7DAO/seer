@@ -12,29 +12,54 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moonstream-to/seer/blockchain"
+	seer_blockchain "github.com/moonstream-to/seer/blockchain"
 	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/storage"
 )
 
 type Synchronizer struct {
-	blockchain  string
-	startBlock  uint64
-	endBlock    uint64
-	providerURI string
-	baseDir     string
+	Client          seer_blockchain.BlockchainClient
+	StorageInstance storage.Storer
+
+	blockchain string
+	startBlock uint64
+	endBlock   uint64
+	baseDir    string
+	basePath   string
 }
 
 // NewSynchronizer creates a new synchronizer instance with the given blockchain handler.
-func NewSynchronizer(chain, baseDir string, startBlock uint64, endBlock uint64) *Synchronizer {
+func NewSynchronizer(blockchain, baseDir string, startBlock uint64, endBlock uint64, timeout int) (*Synchronizer, error) {
+	var synchronizer Synchronizer
 
-	return &Synchronizer{
-		blockchain: chain,
+	basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", blockchain)
+	storageInstance, err := storage.NewStorage(storage.SeerCrawlerStorageType, basePath)
+	if err != nil {
+		log.Fatalf("Failed to create storage instance: %v", err)
+		panic(err)
+	}
+
+	client, err := seer_blockchain.NewClient(blockchain, crawler.BlockchainURLs[blockchain], timeout)
+	if err != nil {
+		log.Println("Error initializing blockchain client:", err)
+		log.Fatal(err)
+	}
+
+	log.Printf("Initialized new synchronizer at blockchain: %s, startBlock: %d, endBlock: %d", blockchain, startBlock, endBlock)
+
+	synchronizer = Synchronizer{
+		Client:          client,
+		StorageInstance: storageInstance,
+
+		blockchain: blockchain,
 		startBlock: startBlock,
 		endBlock:   endBlock,
 		baseDir:    baseDir,
+		basePath:   basePath,
 	}
+
+	return &synchronizer, nil
 }
 
 // Read index storage
@@ -138,7 +163,7 @@ func ensurePortInConnectionString(connStr string) (string, error) {
 	return parsedURL.String(), nil
 }
 
-func (d *Synchronizer) SyncCustomers(timeout int) error {
+func (d *Synchronizer) SyncCustomers() error {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
@@ -146,7 +171,7 @@ func (d *Synchronizer) SyncCustomers(timeout int) error {
 		select {
 		case <-ticker.C:
 			log.Println("Run synchronization cycle...")
-			err := d.syncCycle(timeout)
+			err := d.syncCycle()
 			if err != nil {
 				fmt.Println("Error during synchronization cycle:", err)
 			}
@@ -154,37 +179,10 @@ func (d *Synchronizer) SyncCustomers(timeout int) error {
 	}
 }
 
-func (d *Synchronizer) syncCycle(timeout int) error {
+func (d *Synchronizer) syncCycle() error {
 	// Initialize a wait group to synchronize goroutines
 	var wg sync.WaitGroup
 	errChan := make(chan error, 1) // Buffered channel for error handling
-
-	if d.blockchain == "" {
-		return fmt.Errorf("blockchain is not set")
-	}
-	if d.providerURI == "" {
-		url, ok := crawler.BlockchainURLs[d.blockchain]
-		if !ok {
-			return fmt.Errorf("blockchain URL is not set")
-		}
-		d.providerURI = url
-	}
-
-	// Read client
-	client, err := blockchain.NewClient(d.blockchain, d.providerURI, timeout)
-	if err != nil {
-		log.Println("Error initializing blockchain client:", err)
-		log.Fatal(err)
-	}
-
-	// Initialize storage
-	basePath := filepath.Join(d.baseDir, crawler.SeerCrawlerStoragePrefix, "data", d.blockchain)
-	storageInstance, err := storage.NewStorage(storage.SeerCrawlerStorageType, basePath)
-
-	if err != nil {
-		log.Println("Error initializing storage:", err)
-		return err
-	}
 
 	// Read ABI jobs from database
 	abiJobs, err := d.ReadAbiJobsFromDatabase(d.blockchain)
@@ -331,7 +329,7 @@ func (d *Synchronizer) syncCycle(timeout int) error {
 					})
 				}
 				// Read all rowIds for each path
-				encodedEvents, err := storageInstance.ReadBatch(eventsReadMap)
+				encodedEvents, err := d.StorageInstance.ReadBatch(eventsReadMap)
 
 				if err != nil {
 					fmt.Println("Error reading events: ", err)
@@ -347,7 +345,7 @@ func (d *Synchronizer) syncCycle(timeout int) error {
 				}
 
 				// Decode the events using ABIs
-				decodedEvents, err := client.DecodeProtoEventsToLabels(all_events, update.BlocksCache, update.Abis)
+				decodedEvents, err := d.Client.DecodeProtoEventsToLabels(all_events, update.BlocksCache, update.Abis)
 
 				if err != nil {
 					fmt.Println("Error decoding events: ", err)
@@ -382,7 +380,7 @@ func (d *Synchronizer) syncCycle(timeout int) error {
 						RowIds: rowIds,
 					})
 				}
-				encodedTransactions, err := storageInstance.ReadBatch(transactionsReadMap)
+				encodedTransactions, err := d.StorageInstance.ReadBatch(transactionsReadMap)
 
 				if err != nil {
 					errChan <- fmt.Errorf("error reading transactions for customer %s: %w", update.CustomerID, err)
@@ -397,7 +395,7 @@ func (d *Synchronizer) syncCycle(timeout int) error {
 					all_transactions = append(all_transactions, data...)
 				}
 
-				decodedTransactions, err := client.DecodeProtoTransactionsToLabels(all_transactions, update.BlocksCache, update.Abis)
+				decodedTransactions, err := d.Client.DecodeProtoTransactionsToLabels(all_transactions, update.BlocksCache, update.Abis)
 
 				if err != nil {
 					errChan <- fmt.Errorf("error decoding transactions for customer %s: %w", update.CustomerID, err)
