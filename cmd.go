@@ -430,6 +430,11 @@ func CreateInspectorCommand() *cobra.Command {
 				return fmt.Errorf("blockchain is required via --chain")
 			}
 
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
 			storageErr := storage.CheckVariablesForStorage()
 			if storageErr != nil {
 				return storageErr
