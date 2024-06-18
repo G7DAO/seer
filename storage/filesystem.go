@@ -2,24 +2,29 @@ package storage
 
 import (
 	"bufio"
+	"context"
+	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 )
 
 type FileStorage struct {
-	basePath string
+	BasePath string
 }
 
 func NewFileStorage(basePath string) *FileStorage {
-	return &FileStorage{basePath: basePath}
+	return &FileStorage{BasePath: basePath}
 }
 
-func (fs *FileStorage) Save(key string, data []string) error {
+func (fs *FileStorage) Save(batchDir, filename string, data []string) error {
+	keyDir := filepath.Join(fs.BasePath, batchDir)
+	key := filepath.Join(keyDir, filename)
 
 	// Check if the directory exists
 	// If not, create it
-	if _, err := os.Stat(fs.basePath); os.IsNotExist(err) {
-		os.MkdirAll(fs.basePath, os.ModePerm)
+	if _, err := os.Stat(keyDir); os.IsNotExist(err) {
+		os.MkdirAll(keyDir, os.ModePerm)
 	}
 
 	file, err := os.OpenFile(key, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644) // that cool
@@ -110,6 +115,28 @@ func (fs *FileStorage) ReadBatch(readItems []ReadItem) (map[string][]string, err
 	}
 
 	return result, nil
+}
+
+func (fs *FileStorage) List(ctx context.Context, delim string, timeout int, returnFunc ListReturnFunc) ([]string, error) {
+	prefix := fmt.Sprintf("%s/", fs.BasePath)
+	log.Printf("Loading directory items with prefix: %s", prefix)
+
+	dirs, readDirErr := os.ReadDir(prefix)
+	if readDirErr != nil {
+		return []string{}, readDirErr
+	}
+
+	var items []string
+	itemsLen := 0
+
+	for _, d := range dirs {
+		items = append(items, fmt.Sprintf("%s%s/", prefix, d.Name()))
+		itemsLen++
+	}
+
+	log.Printf("Listed %d items", itemsLen)
+
+	return items, nil
 }
 
 func (fs *FileStorage) Delete(key string) error {

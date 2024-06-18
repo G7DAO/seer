@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	MOONSTREAM_DB_V3_CONTROLLER_API            string = "https://mdb-v3-api.moonstream.to"
+	MOONSTREAM_DB_V3_CONTROLLER_API               string = "https://mdb-v3-api.moonstream.to"
 	MOONSTREAM_DB_V3_CONTROLLER_SEER_ACCESS_TOKEN string
 )
 

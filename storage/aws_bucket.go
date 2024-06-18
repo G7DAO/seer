@@ -2,26 +2,26 @@ package storage
 
 import (
 	"bytes"
+	"context"
+	"path/filepath"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/ethereum/go-ethereum/log"
 )
 
-// S3 implements the Storer interface for Amazon S3
-
+// S3 implements the Storer interface for Amazon S3 Bucket
 type S3 struct {
-	// Add S3 specific fields
+	BasePath string
 }
 
-func NewS3Storage() *S3 {
-	// Implement the NewS3 function
-	log.Warn("AWS bucket support not implemented yet")
-	return &S3{}
+func NewS3Storage(basePath string) *S3 {
+	return &S3{BasePath: basePath}
 }
 
-func (s *S3) Save(key string, data []string) error {
+func (s *S3) Save(batchDir, filename string, data []string) error {
+	key := filepath.Join(s.BasePath, batchDir, filename)
+
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String("us-west-2"),
 	}))
@@ -87,6 +87,10 @@ func (s *S3) Delete(key string) error {
 
 	return nil
 
+}
+
+func (s *S3) List(ctx context.Context, delim string, timeout int, returnFunc ListReturnFunc) ([]string, error) {
+	return []string{}, nil
 }
 
 func (s *S3) ReadBatch(readItems []ReadItem) (map[string][]string, error) {

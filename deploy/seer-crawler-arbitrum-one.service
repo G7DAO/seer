@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer crawler --chain arbitrum_one
+ExecStart=/home/ubuntu/seer/seer crawler --chain arbitrum_one --confirmations 10 --threads 2
 SyslogIdentifier=seer-crawler-arbitrum-one
 
 [Install]

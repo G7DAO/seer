@@ -5,31 +5,35 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/storage"
+	"google.golang.org/api/iterator"
 )
+
+// GCS implements the Storer interface for Google Cloud Storage
+type GCS struct {
+	Client   *storage.Client
+	BasePath string
+}
 
 // NewGCSStorage initializes a GCS storage with the provided client
 func NewGCSStorage(client *storage.Client, basePath string) *GCS {
 	return &GCS{
-		client:   client,
-		basePath: basePath,
+		Client:   client,
+		BasePath: basePath,
 	}
 }
 
-// GCS implements the Storer interface for Google Cloud Storage
-
-type GCS struct {
-	client   *storage.Client
-	basePath string
-}
-
-func (g *GCS) Save(key string, data []string) error {
+func (g *GCS) Save(batchDir, filename string, data []string) error {
+	key := filepath.Join(g.BasePath, batchDir, filename)
 
 	ctx := context.Background()
 
-	bucket := g.client.Bucket(SeerCrawlerStorageBucket)
+	bucket := g.Client.Bucket(SeerCrawlerStorageBucket)
 
 	obj := bucket.Object(key)
 
@@ -58,7 +62,7 @@ func (g *GCS) Read(key string) ([]string, error) {
 
 	ctx := context.Background()
 
-	bucket := g.client.Bucket(SeerCrawlerStorageBucket)
+	bucket := g.Client.Bucket(SeerCrawlerStorageBucket)
 
 	obj := bucket.Object(key)
 
@@ -84,11 +88,81 @@ func (g *GCS) Read(key string) ([]string, error) {
 	return result, nil
 }
 
+var (
+	GCSListReturnNameFunc = func(item any) string {
+		if attr, ok := item.(*storage.ObjectAttrs); ok {
+			return attr.Name
+		}
+		return ""
+	}
+
+	GCSListReturnPrefixFunc = func(item any) string {
+		if attr, ok := item.(*storage.ObjectAttrs); ok {
+			return attr.Prefix
+		}
+		return ""
+	}
+)
+
+func (g *GCS) List(ctx context.Context, delim string, timeout int, returnFunc ListReturnFunc) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Second*time.Duration(timeout))
+	defer cancel()
+
+	// Prefixes and delimiters can be used to emulate directory listings.
+	// Prefixes can be used to filter objects starting with prefix.
+	// The delimiter argument can be used to restrict the results to only the
+	// objects in the given "directory". Without the delimiter, the entire tree
+	// under the prefix is returned.
+	//
+	// For example, given these blobs:
+	//   /a/1.txt
+	//   /a/b/2.txt
+	//
+	// If you just specify prefix="a/", you'll get back:
+	//   /a/1.txt
+	//   /a/b/2.txt
+	//
+	// However, if you specify prefix="a/" and delim="/", you'll get back:
+	//   /a/1.txt
+	prefix := fmt.Sprintf("%s/", g.BasePath)
+	log.Printf("Loading bucket items with prefix: %s and delim: %s", prefix, delim)
+
+	it := g.Client.Bucket(SeerCrawlerStorageBucket).Objects(ctx, &storage.Query{
+		Prefix:    prefix,
+		Delimiter: delim,
+	})
+
+	var items []string
+	itemsLen := 0
+
+	for {
+		attrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return []string{}, fmt.Errorf("Bucket(%q).Objects: %w", SeerCrawlerStorageBucket, err)
+		}
+
+		returnVal := returnFunc(attrs)
+		if returnVal == "" {
+			continue
+		}
+
+		itemsLen++
+		items = append(items, returnVal)
+	}
+
+	log.Printf("Listed %d items", itemsLen)
+
+	return items, nil
+}
+
 func (g *GCS) Delete(key string) error {
 
 	ctx := context.Background()
 
-	bucket := g.client.Bucket(SeerCrawlerStorageBucket)
+	bucket := g.Client.Bucket(SeerCrawlerStorageBucket)
 
 	obj := bucket.Object(key)
 
@@ -103,7 +177,7 @@ func (g *GCS) Delete(key string) error {
 func (g *GCS) ReadBatch(readItems []ReadItem) (map[string][]string, error) {
 	ctx := context.Background()
 
-	bucket := g.client.Bucket(SeerCrawlerStorageBucket)
+	bucket := g.Client.Bucket(SeerCrawlerStorageBucket)
 
 	result := make(map[string][]string)
 

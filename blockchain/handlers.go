@@ -20,33 +20,33 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func NewClient(chain, url string) (BlockchainClient, error) {
+func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 	if chain == "ethereum" {
-		client, err := ethereum.NewClient(url)
+		client, err := ethereum.NewClient(url, timeout)
 		return client, err
 	} else if chain == "polygon" {
-		client, err := polygon.NewClient(url)
+		client, err := polygon.NewClient(url, timeout)
 		return client, err
 	} else if chain == "arbitrum_one" {
-		client, err := arbitrum_one.NewClient(url)
+		client, err := arbitrum_one.NewClient(url, timeout)
 		return client, err
 	} else if chain == "arbitrum_sepolia" {
-		client, err := arbitrum_sepolia.NewClient(url)
+		client, err := arbitrum_sepolia.NewClient(url, timeout)
 		return client, err
 	} else if chain == "game7_orbit_arbitrum_sepolia" {
-		client, err := game7_orbit_arbitrum_sepolia.NewClient(url)
+		client, err := game7_orbit_arbitrum_sepolia.NewClient(url, timeout)
 		return client, err
 	} else if chain == "mantle" {
-		client, err := mantle.NewClient(url)
+		client, err := mantle.NewClient(url, timeout)
 		return client, err
 	} else if chain == "mantle_sepolia" {
-		client, err := mantle_sepolia.NewClient(url)
+		client, err := mantle_sepolia.NewClient(url, timeout)
 		return client, err
 	} else if chain == "xai" {
-		client, err := xai.NewClient(url)
+		client, err := xai.NewClient(url, timeout)
 		return client, err
 	} else if chain == "xai_sepolia" {
-		client, err := xai_sepolia.NewClient(url)
+		client, err := xai_sepolia.NewClient(url, timeout)
 		return client, err
 	} else {
 		return nil, errors.New("unsupported chain type")
@@ -64,16 +64,16 @@ type BlockData struct {
 type BlockchainClient interface {
 	// GetBlockByNumber(ctx context.Context, number *big.Int) (*proto.Message, error)
 	GetLatestBlockNumber() (*big.Int, error)
-	FetchAsProtoEvents(*big.Int, *big.Int, map[uint64]indexer.BlockCache) ([]proto.Message, []indexer.LogIndex, error)
-	FetchAsProtoBlocks(*big.Int, *big.Int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error)
+	FetchAsProtoEvents(*big.Int, *big.Int, map[uint64]indexer.BlockCache, bool) ([]proto.Message, []indexer.LogIndex, error)
+	FetchAsProtoBlocks(*big.Int, *big.Int, bool, int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error)
 	DecodeProtoEventsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.EventLabel, error)
 	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error)
 	ChainType() string
 }
 
 // crawl blocks
-func CrawlBlocks(client BlockchainClient, startBlock *big.Int, endBlock *big.Int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error) {
-	blocks, transactions, blocksIndex, transactionsIndex, blocksCache, err := client.FetchAsProtoBlocks(startBlock, endBlock)
+func CrawlBlocks(client BlockchainClient, startBlock *big.Int, endBlock *big.Int, debug bool, maxRequests int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error) {
+	blocks, transactions, blocksIndex, transactionsIndex, blocksCache, err := client.FetchAsProtoBlocks(startBlock, endBlock, debug, maxRequests)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -84,9 +84,8 @@ func CrawlBlocks(client BlockchainClient, startBlock *big.Int, endBlock *big.Int
 
 }
 
-func CrawlEvents(client BlockchainClient, startBlock *big.Int, endBlock *big.Int, BlockCahche map[uint64]indexer.BlockCache) ([]proto.Message, []indexer.LogIndex, error) {
-
-	events, eventsIndex, err := client.FetchAsProtoEvents(startBlock, endBlock, BlockCahche)
+func CrawlEvents(client BlockchainClient, startBlock *big.Int, endBlock *big.Int, BlockCahche map[uint64]indexer.BlockCache, debug bool) ([]proto.Message, []indexer.LogIndex, error) {
+	events, eventsIndex, err := client.FetchAsProtoEvents(startBlock, endBlock, BlockCahche, debug)
 	if err != nil {
 		return nil, nil, err
 	}

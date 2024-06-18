@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,11 +10,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 
 	"github.com/spf13/cobra"
 
+	"github.com/moonstream-to/seer/blockchain"
 	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/evm"
 	"github.com/moonstream-to/seer/indexer"
@@ -39,9 +42,10 @@ func CreateRootCommand() *cobra.Command {
 	starknetCmd := CreateStarknetCommand()
 	crawlerCmd := CreateCrawlerCommand()
 	indexCmd := CreateIndexCommand()
+	inspectorCmd := CreateInspectorCommand()
 	evmCmd := CreateEVMCommand()
 	synchronizerCmd := CreateSynchronizerCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd, synchronizerCmd)
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd, inspectorCmd, synchronizerCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -214,8 +218,8 @@ func CreateStarknetCommand() *cobra.Command {
 }
 
 func CreateCrawlerCommand() *cobra.Command {
-	var startBlock, endBlock uint64
-	var batchSize, confirmations, timeout int
+	var startBlock, endBlock, batchSize, confirmations int64
+	var timeout, threads int
 	var chain, baseDir string
 	var force bool
 
@@ -240,34 +244,48 @@ func CreateCrawlerCommand() *cobra.Command {
 
 			return nil
 		},
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 
 			indexer.InitDBConnection()
 
-			// read the blockchain url from $INFURA_URL
-			// if it is not set, use the default url
-			crawler := crawler.NewCrawler(chain, startBlock, endBlock, timeout, batchSize, confirmations, baseDir, force)
+			newCrawler, crawlerError := crawler.NewCrawler(chain, startBlock, endBlock, batchSize, confirmations, timeout, baseDir, force)
+			if crawlerError != nil {
+				return crawlerError
+			}
 
-			crawler.Start()
+			latestBlockNumber, latestErr := newCrawler.Client.GetLatestBlockNumber()
+			if latestErr != nil {
+				return fmt.Errorf("Failed to get latest block number: %v", latestErr)
+			}
 
+			if startBlock > latestBlockNumber.Int64() {
+				log.Fatalf("Start block could not be greater then latest block number at blockchain")
+			}
+
+			crawler.CurrentBlockchainState.SetLatestBlockNumber(latestBlockNumber)
+
+			newCrawler.Start(threads)
+
+			return nil
 		},
 	}
 
 	crawlerCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
-	crawlerCmd.Flags().Uint64Var(&startBlock, "start-block", 0, "The block number to start crawling from (default: latest block)")
-	crawlerCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end crawling at (default: latest block)")
-	crawlerCmd.Flags().IntVar(&timeout, "timeout", 0, "The timeout for the crawler in seconds (default: 0 - no timeout)")
-	crawlerCmd.Flags().IntVar(&batchSize, "batch-size", 10, "The number of blocks to crawl in each batch (default: 10)")
-	crawlerCmd.Flags().IntVar(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
-	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "data", "The base directory to store the crawled data (default: data)")
-	crawlerCmd.Flags().BoolVar(&force, "force", false, "Set this flag to force the crawler start from the start block (default: false)")
+	crawlerCmd.Flags().Int64Var(&startBlock, "start-block", 0, "The block number to start crawling from (default: fetch from database, if it is empty, run from latestBlockNumber minus shift)")
+	crawlerCmd.Flags().Int64Var(&endBlock, "end-block", 0, "The block number to end crawling at (default: endless)")
+	crawlerCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
+	crawlerCmd.Flags().IntVar(&threads, "threads", 1, "Number of go-routines for concurrent crawling (default: 1)")
+	crawlerCmd.Flags().Int64Var(&batchSize, "batch-size", 10, "The number of blocks to crawl in each batch (default: 10)")
+	crawlerCmd.Flags().Int64Var(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
+	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	crawlerCmd.Flags().BoolVar(&force, "force", false, "Set this flag to force the crawler start from the specified block, otherwise it checks database latest indexed block number (default: false)")
 
 	return crawlerCmd
 }
 
 func CreateSynchronizerCommand() *cobra.Command {
 	var startBlock, endBlock uint64
-	// var startBlockBig, endBlockBig big.Int
+	var timeout int
 	var chain, baseDir, output, abi_source string
 
 	synchronizerCmd := &cobra.Command{
@@ -294,29 +312,208 @@ func CreateSynchronizerCommand() *cobra.Command {
 				return syncErr
 			}
 
+			if chain == "" {
+				return fmt.Errorf("blockchain is required via --chain")
+			}
+
 			return nil
 		},
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			indexer.InitDBConnection()
 
-			// convert the start and end block to big.Int
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, timeout)
+			if synchonizerErr != nil {
+				return synchonizerErr
+			}
 
-			// read the blockchain url from $INFURA_URL
-			// if it is not set, use the default url
-			synchronizer := synchronizer.NewSynchronizer(chain, startBlock, endBlock)
+			newSynchronizer.SyncCustomers()
 
-			synchronizer.SyncCustomers()
+			return nil
 		},
 	}
 
 	synchronizerCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
 	synchronizerCmd.Flags().Uint64Var(&startBlock, "start-block", 0, "The block number to start decoding from (default: latest block)")
 	synchronizerCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end decoding at (default: latest block)")
-	synchronizerCmd.Flags().StringVar(&baseDir, "base-dir", "data", "The base directory to store the crawled data (default: data)")
+	synchronizerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	synchronizerCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
 	synchronizerCmd.Flags().StringVar(&output, "output", "output", "The output directory to store the decoded data (default: output)")
 	synchronizerCmd.Flags().StringVar(&abi_source, "abi-source", "abi", "The source of the ABI (default: abi)")
 
 	return synchronizerCmd
+}
+
+type BlockInspectItem struct {
+	StartBlock int64
+	EndBlock   int64
+}
+
+func CreateInspectorCommand() *cobra.Command {
+	inspectorCmd := &cobra.Command{
+		Use:   "inspector",
+		Short: "Inspect storage and database consistency",
+	}
+
+	var chain, baseDir, delim, returnFunc, batch, target string
+	var timeout, row int
+
+	decodeCommand := &cobra.Command{
+		Use:   "decode",
+		Short: "Decode proto data from storage",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
+			if target == "" {
+				return errors.New("target is required via --target")
+			} else if target != "blocks" && target != "logs" && target != "transactions" {
+				return errors.New("target should be: blocks or logs or transactions")
+			}
+
+			if batch == "" {
+				return errors.New("batch is required via --batch")
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", chain)
+			storageInstance, newStorageErr := storage.NewStorage(storage.SeerCrawlerStorageType, basePath)
+			if newStorageErr != nil {
+				return newStorageErr
+			}
+
+			targetFile := fmt.Sprintf("%s.proto", target)
+			targetFilePath := filepath.Join(basePath, batch, targetFile)
+			rawData, readErr := storageInstance.Read(targetFilePath)
+			if readErr != nil {
+				return readErr
+			}
+
+			rawDataRowsNum := len(rawData)
+			if rawDataRowsNum-1 < row {
+				log.Printf("File %s contains %d rows, specified row %d not exists", targetFilePath, rawDataRowsNum, row)
+				return nil
+			}
+
+			_, cleintErr := blockchain.NewClient(chain, crawler.BlockchainURLs[chain], timeout)
+			if cleintErr != nil {
+				return cleintErr
+			}
+
+			// TODO(kompotkot): Finish proto parsing
+
+			return nil
+		},
+	}
+
+	decodeCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	decodeCommand.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	decodeCommand.Flags().StringVar(&batch, "batch", "", "What batch to read")
+	decodeCommand.Flags().StringVar(&target, "target", "", "What to read: blocks, logs or transactions")
+	decodeCommand.Flags().IntVar(&row, "row", 0, "Row to read (default: 0)")
+
+	storageCommand := &cobra.Command{
+		Use:   "storage",
+		Short: "Inspect filesystem, gcp-storage, aws-bucket consistency",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+
+			basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", chain)
+			storageInstance, newStorageErr := storage.NewStorage(storage.SeerCrawlerStorageType, basePath)
+			if newStorageErr != nil {
+				return newStorageErr
+			}
+
+			// Only for gcp-storage type.
+			// Created for different manipulations what requires to list,
+			// if value set to prefix, required to set delim = '/'
+			var listReturnFunc storage.ListReturnFunc
+			switch storage.SeerCrawlerStorageType {
+			case "gcp-storage":
+				switch returnFunc {
+				case "prefix":
+					listReturnFunc = storage.GCSListReturnPrefixFunc
+				default:
+					listReturnFunc = storage.GCSListReturnNameFunc
+				}
+			default:
+				listReturnFunc = func(item any) string { return fmt.Sprintf("%v", item) }
+			}
+
+			items, listErr := storageInstance.List(ctx, delim, timeout, listReturnFunc)
+			if listErr != nil {
+				return listErr
+			}
+
+			itemsMap := make(map[string]BlockInspectItem)
+			previousMapItemKey := ""
+
+			for _, item := range items {
+				itemSlice := strings.Split(item, "/")
+				blockNums := itemSlice[len(itemSlice)-2]
+
+				blockNumsSlice := strings.Split(blockNums, "-")
+
+				blockNumS, atoiErrS := strconv.ParseInt(blockNumsSlice[0], 10, 64)
+				if atoiErrS != nil {
+					log.Printf("Unable to parse blockNumS from %s", blockNumsSlice[0])
+					continue
+				}
+				blockNumF, atoiErrF := strconv.ParseInt(blockNumsSlice[1], 10, 64)
+				if atoiErrF != nil {
+					log.Printf("Unable to parse blockNumS from %s", blockNumsSlice[1])
+					continue
+				}
+
+				if previousMapItemKey != blockNums && previousMapItemKey != "" {
+					diff := blockNumS - itemsMap[previousMapItemKey].EndBlock
+					if diff <= 0 {
+						fmt.Printf("Found incorrect blocks order between batches: %s -> %s\n", previousMapItemKey, blockNums)
+					} else if diff > 1 {
+						fmt.Printf("Found missing %d blocks during batches: %s -> %s\n", diff, previousMapItemKey, blockNums)
+					}
+				}
+
+				previousMapItemKey = blockNums
+				itemsMap[blockNums] = BlockInspectItem{StartBlock: blockNumS, EndBlock: blockNumF}
+			}
+
+			log.Printf("Processed %d items", len(itemsMap))
+
+			return nil
+		},
+	}
+
+	storageCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	storageCommand.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	storageCommand.Flags().StringVar(&delim, "delim", "", "Only for gcp-storage. The delimiter argument can be used to restrict the results to only the objects in the given 'directory'")
+	storageCommand.Flags().StringVar(&returnFunc, "return-func", "", "Which function use for return")
+	storageCommand.Flags().IntVar(&timeout, "timeout", 180, "List timeout (default: 180)")
+
+	inspectorCmd.AddCommand(storageCommand, decodeCommand)
+
+	return inspectorCmd
 }
 
 func CreateIndexCommand() *cobra.Command {
