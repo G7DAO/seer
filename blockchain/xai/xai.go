@@ -102,7 +102,7 @@ func (c *Client) TransactionReceipt(ctx context.Context, hash common.Hash) (*typ
 	return receipt, err
 }
 
-func (c *Client) ClientFilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]*seer_common.EventJson, error) {
+func (c *Client) ClientFilterLogs(ctx context.Context, q ethereum.FilterQuery, debug bool) ([]*seer_common.EventJson, error) {
 	var logs []*seer_common.EventJson
 	fromBlock := q.FromBlock
 	toBlock := q.ToBlock
@@ -150,6 +150,10 @@ func (c *Client) ClientFilterLogs(ctx context.Context, q ethereum.FilterQuery) (
 		// Append the results and adjust "fromBlock" for the next batch
 		logs = append(logs, result...)
 		fromBlock = new(big.Int).Add(nextBlock, big.NewInt(1))
+
+		if debug {
+			log.Printf("Fetched logs: %d", len(result))
+		}
 
 		// Break the loop if we've reached or exceeded "toBlock"
 		if fromBlock.Cmp(toBlock) > 0 {
@@ -301,12 +305,11 @@ func (c *Client) ParseBlocksAndTransactions(from, to *big.Int, debug bool, maxRe
 	return parsedBlocks, parsedTransactions, nil
 }
 
-func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache) ([]*XaiEventLog, error) {
-
+func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*XaiEventLog, error) {
 	logs, err := c.ClientFilterLogs(context.Background(), ethereum.FilterQuery{
 		FromBlock: from,
 		ToBlock:   to,
-	})
+	}, debug)
 
 	if err != nil {
 		fmt.Println("Error fetching logs: ", err)
@@ -379,9 +382,8 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int, debug bool, maxRequests i
 	return blocksProto, transactionsProto, blockIndex, transactionIndex, blocksCache, nil
 }
 
-func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]indexer.BlockCache) ([]proto.Message, []indexer.LogIndex, error) {
-
-	parsedEvents, err := c.ParseEvents(from, to, blocksCahche)
+func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]indexer.BlockCache, debug bool) ([]proto.Message, []indexer.LogIndex, error) {
+	parsedEvents, err := c.ParseEvents(from, to, blocksCahche, debug)
 
 	if err != nil {
 		return nil, nil, err

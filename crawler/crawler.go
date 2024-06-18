@@ -203,19 +203,20 @@ func (c *Crawler) Start(threads int) {
 
 		// Retry the operation in case of failure with cumulative attempts
 		err = retryOperation(retryAttempts, retryWaitTime, func() error {
+			batchDir := fmt.Sprintf("%d-%d", c.startBlock, tempEndBlock)
+			log.Printf("Operates with batch of blocks: %s", batchDir)
+
+			// Fetch blocks with transactions
 			blocks, transactions, blockIndex, transactionIndex, blocksCache, err := seer_blockchain.CrawlBlocks(c.Client, big.NewInt(c.startBlock), big.NewInt(tempEndBlock), SEER_CRAWLER_DEBUG, threads)
 			if err != nil {
 				return fmt.Errorf("failed to crawl blocks: %w", err)
 			}
 
-			batchDir := fmt.Sprintf("%d-%d", c.startBlock, tempEndBlock)
-			log.Printf("Operates with batch of blocks: %s", batchDir)
-
 			var encodedBytesBlocks []string
 			for _, block := range blocks {
 				bytesBlocks, err := proto.Marshal(block)
 				if err != nil {
-					return fmt.Errorf("failed to marshal proto message: %w", err)
+					return fmt.Errorf("failed to marshal proto message for blocks: %w", err)
 				}
 				// Encode the bytes to base64 for newline delimited storage
 				base64Block := base64.StdEncoding.EncodeToString(bytesBlocks)
@@ -223,7 +224,7 @@ func (c *Crawler) Start(threads int) {
 			}
 
 			if err := c.StorageInstance.Save(batchDir, "blocks.proto", encodedBytesBlocks); err != nil {
-				return fmt.Errorf("failed to save blocks: %w", err)
+				return fmt.Errorf("failed to save blocks.proto: %w", err)
 			}
 			log.Printf("Saved blocks.proto to %s", batchDir)
 
@@ -231,7 +232,7 @@ func (c *Crawler) Start(threads int) {
 			for _, transaction := range transactions {
 				bytesTransaction, err := proto.Marshal(transaction)
 				if err != nil {
-					return fmt.Errorf("failed to marshal proto message: %w", err)
+					return fmt.Errorf("failed to marshal proto message for transactions: %w", err)
 				}
 				// Encode the bytes to base64 for newline delimited storage
 				base64Transaction := base64.StdEncoding.EncodeToString(bytesTransaction)
@@ -239,7 +240,7 @@ func (c *Crawler) Start(threads int) {
 			}
 
 			if err := c.StorageInstance.Save(batchDir, "transactions.proto", encodedBytesTransactions); err != nil {
-				return fmt.Errorf("failed to save transactions: %w", err)
+				return fmt.Errorf("failed to save transactions.proto: %w", err)
 			}
 			log.Printf("Saved transactions.proto to %s", batchDir)
 
@@ -263,7 +264,7 @@ func (c *Crawler) Start(threads int) {
 				return fmt.Errorf("failed to write transaction index to database: %w", err)
 			}
 
-			events, eventsIndex, err := seer_blockchain.CrawlEvents(c.Client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(tempEndBlock)), blocksCache)
+			events, eventsIndex, err := seer_blockchain.CrawlEvents(c.Client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(tempEndBlock)), blocksCache, SEER_CRAWLER_DEBUG)
 			if err != nil {
 				return fmt.Errorf("failed to crawl events: %w", err)
 			}
@@ -290,7 +291,7 @@ func (c *Crawler) Start(threads int) {
 			}
 
 			if err := c.StorageInstance.Save(batchDir, "logs.proto", encodedBytesEvents); err != nil {
-				return fmt.Errorf("failed to save events: %w", err)
+				return fmt.Errorf("failed to save logs.proto: %w", err)
 			}
 			log.Printf("Saved logs.proto to %s", batchDir)
 

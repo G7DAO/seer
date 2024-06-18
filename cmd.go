@@ -264,7 +264,6 @@ func CreateCrawlerCommand() *cobra.Command {
 
 			crawler.CurrentBlockchainState.SetLatestBlockNumber(latestBlockNumber)
 
-			fmt.Println(threads)
 			newCrawler.Start(threads)
 
 			return nil

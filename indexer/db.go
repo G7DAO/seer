@@ -434,8 +434,6 @@ func (p *PostgreSQLpgx) writeLogIndexToDB(tableName string, indexes []LogIndex) 
 		}
 	}()
 
-	fmt.Println("Indexes length", len(indexes))
-
 	// Define the batch size
 
 	var addressBytes []byte
