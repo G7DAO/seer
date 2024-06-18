@@ -420,6 +420,89 @@ func CreateInspectorCommand() *cobra.Command {
 	decodeCommand.Flags().StringVar(&target, "target", "", "What to read: blocks, logs or transactions")
 	decodeCommand.Flags().IntVar(&row, "row", 0, "Row to read (default: 0)")
 
+	var storageVerify bool
+
+	dbCommand := &cobra.Command{
+		Use:   "db",
+		Short: "Inspect database consistency",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if chain == "" {
+				return fmt.Errorf("blockchain is required via --chain")
+			}
+
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			indexer.InitDBConnection()
+
+			ctx := context.Background()
+			firstBlock, firstErr := indexer.DBConnection.GetEdgeDBBlock(ctx, chain, "first")
+			if firstErr != nil {
+				return firstErr
+			}
+			lastBlock, lastErr := indexer.DBConnection.GetEdgeDBBlock(ctx, chain, "last")
+			if firstErr != nil {
+				return lastErr
+			}
+
+			firstPathSlice := strings.Split(firstBlock.Path, "/")
+			firstPathBatch := firstPathSlice[len(firstPathSlice)-2]
+
+			lastPathSlice := strings.Split(lastBlock.Path, "/")
+			lastPathBatch := lastPathSlice[len(lastPathSlice)-2]
+
+			fmt.Printf("First batch blocks in database: %s\n", firstPathBatch)
+			fmt.Printf("Last batch blocks in database: %s\n", lastPathBatch)
+
+			if storageVerify {
+				basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", chain)
+				storageInstance, newStorageErr := storage.NewStorage(storage.SeerCrawlerStorageType, basePath)
+				if newStorageErr != nil {
+					return newStorageErr
+				}
+
+				listReturnFunc := storage.GCSListReturnNameFunc
+
+				firstItems, firstListErr := storageInstance.List(ctx, delim, firstPathBatch, timeout, listReturnFunc)
+				if firstListErr != nil {
+					return firstListErr
+				}
+
+				lastItems, lastListErr := storageInstance.List(ctx, delim, lastPathBatch, timeout, listReturnFunc)
+				if lastListErr != nil {
+					return lastListErr
+				}
+
+				fmt.Println("First batch in storage:")
+				for _, item := range firstItems {
+					fmt.Printf("- %s\n", item)
+				}
+
+				fmt.Println("Last batch in storage:")
+				for _, item := range lastItems {
+					fmt.Printf("- %s\n", item)
+				}
+			}
+
+			// TODO(kompotkot): Write inspect of missing blocks in database
+
+			return nil
+		},
+	}
+
+	dbCommand.Flags().StringVar(&chain, "chain", "", "The blockchain to crawl")
+	dbCommand.Flags().BoolVar(&storageVerify, "storage-verify", false, "Set this flag to verify storage data by path (default: false)")
+
 	storageCommand := &cobra.Command{
 		Use:   "storage",
 		Short: "Inspect filesystem, gcp-storage, aws-bucket consistency",
@@ -461,7 +544,7 @@ func CreateInspectorCommand() *cobra.Command {
 				listReturnFunc = func(item any) string { return fmt.Sprintf("%v", item) }
 			}
 
-			items, listErr := storageInstance.List(ctx, delim, timeout, listReturnFunc)
+			items, listErr := storageInstance.List(ctx, delim, "", timeout, listReturnFunc)
 			if listErr != nil {
 				return listErr
 			}
@@ -511,7 +594,7 @@ func CreateInspectorCommand() *cobra.Command {
 	storageCommand.Flags().StringVar(&returnFunc, "return-func", "", "Which function use for return")
 	storageCommand.Flags().IntVar(&timeout, "timeout", 180, "List timeout (default: 180)")
 
-	inspectorCmd.AddCommand(storageCommand, decodeCommand)
+	inspectorCmd.AddCommand(storageCommand, decodeCommand, dbCommand)
 
 	return inspectorCmd
 }

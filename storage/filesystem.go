@@ -117,7 +117,7 @@ func (fs *FileStorage) ReadBatch(readItems []ReadItem) (map[string][]string, err
 	return result, nil
 }
 
-func (fs *FileStorage) List(ctx context.Context, delim string, timeout int, returnFunc ListReturnFunc) ([]string, error) {
+func (fs *FileStorage) List(ctx context.Context, delim, blockBatch string, timeout int, returnFunc ListReturnFunc) ([]string, error) {
 	prefix := fmt.Sprintf("%s/", fs.BasePath)
 	log.Printf("Loading directory items with prefix: %s", prefix)
 

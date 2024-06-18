@@ -119,11 +119,11 @@ func (p *PostgreSQLpgx) GetPool() *pgxpool.Pool {
 
 // read from database
 
-func (p *PostgreSQLpgx) ReadBlockIndex(startBlock uint64, endBlock uint64) ([]BlockIndex, error) {
+func (p *PostgreSQLpgx) ReadBlockIndex(ctx context.Context, startBlock uint64, endBlock uint64) ([]BlockIndex, error) {
 
 	pool := p.GetPool()
 
-	conn, err := pool.Acquire(context.Background())
+	conn, err := pool.Acquire(ctx)
 
 	if err != nil {
 		return nil, err
@@ -131,7 +131,7 @@ func (p *PostgreSQLpgx) ReadBlockIndex(startBlock uint64, endBlock uint64) ([]Bl
 
 	defer conn.Release()
 
-	rows, err := conn.Query(context.Background(), "SELECT * FROM products WHERE block_number >= $1 AND block_number <= $2", startBlock, endBlock)
+	rows, err := conn.Query(ctx, "SELECT * FROM products WHERE block_number >= $1 AND block_number <= $2", startBlock, endBlock)
 
 	if err != nil {
 		return nil, err
@@ -503,7 +503,49 @@ func (p *PostgreSQLpgx) writeLogIndexToDB(tableName string, indexes []LogIndex) 
 
 }
 
-func (p *PostgreSQLpgx) GetLatestBlockNumber(blockchain string) (uint64, error) {
+// GetEdgeDBBlock fetch first or last block for specified blockchain
+func (p *PostgreSQLpgx) GetEdgeDBBlock(ctx context.Context, blockchain, side string) (BlockIndex, error) {
+	var blockIndex BlockIndex
+
+	pool := p.GetPool()
+
+	conn, acquireErr := pool.Acquire(ctx)
+	if acquireErr != nil {
+		return blockIndex, acquireErr
+	}
+
+	defer conn.Release()
+
+	query := fmt.Sprintf("SELECT block_number,block_hash,block_timestamp,parent_hash,row_id,path,l1_block_number FROM %s ORDER BY block_number", BlocksTableName(blockchain))
+
+	switch side {
+	case "first":
+		query = fmt.Sprintf("%s LIMIT 1", query)
+	case "last":
+		query = fmt.Sprintf("%s DESC LIMIT 1", query)
+	default:
+		return blockIndex, fmt.Errorf("not supported side, choose 'first' or 'last' block")
+	}
+
+	queryErr := conn.QueryRow(context.Background(), query).Scan(
+		&blockIndex.BlockNumber,
+		&blockIndex.BlockHash,
+		&blockIndex.BlockTimestamp,
+		&blockIndex.ParentHash,
+		&blockIndex.RowID,
+		&blockIndex.Path,
+		&blockIndex.L1BlockNumber,
+	)
+	if queryErr != nil {
+		return blockIndex, queryErr
+	}
+
+	blockIndex.chain = blockchain
+
+	return blockIndex, nil
+}
+
+func (p *PostgreSQLpgx) GetLatestDBBlockNumber(blockchain string) (uint64, error) {
 
 	pool := p.GetPool()
 

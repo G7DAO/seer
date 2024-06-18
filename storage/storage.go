@@ -9,7 +9,7 @@ type Storer interface {
 	Read(key string) ([]string, error)
 	ReadBatch(readItems []ReadItem) (map[string][]string, error)
 	Delete(key string) error
-	List(ctx context.Context, delim string, timeout int, returnFunc ListReturnFunc) ([]string, error)
+	List(ctx context.Context, delim, blockBatch string, timeout int, returnFunc ListReturnFunc) ([]string, error)
 }
 
 type ReadItem struct {
