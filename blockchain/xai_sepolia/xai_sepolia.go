@@ -6,8 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/big"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -19,8 +22,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func NewClient(url string) (*Client, error) {
-	rpcClient, err := rpc.DialContext(context.Background(), url)
+func NewClient(url string, timeout int) (*Client, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	rpcClient, err := rpc.DialContext(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -187,13 +193,74 @@ func (c *Client) FetchBlocksInRange(from, to *big.Int, debug bool) ([]*seer_comm
 
 	for i := new(big.Int).Set(from); i.Cmp(to) <= 0; i.Add(i, big.NewInt(1)) {
 		block, err := c.GetBlockByNumber(ctx, i)
-		if debug {
-			fmt.Println("Block number:", i)
-		}
 		if err != nil {
 			return nil, err
 		}
+
 		blocks = append(blocks, block)
+		if debug {
+			log.Printf("Fetched block number: %d", i)
+		}
+	}
+
+	return blocks, nil
+}
+
+// FetchBlocksInRangeAsync fetches blocks within a specified range concurrently.
+func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxRequests int) ([]*seer_common.BlockJson, error) {
+	var (
+		blocks []*seer_common.BlockJson
+
+		mu  sync.Mutex
+		wg  sync.WaitGroup
+		ctx = context.Background()
+	)
+
+	var blockNumbersRange []*big.Int
+	for i := new(big.Int).Set(from); i.Cmp(to) <= 0; i.Add(i, big.NewInt(1)) {
+		blockNumbersRange = append(blockNumbersRange, new(big.Int).Set(i))
+	}
+
+	sem := make(chan struct{}, maxRequests) // Semaphore to control concurrency
+	errChan := make(chan error, 1)          // Handle errors to stop corrupted processing
+
+	for _, b := range blockNumbersRange {
+		wg.Add(1)
+		go func(b *big.Int) {
+			defer wg.Done()
+
+			sem <- struct{}{} // Acquire semaphore
+
+			block, getErr := c.GetBlockByNumber(ctx, b)
+			if getErr != nil {
+				log.Printf("Failed to fetch block number: %d, error: %v", b, getErr)
+				select {
+				case errChan <- getErr:
+					// Record an error
+				default:
+					// Pass
+				}
+				return
+			}
+
+			mu.Lock()
+			blocks = append(blocks, block)
+			mu.Unlock()
+
+			if debug {
+				log.Printf("Fetched block number: %d", b)
+			}
+
+			<-sem
+		}(b)
+	}
+
+	wg.Wait()
+	close(sem)
+	close(errChan)
+
+	if err := <-errChan; err != nil {
+		return nil, err
 	}
 
 	return blocks, nil
@@ -201,10 +268,16 @@ func (c *Client) FetchBlocksInRange(from, to *big.Int, debug bool) ([]*seer_comm
 
 // ParseBlocksAndTransactions parses blocks and their transactions into custom data structures.
 // This method showcases how to handle and transform detailed block and transaction data.
-func (c *Client) ParseBlocksAndTransactions(from, to *big.Int, debug bool) ([]*XaiSepoliaBlock, []*XaiSepoliaTransaction, error) {
-	blocksJson, err := c.FetchBlocksInRange(from, to, debug)
-	if err != nil {
-		return nil, nil, err
+func (c *Client) ParseBlocksAndTransactions(from, to *big.Int, debug bool, maxRequests int) ([]*XaiSepoliaBlock, []*XaiSepoliaTransaction, error) {
+	var blocksJson []*seer_common.BlockJson
+	var fetchErr error
+	if maxRequests > 1 {
+		blocksJson, fetchErr = c.FetchBlocksInRangeAsync(from, to, debug, maxRequests)
+	} else {
+		blocksJson, fetchErr = c.FetchBlocksInRange(from, to, debug)
+	}
+	if fetchErr != nil {
+		return nil, nil, fetchErr
 	}
 
 	var parsedBlocks []*XaiSepoliaBlock
@@ -249,9 +322,8 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 	return parsedEvents, nil
 }
 
-func (c *Client) FetchAsProtoBlocks(from, to *big.Int, debug bool) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error) {
-	parsedBlocks, parsedTransactions, err := c.ParseBlocksAndTransactions(from, to, debug)
-
+func (c *Client) FetchAsProtoBlocks(from, to *big.Int, debug bool, maxRequests int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error) {
+	parsedBlocks, parsedTransactions, err := c.ParseBlocksAndTransactions(from, to, debug, maxRequests)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}

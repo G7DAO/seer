@@ -219,7 +219,7 @@ func CreateStarknetCommand() *cobra.Command {
 
 func CreateCrawlerCommand() *cobra.Command {
 	var startBlock, endBlock, batchSize, confirmations int64
-	var timeout int
+	var timeout, threads int
 	var chain, baseDir string
 	var force bool
 
@@ -264,7 +264,8 @@ func CreateCrawlerCommand() *cobra.Command {
 
 			crawler.CurrentBlockchainState.SetLatestBlockNumber(latestBlockNumber)
 
-			newCrawler.Start()
+			fmt.Println(threads)
+			newCrawler.Start(threads)
 
 			return nil
 		},
@@ -273,7 +274,8 @@ func CreateCrawlerCommand() *cobra.Command {
 	crawlerCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
 	crawlerCmd.Flags().Int64Var(&startBlock, "start-block", 0, "The block number to start crawling from (default: fetch from database, if it is empty, run from latestBlockNumber minus shift)")
 	crawlerCmd.Flags().Int64Var(&endBlock, "end-block", 0, "The block number to end crawling at (default: endless)")
-	crawlerCmd.Flags().IntVar(&timeout, "timeout", 0, "The timeout for the crawler in seconds (default: 0 - no timeout)")
+	crawlerCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
+	crawlerCmd.Flags().IntVar(&threads, "threads", 1, "Number of go-routines for concurrent crawling (default: 1)")
 	crawlerCmd.Flags().Int64Var(&batchSize, "batch-size", 10, "The number of blocks to crawl in each batch (default: 10)")
 	crawlerCmd.Flags().Int64Var(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
 	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
@@ -284,7 +286,7 @@ func CreateCrawlerCommand() *cobra.Command {
 
 func CreateSynchronizerCommand() *cobra.Command {
 	var startBlock, endBlock uint64
-	// var startBlockBig, endBlockBig big.Int
+	var timeout int
 	var chain, baseDir, output, abi_source string
 
 	synchronizerCmd := &cobra.Command{
@@ -322,7 +324,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 			// if it is not set, use the default url
 			synchronizer := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock)
 
-			synchronizer.SyncCustomers()
+			synchronizer.SyncCustomers(timeout)
 		},
 	}
 
@@ -330,6 +332,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 	synchronizerCmd.Flags().Uint64Var(&startBlock, "start-block", 0, "The block number to start decoding from (default: latest block)")
 	synchronizerCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end decoding at (default: latest block)")
 	synchronizerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	synchronizerCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
 	synchronizerCmd.Flags().StringVar(&output, "output", "output", "The output directory to store the decoded data (default: output)")
 	synchronizerCmd.Flags().StringVar(&abi_source, "abi-source", "abi", "The source of the ABI (default: abi)")
 
@@ -396,12 +399,12 @@ func CreateInspectorCommand() *cobra.Command {
 				return nil
 			}
 
-			_, cleintErr := blockchain.NewClient(chain, crawler.BlockchainURLs[chain])
+			_, cleintErr := blockchain.NewClient(chain, crawler.BlockchainURLs[chain], timeout)
 			if cleintErr != nil {
 				return cleintErr
 			}
 
-			// TOOD
+			// TODO(kompotkot): Finish proto parsing
 
 			return nil
 		},

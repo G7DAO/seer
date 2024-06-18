@@ -138,7 +138,7 @@ func ensurePortInConnectionString(connStr string) (string, error) {
 	return parsedURL.String(), nil
 }
 
-func (d *Synchronizer) SyncCustomers() error {
+func (d *Synchronizer) SyncCustomers(timeout int) error {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
@@ -146,7 +146,7 @@ func (d *Synchronizer) SyncCustomers() error {
 		select {
 		case <-ticker.C:
 			log.Println("Run synchronization cycle...")
-			err := d.syncCycle()
+			err := d.syncCycle(timeout)
 			if err != nil {
 				fmt.Println("Error during synchronization cycle:", err)
 			}
@@ -154,7 +154,7 @@ func (d *Synchronizer) SyncCustomers() error {
 	}
 }
 
-func (d *Synchronizer) syncCycle() error {
+func (d *Synchronizer) syncCycle(timeout int) error {
 	// Initialize a wait group to synchronize goroutines
 	var wg sync.WaitGroup
 	errChan := make(chan error, 1) // Buffered channel for error handling
@@ -171,7 +171,7 @@ func (d *Synchronizer) syncCycle() error {
 	}
 
 	// Read client
-	client, err := blockchain.NewClient(d.blockchain, d.providerURI)
+	client, err := blockchain.NewClient(d.blockchain, d.providerURI, timeout)
 	if err != nil {
 		log.Println("Error initializing blockchain client:", err)
 		log.Fatal(err)

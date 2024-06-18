@@ -62,7 +62,7 @@ func NewCrawler(blockchain string, startBlock, endBlock, batchSize, confirmation
 		panic(err)
 	}
 
-	client, err := seer_blockchain.NewClient(blockchain, BlockchainURLs[blockchain])
+	client, err := seer_blockchain.NewClient(blockchain, BlockchainURLs[blockchain], timeout)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func SetDefaultStartBlock(confirmations int64, latestBlockNumber *big.Int) int64
 }
 
 // Start initiates the crawling process for the configured blockchain.
-func (c *Crawler) Start() {
+func (c *Crawler) Start(threads int) {
 	latestBlockNumber := CurrentBlockchainState.GetLatestBlockNumber()
 	if c.force {
 		// Start form specified startBlock if it is set and not 0
@@ -203,7 +203,7 @@ func (c *Crawler) Start() {
 
 		// Retry the operation in case of failure with cumulative attempts
 		err = retryOperation(retryAttempts, retryWaitTime, func() error {
-			blocks, transactions, blockIndex, transactionIndex, blocksCache, err := seer_blockchain.CrawlBlocks(c.Client, big.NewInt(c.startBlock), big.NewInt(tempEndBlock), SEER_CRAWLER_DEBUG)
+			blocks, transactions, blockIndex, transactionIndex, blocksCache, err := seer_blockchain.CrawlBlocks(c.Client, big.NewInt(c.startBlock), big.NewInt(tempEndBlock), SEER_CRAWLER_DEBUG, threads)
 			if err != nil {
 				return fmt.Errorf("failed to crawl blocks: %w", err)
 			}
