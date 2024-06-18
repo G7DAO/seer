@@ -215,3 +215,11 @@ Before running the crawler, you need initialize the database with the following 
 ```bash
 ./seer crawler --chain polygon --start-block 53922484 --force
 ```
+
+## Inspect database
+
+Find first and last blocks indexed in database and verify it's batch at storage:
+
+```bash
+./seer inspector db --chain polygon --storage-verify
+```

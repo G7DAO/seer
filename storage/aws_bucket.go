@@ -89,7 +89,7 @@ func (s *S3) Delete(key string) error {
 
 }
 
-func (s *S3) List(ctx context.Context, delim string, timeout int, returnFunc ListReturnFunc) ([]string, error) {
+func (s *S3) List(ctx context.Context, delim, blockBatch string, timeout int, returnFunc ListReturnFunc) ([]string, error) {
 	return []string{}, nil
 }
 

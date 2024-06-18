@@ -134,7 +134,7 @@ func (c *Crawler) Start(threads int) {
 			c.startBlock = SetDefaultStartBlock(c.confirmations, latestBlockNumber)
 		}
 	} else {
-		latestIndexedBlock, err := indexer.DBConnection.GetLatestBlockNumber(c.blockchain)
+		latestIndexedBlock, err := indexer.DBConnection.GetLatestDBBlockNumber(c.blockchain)
 
 		// If there are no rows in result then set startBlock with SetDefaultStartBlock()
 

@@ -104,7 +104,7 @@ var (
 	}
 )
 
-func (g *GCS) List(ctx context.Context, delim string, timeout int, returnFunc ListReturnFunc) ([]string, error) {
+func (g *GCS) List(ctx context.Context, delim, blockBatch string, timeout int, returnFunc ListReturnFunc) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Second*time.Duration(timeout))
 	defer cancel()
 
@@ -125,6 +125,9 @@ func (g *GCS) List(ctx context.Context, delim string, timeout int, returnFunc Li
 	// However, if you specify prefix="a/" and delim="/", you'll get back:
 	//   /a/1.txt
 	prefix := fmt.Sprintf("%s/", g.BasePath)
+	if blockBatch != "" {
+		prefix = fmt.Sprintf("%s%s/", prefix, blockBatch)
+	}
 	log.Printf("Loading bucket items with prefix: %s and delim: %s", prefix, delim)
 
 	it := g.Client.Bucket(SeerCrawlerStorageBucket).Objects(ctx, &storage.Query{

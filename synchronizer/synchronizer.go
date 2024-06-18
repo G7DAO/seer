@@ -250,7 +250,7 @@ func (d *Synchronizer) syncCycle() error {
 	// In case start block is still 0, get the latest block from the blockchain
 	if d.startBlock == 0 {
 		log.Println("Start block is 0, RDS not contain any blocks yet. Sync indexers then.")
-		latestBlock, err := indexer.DBConnection.GetLatestBlockNumber(d.blockchain)
+		latestBlock, err := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain)
 		if err != nil {
 			return err
 		}
@@ -259,7 +259,7 @@ func (d *Synchronizer) syncCycle() error {
 	}
 
 	// Get the latest block from indexer
-	latestBlock, err := indexer.DBConnection.GetLatestBlockNumber(d.blockchain)
+	latestBlock, err := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain)
 
 	if err != nil {
 		return err
