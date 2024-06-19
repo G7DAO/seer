@@ -283,9 +283,10 @@ func CreateCrawlerCommand() *cobra.Command {
 }
 
 func CreateSynchronizerCommand() *cobra.Command {
-	var startBlock, endBlock uint64
+	var startBlock, endBlock, batchSize uint64
 	var timeout int
-	var chain, baseDir, output, abi_source string
+	var chain, baseDir, customerDbUriFlag string
+	var force bool
 
 	synchronizerCmd := &cobra.Command{
 		Use:   "synchronizer",
@@ -320,12 +321,23 @@ func CreateSynchronizerCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			indexer.InitDBConnection()
 
-			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, timeout)
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, force, timeout)
 			if synchonizerErr != nil {
 				return synchonizerErr
 			}
 
-			newSynchronizer.SyncCustomers()
+			latestBlockNumber, latestErr := newSynchronizer.Client.GetLatestBlockNumber()
+			if latestErr != nil {
+				return fmt.Errorf("Failed to get latest block number: %v", latestErr)
+			}
+
+			if startBlock > latestBlockNumber.Uint64() {
+				log.Fatalf("Start block could not be greater then latest block number at blockchain")
+			}
+
+			crawler.CurrentBlockchainState.SetLatestBlockNumber(latestBlockNumber)
+
+			newSynchronizer.Start(customerDbUriFlag)
 
 			return nil
 		},
@@ -336,8 +348,9 @@ func CreateSynchronizerCommand() *cobra.Command {
 	synchronizerCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end decoding at (default: latest block)")
 	synchronizerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
 	synchronizerCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
-	synchronizerCmd.Flags().StringVar(&output, "output", "output", "The output directory to store the decoded data (default: output)")
-	synchronizerCmd.Flags().StringVar(&abi_source, "abi-source", "abi", "The source of the ABI (default: abi)")
+	synchronizerCmd.Flags().Uint64Var(&batchSize, "batch-size", 100, "The number of blocks to crawl in each batch (default: 100)")
+	synchronizerCmd.Flags().StringVar(&customerDbUriFlag, "customer-db-uri", "", "Set customer database URI for development. This workflow bypass fetching customer IDs and its database URL connection strings from mdb-v3-controller API")
+	synchronizerCmd.Flags().BoolVar(&force, "force", false, "Set this flag to force the crawler start from the specified block, otherwise it checks database latest indexed block number (default: false)")
 
 	return synchronizerCmd
 }

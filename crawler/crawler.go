@@ -44,7 +44,7 @@ type Crawler struct {
 	blockchain    string
 	startBlock    int64
 	endBlock      int64
-	blocksBatch   int64
+	batchSize     int64
 	confirmations int64
 	force         bool
 	baseDir       string
@@ -75,7 +75,7 @@ func NewCrawler(blockchain string, startBlock, endBlock, batchSize, confirmation
 		blockchain:    blockchain,
 		startBlock:    startBlock,
 		endBlock:      endBlock,
-		blocksBatch:   batchSize,
+		batchSize:     batchSize,
 		confirmations: confirmations,
 		force:         force,
 		baseDir:       baseDir,
@@ -129,7 +129,6 @@ func SetDefaultStartBlock(confirmations int64, latestBlockNumber *big.Int) int64
 func (c *Crawler) Start(threads int) {
 	latestBlockNumber := CurrentBlockchainState.GetLatestBlockNumber()
 	if c.force {
-		// Start form specified startBlock if it is set and not 0
 		if c.startBlock == 0 {
 			c.startBlock = SetDefaultStartBlock(c.confirmations, latestBlockNumber)
 		}
@@ -153,7 +152,7 @@ func (c *Crawler) Start(threads int) {
 		}
 	}
 
-	tempEndBlock := c.startBlock + c.blocksBatch
+	tempEndBlock := c.startBlock + c.batchSize
 	var safeBlock int64
 
 	retryWaitTime := 10 * time.Second
@@ -181,7 +180,7 @@ func (c *Crawler) Start(threads int) {
 
 		safeBlock = latestBlockNumber.Int64() - c.confirmations
 
-		tempEndBlock = c.startBlock + c.blocksBatch
+		tempEndBlock = c.startBlock + c.batchSize
 		if c.endBlock != 0 {
 			if c.endBlock <= tempEndBlock {
 				tempEndBlock = c.endBlock
