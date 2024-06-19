@@ -41,11 +41,10 @@ func CreateRootCommand() *cobra.Command {
 	blockchainCmd := CreateBlockchainCommand()
 	starknetCmd := CreateStarknetCommand()
 	crawlerCmd := CreateCrawlerCommand()
-	indexCmd := CreateIndexCommand()
 	inspectorCmd := CreateInspectorCommand()
 	evmCmd := CreateEVMCommand()
 	synchronizerCmd := CreateSynchronizerCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd, inspectorCmd, synchronizerCmd)
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -357,9 +356,9 @@ func CreateInspectorCommand() *cobra.Command {
 	var chain, baseDir, delim, returnFunc, batch, target string
 	var timeout, row int
 
-	decodeCommand := &cobra.Command{
-		Use:   "decode",
-		Short: "Decode proto data from storage",
+	readCommand := &cobra.Command{
+		Use:   "read",
+		Short: "Read and decode indexed proto data from storage",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			storageErr := storage.CheckVariablesForStorage()
 			if storageErr != nil {
@@ -414,11 +413,11 @@ func CreateInspectorCommand() *cobra.Command {
 		},
 	}
 
-	decodeCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
-	decodeCommand.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
-	decodeCommand.Flags().StringVar(&batch, "batch", "", "What batch to read")
-	decodeCommand.Flags().StringVar(&target, "target", "", "What to read: blocks, logs or transactions")
-	decodeCommand.Flags().IntVar(&row, "row", 0, "Row to read (default: 0)")
+	readCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	readCommand.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	readCommand.Flags().StringVar(&batch, "batch", "", "What batch to read")
+	readCommand.Flags().StringVar(&target, "target", "", "What to read: blocks, logs or transactions")
+	readCommand.Flags().IntVar(&row, "row", 0, "Row to read (default: 0)")
 
 	var storageVerify bool
 
@@ -599,39 +598,9 @@ func CreateInspectorCommand() *cobra.Command {
 	storageCommand.Flags().StringVar(&returnFunc, "return-func", "", "Which function use for return")
 	storageCommand.Flags().IntVar(&timeout, "timeout", 180, "List timeout (default: 180)")
 
-	inspectorCmd.AddCommand(storageCommand, decodeCommand, dbCommand)
+	inspectorCmd.AddCommand(storageCommand, readCommand, dbCommand)
 
 	return inspectorCmd
-}
-
-func CreateIndexCommand() *cobra.Command {
-
-	indexCommand := &cobra.Command{
-		Use:   "index",
-		Short: "Index storage of moonstream blockstore",
-	}
-
-	// subcommands
-
-	initializeCommand := &cobra.Command{
-		Use:   "initialize",
-		Short: "Initialize the index storage",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("Initializing index storage from go")
-		},
-	}
-
-	readCommand := &cobra.Command{
-		Use:   "read",
-		Short: "Read the index storage",
-		Run: func(cmd *cobra.Command, args []string) {
-			// index.Read()
-		},
-	}
-
-	indexCommand.AddCommand(initializeCommand, readCommand)
-
-	return indexCommand
 }
 
 func CreateStarknetParseCommand() *cobra.Command {
