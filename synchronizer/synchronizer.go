@@ -155,13 +155,14 @@ type CustomerDBConnection struct {
 }
 
 // getCustomers fetch ABI jobs, customer IDs and database URLs
-func (d *Synchronizer) getCustomers(customerDbUriFlag string) (map[string]CustomerDBConnection, error) {
+func (d *Synchronizer) getCustomers(customerDbUriFlag string) (map[string]CustomerDBConnection, []string, error) {
 	customerDBConnections := make(map[string]CustomerDBConnection)
+	var customerIds []string
 
 	// Read ABI jobs from database
 	abiJobs, err := d.ReadAbiJobsFromDatabase(d.blockchain)
 	if err != nil {
-		return customerDBConnections, err
+		return customerDBConnections, customerIds, err
 	}
 
 	// Create a set of customer IDs from ABI jobs to remove duplicates
@@ -169,8 +170,6 @@ func (d *Synchronizer) getCustomers(customerDbUriFlag string) (map[string]Custom
 	for _, job := range abiJobs {
 		customerIdsSet[job.CustomerID] = struct{}{}
 	}
-
-	var customerIds []string
 
 	for id := range customerIdsSet {
 		var connectionString string
@@ -185,15 +184,22 @@ func (d *Synchronizer) getCustomers(customerDbUriFlag string) (map[string]Custom
 			connectionString = customerDbUriFlag
 		}
 
+		pgx, pgxErr := indexer.NewPostgreSQLpgxWithCustomURI(connectionString)
+		if pgxErr != nil {
+			log.Println("Error creating RDS connection for %s customer, err: %v", id, pgxErr)
+			continue
+		}
+
 		customerDBConnections[id] = CustomerDBConnection{
 			Uri: connectionString,
+			Pgx: pgx,
 		}
 		customerIds = append(customerIds, id)
 
 	}
 	log.Println("Customer IDs to sync:", customerIds)
 
-	return customerDBConnections, nil
+	return customerDBConnections, customerIds, nil
 }
 
 func (d *Synchronizer) Start(customerDbUriFlag string) {
@@ -227,25 +233,9 @@ func (d *Synchronizer) Start(customerDbUriFlag string) {
 func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	var isEnd bool
 
-	customerDBConnections, customersErr := d.getCustomers(customerDbUriFlag)
+	customerDBConnections, customerIds, customersErr := d.getCustomers(customerDbUriFlag)
 	if customersErr != nil {
 		return isEnd, customersErr
-	}
-	var customerIds []string
-	for id, customer := range customerDBConnections {
-		pgx, err := indexer.NewPostgreSQLpgxWithCustomURI(customer.Uri)
-		if err != nil {
-			log.Println("Error creating RDS connection: ", err)
-			return isEnd, err
-		}
-
-		updatedCustomer := CustomerDBConnection{
-			Uri: customer.Uri,
-			Pgx: pgx,
-		}
-		customerDBConnections[id] = updatedCustomer
-
-		customerIds = append(customerIds, id)
 	}
 
 	if d.startBlock == 0 {
