@@ -381,8 +381,6 @@ func (d *Synchronizer) syncCycle() error {
 					})
 				}
 
-				fmt.Println("Reading transactions for customer ", update.CustomerID)
-				fmt.Println("Transactions read map: ", transactionsReadMap)
 				encodedTransactions, err := d.StorageInstance.ReadBatch(transactionsReadMap)
 
 				if err != nil {
