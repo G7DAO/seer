@@ -602,7 +602,7 @@ func (p *PostgreSQLpgx) ReadABIJobs(blockchain string) ([]AbiJob, error) {
 		return nil, nil // or return an appropriate error if this is considered an error state
 	}
 
-	log.Println("Parsed abiJobs:", len(abiJobs), " for blockchain:", blockchain)
+	log.Println("Parsed abiJobs:", len(abiJobs), "for blockchain:", blockchain)
 	// If you need to process or log the first ABI job separately, do it here
 
 	return abiJobs, nil
@@ -1001,7 +1001,7 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 		}
 	}
 
-	log.Printf("Records %d events inserted into %s", len(events), tableName)
+	log.Printf("Pushed %d events into %s", len(events), tableName)
 
 	return nil
 }
@@ -1073,6 +1073,6 @@ func (p *PostgreSQLpgx) WriteTransactions(blockchain string, transactions []Tran
 		}
 	}
 
-	log.Printf("Records %d transactions inserted into %s", len(transactions), tableName)
+	log.Printf("Pushed %d transactions into %s", len(transactions), tableName)
 	return nil
 }

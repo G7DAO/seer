@@ -16,6 +16,7 @@ import (
 	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/storage"
+	"golang.org/x/exp/slices"
 )
 
 type Synchronizer struct {
@@ -25,12 +26,13 @@ type Synchronizer struct {
 	blockchain string
 	startBlock uint64
 	endBlock   uint64
+	batchSize  uint64
 	baseDir    string
 	basePath   string
 }
 
 // NewSynchronizer creates a new synchronizer instance with the given blockchain handler.
-func NewSynchronizer(blockchain, baseDir string, startBlock uint64, endBlock uint64, timeout int) (*Synchronizer, error) {
+func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize uint64, timeout int) (*Synchronizer, error) {
 	var synchronizer Synchronizer
 
 	basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", blockchain)
@@ -55,6 +57,7 @@ func NewSynchronizer(blockchain, baseDir string, startBlock uint64, endBlock uin
 		blockchain: blockchain,
 		startBlock: startBlock,
 		endBlock:   endBlock,
+		batchSize:  batchSize,
 		baseDir:    baseDir,
 		basePath:   basePath,
 	}
@@ -82,22 +85,6 @@ func NewSynchronizer(blockchain, baseDir string, startBlock uint64, endBlock uin
 // 		    	  |_____________________________________|
 
 // -------------------------------------------------------------------------------------------------------------------------------
-
-func GetDBConnections(uuids []string) (map[string]string, error) {
-	connections := make(map[string]string) // Initialize the map
-
-	for _, id := range uuids {
-
-		connectionString, err := GetDBConnection(id)
-
-		if err != nil {
-			return nil, err
-		}
-
-		connections[id] = connectionString
-	}
-	return connections, nil
-}
 
 func GetDBConnection(uuid string) (string, error) {
 
@@ -139,8 +126,6 @@ func GetDBConnection(uuid string) (string, error) {
 }
 
 func (d *Synchronizer) ReadAbiJobsFromDatabase(blockchain string) ([]indexer.AbiJob, error) {
-	// Simulate reading ABI jobs from the database for a given blockchain.
-	// This function will need to interact with a real database or an internal API in the future.
 	abiJobs, err := indexer.DBConnection.ReadABIJobs(blockchain)
 	if err != nil {
 		return nil, err
@@ -163,31 +148,21 @@ func ensurePortInConnectionString(connStr string) (string, error) {
 	return parsedURL.String(), nil
 }
 
-func (d *Synchronizer) SyncCustomers() error {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
+type CustomerDBConnection struct {
+	Uri string
 
-	for {
-		select {
-		case <-ticker.C:
-			log.Println("Run synchronization cycle...")
-			err := d.syncCycle()
-			if err != nil {
-				fmt.Println("Error during synchronization cycle:", err)
-			}
-		}
-	}
+	Pgx *indexer.PostgreSQLpgx
 }
 
-func (d *Synchronizer) syncCycle() error {
-	// Initialize a wait group to synchronize goroutines
-	var wg sync.WaitGroup
-	errChan := make(chan error, 1) // Buffered channel for error handling
+// getCustomers fetch ABI jobs, customer IDs and database URLs
+func (d *Synchronizer) getCustomers(customerDbUriFlag string) (map[string]CustomerDBConnection, []string, error) {
+	customerDBConnections := make(map[string]CustomerDBConnection)
+	var customerIds []string
 
 	// Read ABI jobs from database
 	abiJobs, err := d.ReadAbiJobsFromDatabase(d.blockchain)
 	if err != nil {
-		return err
+		return customerDBConnections, customerIds, err
 	}
 
 	// Create a set of customer IDs from ABI jobs to remove duplicates
@@ -196,111 +171,174 @@ func (d *Synchronizer) syncCycle() error {
 		customerIdsSet[job.CustomerID] = struct{}{}
 	}
 
-	// Convert set to slice
-	var customerIds []string
 	for id := range customerIdsSet {
+		var connectionString string
+		var dbConnErr error
+		if customerDbUriFlag == "" {
+			connectionString, dbConnErr = GetDBConnection(id)
+			if dbConnErr != nil {
+				log.Printf("Unable to get connection database URI for %s customer, err: %v", id, dbConnErr)
+				continue
+			}
+		} else {
+			connectionString = customerDbUriFlag
+		}
+
+		pgx, pgxErr := indexer.NewPostgreSQLpgxWithCustomURI(connectionString)
+		if pgxErr != nil {
+			log.Println("Error creating RDS connection for %s customer, err: %v", id, pgxErr)
+			continue
+		}
+
+		customerDBConnections[id] = CustomerDBConnection{
+			Uri: connectionString,
+			Pgx: pgx,
+		}
 		customerIds = append(customerIds, id)
+
 	}
 	log.Println("Customer IDs to sync:", customerIds)
 
-	// Get RDS connections for customer IDs
-	rdsConnections, err := GetDBConnections(customerIds)
+	return customerDBConnections, customerIds, nil
+}
+
+func (d *Synchronizer) Start(customerDbUriFlag string) {
+	var isEnd bool
+
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	isEnd, err := d.SyncCycle(customerDbUriFlag)
 	if err != nil {
-		return err
+		fmt.Println("Error during first synchronization cycle:", err)
+	}
+	if isEnd {
+		return
+	}
+
+	for {
+		select {
+		case <-ticker.C:
+			isEnd, err := d.SyncCycle(customerDbUriFlag)
+			if err != nil {
+				fmt.Println("Error during synchronization cycle:", err)
+			}
+			if isEnd {
+				return
+			}
+		}
+	}
+}
+
+func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
+	var isEnd bool
+
+	customerDBConnections, customerIds, customersErr := d.getCustomers(customerDbUriFlag)
+	if customersErr != nil {
+		return isEnd, customersErr
 	}
 
 	if d.startBlock == 0 {
-
 		var latestCustomerBlocks []uint64
-		for _, id := range customerIds {
-			uri := rdsConnections[id]
-
-			pgx, err := indexer.NewPostgreSQLpgxWithCustomURI(uri)
-			if err != nil {
-				log.Println("Error creating RDS connection: ", err)
-				return err // Error creating RDS connection
-			}
-			pool := pgx.GetPool()
-			fmt.Println("Acquiring pool connection...")
-
+		for id, customer := range customerDBConnections {
+			pool := customer.Pgx.GetPool()
 			conn, err := pool.Acquire(context.Background())
 			if err != nil {
 				log.Println("Error acquiring pool connection: ", err)
-				return err // Error acquiring pool connection
+				return isEnd, err
 			}
 			defer conn.Release()
 
-			latestBlock, err := pgx.ReadLastLabel(d.blockchain)
+			latestLabelBlock, err := customer.Pgx.ReadLastLabel(d.blockchain)
 			if err != nil {
 				log.Println("Error reading latest block: ", err)
-				return err // Error reading the latest block
+				return isEnd, err
 			}
-			latestCustomerBlocks = append(latestCustomerBlocks, latestBlock)
-			log.Printf("Latest block for customer %s: %d\n", id, latestBlock)
+			latestCustomerBlocks = append(latestCustomerBlocks, latestLabelBlock)
+			log.Printf("Latest block for customer %s is: %d\n", id, latestLabelBlock)
 		}
 
 		// Determine the start block as the maximum of the latest blocks of all customers
-		for _, block := range latestCustomerBlocks {
-			if block > d.startBlock {
-				d.startBlock = block - 100
+		maxCustomerLatestBlock := slices.Max(latestCustomerBlocks)
+		if maxCustomerLatestBlock != 0 {
+			d.startBlock = maxCustomerLatestBlock - 100
+		} else {
+			// In case start block is still 0, get the latest block from the blockchain minus shift
+			latestBlockNumber, latestErr := d.Client.GetLatestBlockNumber()
+			if latestErr != nil {
+				return isEnd, fmt.Errorf("failed to get latest block number: %v", latestErr)
 			}
+			d.startBlock = uint64(crawler.SetDefaultStartBlock(0, latestBlockNumber))
 		}
 	}
 
-	// In case start block is still 0, get the latest block from the blockchain
-	if d.startBlock == 0 {
-		log.Println("Start block is 0, RDS not contain any blocks yet. Sync indexers then.")
-		latestBlock, err := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain)
-		if err != nil {
-			return err
-		}
-		d.startBlock = latestBlock - 100
-		d.endBlock = latestBlock
+	// Get the latest block from indexes database
+	indexedLatestBlock, idxLatestErr := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain)
+	if idxLatestErr != nil {
+		return isEnd, idxLatestErr
 	}
 
-	// Get the latest block from indexer
-	latestBlock, err := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain)
-
-	if err != nil {
-		return err
+	if d.endBlock != 0 && indexedLatestBlock > d.endBlock {
+		indexedLatestBlock = d.endBlock
 	}
-	d.endBlock = latestBlock
+
+	if d.startBlock >= indexedLatestBlock {
+		log.Printf("Value in startBlock %d greater or equal indexedLatestBlock %d, waiting next iteration..", d.startBlock, indexedLatestBlock)
+		return isEnd, nil
+	}
 
 	// Main loop Steps:
 	// 1. Read updates from the indexer db
 	// 2. For each update, read the original event data from storage
 	// 3. Decode input data using ABIs
 	// 4. Write updates to the user RDS
+	tempEndBlock := d.startBlock + d.batchSize
+	var isCycleFinished bool
+	for {
+		tempEndBlock = d.startBlock + d.batchSize
+		if d.endBlock != 0 {
+			if tempEndBlock >= d.endBlock {
+				tempEndBlock = d.endBlock
+				isEnd = true
+				isCycleFinished = true
+				log.Printf("End block %d almost reached", tempEndBlock)
+			}
+		}
+		if tempEndBlock >= indexedLatestBlock {
+			tempEndBlock = indexedLatestBlock
+			isCycleFinished = true
+		}
 
-	for i := d.startBlock; i < d.endBlock; i += 100 {
-		endBlock := i + 100
+		if crawler.SEER_CRAWLER_DEBUG {
+			log.Printf("Syncing %d blocks from %d to %d\n", tempEndBlock-d.startBlock, d.startBlock, tempEndBlock)
+		}
 
 		// Read updates from the indexer db
 		// This function will return a list of customer updates 1 update is 1 customer
-		updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, i, endBlock, customerIds)
+		updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, tempEndBlock, customerIds)
 		if err != nil {
-			return fmt.Errorf("error reading updates: %w", err)
+			return isEnd, fmt.Errorf("error reading updates: %w", err)
 		}
 
 		log.Printf("Read %d users updates from the indexer db\n", len(updates))
-		log.Printf("Syncing blocks from %d to %d\n", i, endBlock)
+
+		var wg sync.WaitGroup
+
+		sem := make(chan struct{}, 5)  // Semaphore to control concurrency
+		errChan := make(chan error, 1) // Buffered channel for error handling
 
 		for _, update := range updates {
 			wg.Add(1)
 			go func(update indexer.CustomerUpdates) {
 				defer wg.Done()
 
+				sem <- struct{}{} // Acquire semaphore
+
 				// Get the RDS connection for the customer
-				uri := rdsConnections[update.CustomerID]
+				customer := customerDBConnections[update.CustomerID]
 
 				// Create a connection to the user RDS
-				pgx, err := indexer.NewPostgreSQLpgxWithCustomURI(uri)
-				if err != nil {
-					errChan <- fmt.Errorf("error creating connection to RDS for customer %s: %w", update.CustomerID, err)
-					return
-				}
-
-				pool := pgx.GetPool()
+				pool := customer.Pgx.GetPool()
 				conn, err := pool.Acquire(context.Background())
 				if err != nil {
 					errChan <- fmt.Errorf("error acquiring connection for customer %s: %w", update.CustomerID, err)
@@ -353,9 +391,8 @@ func (d *Synchronizer) syncCycle() error {
 					return
 				}
 
-				// try to write to user RDS
-
-				pgx.WriteEvents(
+				// Write events to user RDS
+				customer.Pgx.WriteEvents(
 					d.blockchain,
 					decodedEvents,
 				)
@@ -402,37 +439,35 @@ func (d *Synchronizer) syncCycle() error {
 					return
 				}
 
-				pgx.WriteTransactions(
+				// Write transactions to user RDS
+				customer.Pgx.WriteTransactions(
 					d.blockchain,
 					decodedTransactions,
 				)
 
-				if err != nil {
-					errChan <- fmt.Errorf("error reading transactions for customer %s: %w", update.CustomerID, err)
-					return
-				}
-
+				<-sem
 			}(update)
 		}
 
 		wg.Wait()
 
-		d.startBlock = latestBlock
-	}
-
-	// Wait for all goroutines to finish
-	go func() {
-		wg.Wait()
+		close(sem)
 		close(errChan) // Close the channel to signal that all goroutines have finished
-	}()
 
-	// Check for errors from goroutines
-	for err := range errChan {
-		fmt.Println("Error during synchronization cycle:", err)
-		if err != nil {
-			return err // Return the first error encountered
+		// Check for errors from goroutines
+		for err := range errChan {
+			fmt.Println("Error during synchronization cycle:", err)
+			if err != nil {
+				return isEnd, err
+			}
+		}
+
+		d.startBlock = tempEndBlock + 1
+
+		if isCycleFinished {
+			break
 		}
 	}
 
-	return nil // Return nil to indicate success if no errors occurred
+	return isEnd, nil
 }

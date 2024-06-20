@@ -41,11 +41,10 @@ func CreateRootCommand() *cobra.Command {
 	blockchainCmd := CreateBlockchainCommand()
 	starknetCmd := CreateStarknetCommand()
 	crawlerCmd := CreateCrawlerCommand()
-	indexCmd := CreateIndexCommand()
 	inspectorCmd := CreateInspectorCommand()
 	evmCmd := CreateEVMCommand()
 	synchronizerCmd := CreateSynchronizerCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, indexCmd, inspectorCmd, synchronizerCmd)
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -284,9 +283,9 @@ func CreateCrawlerCommand() *cobra.Command {
 }
 
 func CreateSynchronizerCommand() *cobra.Command {
-	var startBlock, endBlock uint64
+	var startBlock, endBlock, batchSize uint64
 	var timeout int
-	var chain, baseDir, output, abi_source string
+	var chain, baseDir, customerDbUriFlag string
 
 	synchronizerCmd := &cobra.Command{
 		Use:   "synchronizer",
@@ -321,12 +320,23 @@ func CreateSynchronizerCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			indexer.InitDBConnection()
 
-			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, timeout)
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout)
 			if synchonizerErr != nil {
 				return synchonizerErr
 			}
 
-			newSynchronizer.SyncCustomers()
+			latestBlockNumber, latestErr := newSynchronizer.Client.GetLatestBlockNumber()
+			if latestErr != nil {
+				return fmt.Errorf("Failed to get latest block number: %v", latestErr)
+			}
+
+			if startBlock > latestBlockNumber.Uint64() {
+				log.Fatalf("Start block could not be greater then latest block number at blockchain")
+			}
+
+			crawler.CurrentBlockchainState.SetLatestBlockNumber(latestBlockNumber)
+
+			newSynchronizer.Start(customerDbUriFlag)
 
 			return nil
 		},
@@ -337,8 +347,8 @@ func CreateSynchronizerCommand() *cobra.Command {
 	synchronizerCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end decoding at (default: latest block)")
 	synchronizerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
 	synchronizerCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
-	synchronizerCmd.Flags().StringVar(&output, "output", "output", "The output directory to store the decoded data (default: output)")
-	synchronizerCmd.Flags().StringVar(&abi_source, "abi-source", "abi", "The source of the ABI (default: abi)")
+	synchronizerCmd.Flags().Uint64Var(&batchSize, "batch-size", 100, "The number of blocks to crawl in each batch (default: 100)")
+	synchronizerCmd.Flags().StringVar(&customerDbUriFlag, "customer-db-uri", "", "Set customer database URI for development. This workflow bypass fetching customer IDs and its database URL connection strings from mdb-v3-controller API")
 
 	return synchronizerCmd
 }
@@ -357,9 +367,9 @@ func CreateInspectorCommand() *cobra.Command {
 	var chain, baseDir, delim, returnFunc, batch, target string
 	var timeout, row int
 
-	decodeCommand := &cobra.Command{
-		Use:   "decode",
-		Short: "Decode proto data from storage",
+	readCommand := &cobra.Command{
+		Use:   "read",
+		Short: "Read and decode indexed proto data from storage",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			storageErr := storage.CheckVariablesForStorage()
 			if storageErr != nil {
@@ -414,11 +424,11 @@ func CreateInspectorCommand() *cobra.Command {
 		},
 	}
 
-	decodeCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
-	decodeCommand.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
-	decodeCommand.Flags().StringVar(&batch, "batch", "", "What batch to read")
-	decodeCommand.Flags().StringVar(&target, "target", "", "What to read: blocks, logs or transactions")
-	decodeCommand.Flags().IntVar(&row, "row", 0, "Row to read (default: 0)")
+	readCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	readCommand.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	readCommand.Flags().StringVar(&batch, "batch", "", "What batch to read")
+	readCommand.Flags().StringVar(&target, "target", "", "What to read: blocks, logs or transactions")
+	readCommand.Flags().IntVar(&row, "row", 0, "Row to read (default: 0)")
 
 	var storageVerify bool
 
@@ -599,39 +609,9 @@ func CreateInspectorCommand() *cobra.Command {
 	storageCommand.Flags().StringVar(&returnFunc, "return-func", "", "Which function use for return")
 	storageCommand.Flags().IntVar(&timeout, "timeout", 180, "List timeout (default: 180)")
 
-	inspectorCmd.AddCommand(storageCommand, decodeCommand, dbCommand)
+	inspectorCmd.AddCommand(storageCommand, readCommand, dbCommand)
 
 	return inspectorCmd
-}
-
-func CreateIndexCommand() *cobra.Command {
-
-	indexCommand := &cobra.Command{
-		Use:   "index",
-		Short: "Index storage of moonstream blockstore",
-	}
-
-	// subcommands
-
-	initializeCommand := &cobra.Command{
-		Use:   "initialize",
-		Short: "Initialize the index storage",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("Initializing index storage from go")
-		},
-	}
-
-	readCommand := &cobra.Command{
-		Use:   "read",
-		Short: "Read the index storage",
-		Run: func(cmd *cobra.Command, args []string) {
-			// index.Read()
-		},
-	}
-
-	indexCommand.AddCommand(initializeCommand, readCommand)
-
-	return indexCommand
 }
 
 func CreateStarknetParseCommand() *cobra.Command {
