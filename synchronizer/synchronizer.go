@@ -27,13 +27,12 @@ type Synchronizer struct {
 	startBlock uint64
 	endBlock   uint64
 	batchSize  uint64
-	force      bool
 	baseDir    string
 	basePath   string
 }
 
 // NewSynchronizer creates a new synchronizer instance with the given blockchain handler.
-func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize uint64, force bool, timeout int) (*Synchronizer, error) {
+func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize uint64, timeout int) (*Synchronizer, error) {
 	var synchronizer Synchronizer
 
 	basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", blockchain)
@@ -209,8 +208,18 @@ func (d *Synchronizer) getCustomers(customerDbUriFlag string) (map[string]string
 }
 
 func (d *Synchronizer) Start(customerDbUriFlag string) {
+	var isEnd bool
+
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
+
+	isEnd, err := d.SyncCycle(customerDbUriFlag)
+	if err != nil {
+		fmt.Println("Error during first synchronization cycle:", err)
+	}
+	if isEnd {
+		return
+	}
 
 	for {
 		select {
@@ -236,7 +245,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		return isEnd, customersErr
 	}
 
-	if !d.force {
+	if d.startBlock == 0 {
 		var latestCustomerBlocks []uint64
 		for _, id := range customerIds {
 			uri := rdsConnections[id]
@@ -269,16 +278,14 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		maxCustomerLatestBlock := slices.Max(latestCustomerBlocks)
 		if maxCustomerLatestBlock != 0 {
 			d.startBlock = maxCustomerLatestBlock
+		} else {
+			// In case start block is still 0, get the latest block from the blockchain minus shift
+			latestBlockNumber, latestErr := d.Client.GetLatestBlockNumber()
+			if latestErr != nil {
+				return isEnd, fmt.Errorf("failed to get latest block number: %v", latestErr)
+			}
+			d.startBlock = uint64(crawler.SetDefaultStartBlock(0, latestBlockNumber))
 		}
-	}
-
-	// In case start block is still 0, get the latest block from the blockchain minus shift
-	if d.startBlock == 0 {
-		latestBlockNumber, latestErr := d.Client.GetLatestBlockNumber()
-		if latestErr != nil {
-			return isEnd, fmt.Errorf("failed to get latest block number: %v", latestErr)
-		}
-		d.startBlock = uint64(crawler.SetDefaultStartBlock(0, latestBlockNumber))
 	}
 
 	// Get the latest block from indexes database
@@ -459,11 +466,11 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 
 		wg.Wait()
 
+		d.startBlock = tempEndBlock + 1
+
 		if isCycleFinished {
 			break
 		}
-
-		d.startBlock = tempEndBlock + 1
 	}
 
 	// Wait for all goroutines to finish

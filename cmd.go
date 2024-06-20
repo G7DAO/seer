@@ -286,7 +286,6 @@ func CreateSynchronizerCommand() *cobra.Command {
 	var startBlock, endBlock, batchSize uint64
 	var timeout int
 	var chain, baseDir, customerDbUriFlag string
-	var force bool
 
 	synchronizerCmd := &cobra.Command{
 		Use:   "synchronizer",
@@ -321,7 +320,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			indexer.InitDBConnection()
 
-			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, force, timeout)
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout)
 			if synchonizerErr != nil {
 				return synchonizerErr
 			}
@@ -350,7 +349,6 @@ func CreateSynchronizerCommand() *cobra.Command {
 	synchronizerCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
 	synchronizerCmd.Flags().Uint64Var(&batchSize, "batch-size", 100, "The number of blocks to crawl in each batch (default: 100)")
 	synchronizerCmd.Flags().StringVar(&customerDbUriFlag, "customer-db-uri", "", "Set customer database URI for development. This workflow bypass fetching customer IDs and its database URL connection strings from mdb-v3-controller API")
-	synchronizerCmd.Flags().BoolVar(&force, "force", false, "Set this flag to force the crawler start from the specified block, otherwise it checks database latest indexed block number (default: false)")
 
 	return synchronizerCmd
 }
