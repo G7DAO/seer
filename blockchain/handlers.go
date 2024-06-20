@@ -20,6 +20,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+/// Define the interface for handling general index types such as blocks, transactions, and logs for fast access to blockchain data.
+
 func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 	if chain == "ethereum" {
 		client, err := ethereum.NewClient(url, timeout)
@@ -68,6 +70,8 @@ type BlockchainClient interface {
 	FetchAsProtoBlocks(*big.Int, *big.Int, bool, int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error)
 	DecodeProtoEventsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.EventLabel, error)
 	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error)
+	DecodeProtoTransactionsToData([]string) ([]interface{}, error)
+	DecodeProtoLogsToData([]string) ([]interface{}, error)
 	ChainType() string
 }
 

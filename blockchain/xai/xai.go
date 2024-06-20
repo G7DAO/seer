@@ -683,3 +683,37 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 
 	return labels, nil
 }
+
+func (c *Client) DecodeProtoTransactionsToData(data []string) ([]interface{}, error) {
+
+	transactions, err := c.DecodeProtoTransactions(data)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var decodedData []interface{}
+	for _, d := range transactions {
+		decodedData = append(decodedData, d)
+	}
+
+	return decodedData, nil
+
+}
+
+func (c *Client) DecodeProtoLogsToData(data []string) ([]interface{}, error) {
+
+	events, err := c.DecodeProtoEventLogs(data)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var decodedData []interface{}
+	for _, d := range events {
+		decodedData = append(decodedData, d)
+	}
+
+	return decodedData, nil
+
+}

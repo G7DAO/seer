@@ -545,6 +545,49 @@ func (p *PostgreSQLpgx) GetEdgeDBBlock(ctx context.Context, blockchain, side str
 	return blockIndex, nil
 }
 
+func (p *PostgreSQLpgx) GetListOfFiles(ctx context.Context, blockchain string, object_type string) ([]string, error) {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	func_of_object_type := func() string {
+		if object_type == "transactions" {
+			return TransactionsTableName(blockchain)
+		} else if object_type == "logs" {
+			return LogsTableName(blockchain)
+		} else if object_type == "blocks" {
+			return BlocksTableName(blockchain)
+		} else {
+			return ""
+		}
+	}
+
+	defer conn.Release()
+
+	var files []string
+
+	query := fmt.Sprintf("SELECT path FROM %s group by path order by block_number", func_of_object_type())
+
+	rows, err := conn.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+		var path string
+		err = rows.Scan(&path)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, path)
+	}
+
+	return files, nil
+}
+
 func (p *PostgreSQLpgx) GetLatestDBBlockNumber(blockchain string) (uint64, error) {
 
 	pool := p.GetPool()
@@ -712,7 +755,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, toBlock
         FROM
             abi_jobs
         WHERE
-            chain = $3
+            chain = $3 and ((abi)::jsonb ->> 'type' = 'function' or (abi)::jsonb ->> 'type' = 'event')
     ),
     address_abis AS (
         SELECT

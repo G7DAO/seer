@@ -392,6 +392,7 @@ func CreateInspectorCommand() *cobra.Command {
 
 			targetFile := fmt.Sprintf("%s.proto", target)
 			targetFilePath := filepath.Join(basePath, batch, targetFile)
+			fmt.Printf("Reading file: %s\n", targetFilePath)
 			rawData, readErr := storageInstance.Read(targetFilePath)
 			if readErr != nil {
 				return readErr
@@ -403,13 +404,30 @@ func CreateInspectorCommand() *cobra.Command {
 				return nil
 			}
 
-			_, cleintErr := blockchain.NewClient(chain, crawler.BlockchainURLs[chain], timeout)
+			client, cleintErr := blockchain.NewClient(chain, crawler.BlockchainURLs[chain], timeout)
 			if cleintErr != nil {
 				return cleintErr
 			}
 
-			// TODO(kompotkot): Finish proto parsing
+			if target == "transactions" {
+				transactions, _ := client.DecodeProtoTransactionsToData(rawData)
+				if len(transactions) == 0 {
+					log.Printf("No transactions found in %s", targetFilePath)
+					return nil
+				}
+				fmt.Println("Decoded data:")
+				fmt.Println(transactions)
 
+			} else if target == "logs" {
+				logs, _ := client.DecodeProtoLogsToData(rawData)
+				if len(logs) == 0 {
+					log.Printf("No logs found in %s", targetFilePath)
+				}
+				fmt.Println("Decoded data:")
+				// transform logs to json
+				logsJSON, _ := json.Marshal(logs)
+				fmt.Println(string(logsJSON))
+			}
 			return nil
 		},
 	}
@@ -498,8 +516,6 @@ func CreateInspectorCommand() *cobra.Command {
 					fmt.Printf("- %s\n", item)
 				}
 			}
-
-			// TODO(kompotkot): Write inspect of missing blocks in database
 
 			return nil
 		},
