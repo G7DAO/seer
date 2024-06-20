@@ -259,7 +259,10 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		}
 
 		// Determine the start block as the maximum of the latest blocks of all customers
-		maxCustomerLatestBlock := slices.Max(latestCustomerBlocks)
+		var maxCustomerLatestBlock uint64
+		if len(latestCustomerBlocks) != 0 {
+			maxCustomerLatestBlock = slices.Max(latestCustomerBlocks)
+		}
 		if maxCustomerLatestBlock != 0 {
 			d.startBlock = maxCustomerLatestBlock - 100
 		} else {
