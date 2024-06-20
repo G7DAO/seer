@@ -420,6 +420,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 						RowIds: rowIds,
 					})
 				}
+
 				encodedTransactions, err := d.StorageInstance.ReadBatch(transactionsReadMap)
 
 				if err != nil {
