@@ -237,8 +237,6 @@ func (d *Synchronizer) Start(customerDbUriFlag string) {
 
 func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	var isEnd bool
-	var wg sync.WaitGroup
-	errChan := make(chan error, 1) // Buffered channel for error handling
 
 	rdsConnections, customerIds, customersErr := d.getCustomers(customerDbUriFlag)
 	if customersErr != nil {
@@ -277,7 +275,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		// Determine the start block as the maximum of the latest blocks of all customers
 		maxCustomerLatestBlock := slices.Max(latestCustomerBlocks)
 		if maxCustomerLatestBlock != 0 {
-			d.startBlock = maxCustomerLatestBlock
+			d.startBlock = maxCustomerLatestBlock - 100
 		} else {
 			// In case start block is still 0, get the latest block from the blockchain minus shift
 			latestBlockNumber, latestErr := d.Client.GetLatestBlockNumber()
@@ -338,10 +336,17 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 
 		log.Printf("Read %d users updates from the indexer db\n", len(updates))
 
+		var wg sync.WaitGroup
+
+		sem := make(chan struct{}, 5)  // Semaphore to control concurrency
+		errChan := make(chan error, 1) // Buffered channel for error handling
+
 		for _, update := range updates {
 			wg.Add(1)
 			go func(update indexer.CustomerUpdates) {
 				defer wg.Done()
+
+				sem <- struct{}{} // Acquire semaphore
 
 				// Get the RDS connection for the customer
 				uri := rdsConnections[update.CustomerID]
@@ -461,29 +466,27 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 					decodedTransactions,
 				)
 
+				<-sem
 			}(update)
 		}
 
 		wg.Wait()
 
+		close(sem)
+		close(errChan) // Close the channel to signal that all goroutines have finished
+
+		// Check for errors from goroutines
+		for err := range errChan {
+			fmt.Println("Error during synchronization cycle:", err)
+			if err != nil {
+				return isEnd, err
+			}
+		}
+
 		d.startBlock = tempEndBlock + 1
 
 		if isCycleFinished {
 			break
-		}
-	}
-
-	// Wait for all goroutines to finish
-	go func() {
-		wg.Wait()
-		close(errChan) // Close the channel to signal that all goroutines have finished
-	}()
-
-	// Check for errors from goroutines
-	for err := range errChan {
-		fmt.Println("Error during synchronization cycle:", err)
-		if err != nil {
-			return isEnd, err
 		}
 	}
 
