@@ -627,6 +627,7 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 	var labels []indexer.TransactionLabel
 
 	for _, transaction := range decodedTransactions {
+
 		selector := transaction.Input[:10]
 
 		contractAbi, err := abi.JSON(strings.NewReader(abiMap[transaction.ToAddress][selector]["abi"]))
