@@ -1,7 +1,7 @@
 package crawler
 
 import (
-	"encoding/base64"
+	"bytes"
 	"fmt"
 	"log"
 	"math/big"
@@ -12,7 +12,7 @@ import (
 	seer_blockchain "github.com/moonstream-to/seer/blockchain"
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/storage"
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/encoding/protodelim"
 )
 
 var CurrentBlockchainState BlockchainState
@@ -210,38 +210,16 @@ func (c *Crawler) Start(threads int) {
 			if err != nil {
 				return fmt.Errorf("failed to crawl blocks: %w", err)
 			}
+			var blocksBuffer bytes.Buffer
 
-			var encodedBytesBlocks []string
 			for _, block := range blocks {
-				bytesBlocks, err := proto.Marshal(block)
-				if err != nil {
-					return fmt.Errorf("failed to marshal proto message for blocks: %w", err)
-				}
-				// Encode the bytes to base64 for newline delimited storage
-				base64Block := base64.StdEncoding.EncodeToString(bytesBlocks)
-				encodedBytesBlocks = append(encodedBytesBlocks, base64Block)
+				protodelim.MarshalTo(&blocksBuffer, block)
 			}
 
-			if err := c.StorageInstance.Save(batchDir, "blocks.proto", encodedBytesBlocks); err != nil {
+			if err := c.StorageInstance.Save(batchDir, "blocks.proto", blocksBuffer); err != nil {
 				return fmt.Errorf("failed to save blocks.proto: %w", err)
 			}
 			log.Printf("Saved blocks.proto to %s", batchDir)
-
-			var encodedBytesTransactions []string
-			for _, transaction := range transactions {
-				bytesTransaction, err := proto.Marshal(transaction)
-				if err != nil {
-					return fmt.Errorf("failed to marshal proto message for transactions: %w", err)
-				}
-				// Encode the bytes to base64 for newline delimited storage
-				base64Transaction := base64.StdEncoding.EncodeToString(bytesTransaction)
-				encodedBytesTransactions = append(encodedBytesTransactions, base64Transaction)
-			}
-
-			if err := c.StorageInstance.Save(batchDir, "transactions.proto", encodedBytesTransactions); err != nil {
-				return fmt.Errorf("failed to save transactions.proto: %w", err)
-			}
-			log.Printf("Saved transactions.proto to %s", batchDir)
 
 			updateBlockIndexFilepaths(blockIndex, c.basePath, batchDir)
 			interfaceBlockIndex := make([]interface{}, len(blockIndex))
@@ -252,6 +230,17 @@ func (c *Crawler) Start(threads int) {
 			if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceBlockIndex, "block"); err != nil {
 				return fmt.Errorf("failed to write block index to database: %w", err)
 			}
+
+			var transactionsBuffer bytes.Buffer
+
+			for _, transaction := range transactions {
+				protodelim.MarshalTo(&transactionsBuffer, transaction)
+			}
+
+			if err := c.StorageInstance.Save(batchDir, "transactions.proto", transactionsBuffer); err != nil {
+				return fmt.Errorf("failed to save transactions.proto: %w", err)
+			}
+			log.Printf("Saved transactions.proto to %s", batchDir)
 
 			updateTransactionIndexFilepaths(transactionIndex, c.basePath, batchDir)
 			interfaceTransactionIndex := make([]interface{}, len(transactionIndex))
@@ -268,6 +257,17 @@ func (c *Crawler) Start(threads int) {
 				return fmt.Errorf("failed to crawl events: %w", err)
 			}
 
+			var eventsBuffer bytes.Buffer
+
+			for _, event := range events {
+				protodelim.MarshalTo(&eventsBuffer, event)
+			}
+
+			if err := c.StorageInstance.Save(batchDir, "logs.proto", eventsBuffer); err != nil {
+				return fmt.Errorf("failed to save logs.proto: %w", err)
+			}
+			log.Printf("Saved logs.proto to %s", batchDir)
+
 			UpdateEventIndexFilepaths(eventsIndex, c.basePath, batchDir)
 			interfaceEventsIndex := make([]interface{}, len(eventsIndex))
 			for i, v := range eventsIndex {
@@ -277,22 +277,6 @@ func (c *Crawler) Start(threads int) {
 			if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceEventsIndex, "log"); err != nil {
 				return fmt.Errorf("failed to write event index to database: %w", err)
 			}
-
-			var encodedBytesEvents []string
-			for _, event := range events {
-				bytesEvent, err := proto.Marshal(event)
-				if err != nil {
-					return fmt.Errorf("failed to marshal proto message: %w", err)
-				}
-				// Encode the bytes to base64 for newline delimited storage
-				base64Event := base64.StdEncoding.EncodeToString(bytesEvent)
-				encodedBytesEvents = append(encodedBytesEvents, base64Event)
-			}
-
-			if err := c.StorageInstance.Save(batchDir, "logs.proto", encodedBytesEvents); err != nil {
-				return fmt.Errorf("failed to save logs.proto: %w", err)
-			}
-			log.Printf("Saved logs.proto to %s", batchDir)
 
 			return nil
 		})

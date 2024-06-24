@@ -369,36 +369,51 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 						RowIds: rowIds,
 					})
 				}
-				// Read all rowIds for each path
-				encodedEvents, err := d.StorageInstance.ReadBatch(eventsReadMap)
 
-				if err != nil {
-					fmt.Println("Error reading events: ", err)
-					errChan <- fmt.Errorf("error reading events for customer %s: %w", update.CustomerID, err)
-					return
-				}
+				// Read events from storage
+				// for _, item := range eventsReadMap {
+				// 	fmt.Println("Key: ", item.Key)
 
-				// Union all keys values into a single slice
-				var all_events []string
+				// 	encodedEvents, err := d.StorageInstance.Read(item.Key)
 
-				for _, data := range encodedEvents {
-					all_events = append(all_events, data...)
-				}
+				// 	if err != nil {
+				// 		errChan <- fmt.Errorf("error reading events for customer %s: %w", update.CustomerID, err)
+				// 		return
+				// 	}
 
-				// Decode the events using ABIs
-				decodedEvents, err := d.Client.DecodeProtoEventsToLabels(all_events, update.BlocksCache, update.Abis)
+				// 	var protoMessages []proto.Message
 
-				if err != nil {
-					fmt.Println("Error decoding events: ", err)
-					errChan <- fmt.Errorf("error decoding events for customer %s: %w", update.CustomerID, err)
-					return
-				}
+				// 	err = protodelim.UnmarshalFrom(encodedEvents, &protoMessages)
 
-				// Write events to user RDS
-				customer.Pgx.WriteEvents(
-					d.blockchain,
-					decodedEvents,
-				)
+				// }
+
+				// if err != nil {
+				// 	fmt.Println("Error reading events: ", err)
+				// 	errChan <- fmt.Errorf("error reading events for customer %s: %w", update.CustomerID, err)
+				// 	return
+				// }
+
+				// // Union all keys values into a single slice
+				// var all_events []string
+
+				// for _, data := range encodedEvents {
+				// 	all_events = append(all_events, data...)
+				// }
+
+				// // Decode the events using ABIs
+				// decodedEvents, err := d.Client.DecodeProtoEventsToLabels(all_events, update.BlocksCache, update.Abis)
+
+				// if err != nil {
+				// 	fmt.Println("Error decoding events: ", err)
+				// 	errChan <- fmt.Errorf("error decoding events for customer %s: %w", update.CustomerID, err)
+				// 	return
+				// }
+
+				// // Write events to user RDS
+				// customer.Pgx.WriteEvents(
+				// 	d.blockchain,
+				// 	decodedEvents,
+				// )
 
 				// Transactions
 				groupByPathTransactions := make(map[string][]uint64)
