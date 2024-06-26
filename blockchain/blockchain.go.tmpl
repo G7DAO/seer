@@ -573,7 +573,8 @@ func (c *Client) DecodeProtoEventsToLabels(events []string, blocksCache map[uint
 		if len(event.Topics) > 0 {
 			topicSelector = event.Topics[0]
 		} else {
-			continue
+			// 0x0 is the default topic selector
+			topicSelector = "0x0"
 		}
 
 		// Get the ABI string
