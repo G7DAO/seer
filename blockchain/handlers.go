@@ -1,6 +1,7 @@
 package blockchain
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/moonstream-to/seer/blockchain/arbitrum_one"
 	"github.com/moonstream-to/seer/blockchain/arbitrum_sepolia"
+	seer_common "github.com/moonstream-to/seer/blockchain/common"
 	"github.com/moonstream-to/seer/blockchain/ethereum"
 	"github.com/moonstream-to/seer/blockchain/game7_orbit_arbitrum_sepolia"
 	"github.com/moonstream-to/seer/blockchain/mantle"
@@ -66,7 +68,8 @@ type BlockchainClient interface {
 	GetLatestBlockNumber() (*big.Int, error)
 	FetchAsProtoEvents(*big.Int, *big.Int, map[uint64]indexer.BlockCache, bool) ([]proto.Message, []indexer.LogIndex, error)
 	FetchAsProtoBlocks(*big.Int, *big.Int, bool, int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error)
-	DecodeProtoEventsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.EventLabel, error)
+	DecodeProtoEvents(*bytes.Buffer) ([]*seer_common.EventJson, error)
+	DecodeProtoEventsToLabels(*bytes.Buffer, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.EventLabel, error)
 	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error)
 	ChainType() string
 }

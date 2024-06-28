@@ -16,7 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/moonstream-to/seer/blockchain"
+	seer_blockchain "github.com/moonstream-to/seer/blockchain"
 	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/evm"
 	"github.com/moonstream-to/seer/indexer"
@@ -365,7 +365,7 @@ func CreateInspectorCommand() *cobra.Command {
 	}
 
 	var chain, baseDir, delim, returnFunc, batch, target string
-	var timeout, row int
+	var timeout int
 
 	readCommand := &cobra.Command{
 		Use:   "read",
@@ -407,18 +407,29 @@ func CreateInspectorCommand() *cobra.Command {
 				return readErr
 			}
 
-			rawDataRowsNum := len(rawData)
-			if rawDataRowsNum-1 < row {
-				log.Printf("File %s contains %d rows, specified row %d not exists", targetFilePath, rawDataRowsNum, row)
-				return nil
-			}
-
-			_, cleintErr := blockchain.NewClient(chain, crawler.BlockchainURLs[chain], timeout)
+			client, cleintErr := seer_blockchain.NewClient(chain, crawler.BlockchainURLs[chain], timeout)
 			if cleintErr != nil {
 				return cleintErr
 			}
 
-			// TODO(kompotkot): Finish proto parsing
+			var output any
+			var decErr error
+			switch target {
+			case "logs":
+				output, decErr = client.DecodeProtoEvents(&rawData)
+				if decErr != nil {
+					return decErr
+				}
+			default:
+				return fmt.Errorf("unsupported target %s", target)
+			}
+
+			jsonOutput, marErr := json.Marshal(output)
+			if marErr != nil {
+				return marErr
+			}
+
+			fmt.Println(string(jsonOutput))
 
 			return nil
 		},
@@ -428,7 +439,6 @@ func CreateInspectorCommand() *cobra.Command {
 	readCommand.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
 	readCommand.Flags().StringVar(&batch, "batch", "", "What batch to read")
 	readCommand.Flags().StringVar(&target, "target", "", "What to read: blocks, logs or transactions")
-	readCommand.Flags().IntVar(&row, "row", 0, "Row to read (default: 0)")
 
 	var storageVerify bool
 

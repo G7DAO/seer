@@ -1,11 +1,13 @@
 package polygon
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/big"
 	"strings"
@@ -17,9 +19,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
+	"google.golang.org/protobuf/encoding/protodelim"
+	"google.golang.org/protobuf/proto"
+
 	seer_common "github.com/moonstream-to/seer/blockchain/common"
 	"github.com/moonstream-to/seer/indexer"
-	"google.golang.org/protobuf/proto"
 )
 
 func NewClient(url string, timeout int) (*Client, error) {
@@ -489,8 +493,20 @@ func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *PolygonTransact
 	}
 }
 
-func ToProtoSingleEventLog(obj *seer_common.EventJson) *PolygonEventLog {
+func ToEvenFromLogProto(obj *PolygonEventLog) *seer_common.EventJson {
+	return &seer_common.EventJson{
+		Address:         obj.Address,
+		Topics:          obj.Topics,
+		Data:            obj.Data,
+		BlockNumber:     fmt.Sprintf("%d", obj.BlockNumber),
+		TransactionHash: obj.TransactionHash,
+		LogIndex:        fmt.Sprintf("%d", obj.LogIndex),
+		BlockHash:       obj.BlockHash,
+		Removed:         obj.Removed,
+	}
+}
 
+func ToProtoSingleEventLog(obj *seer_common.EventJson) *PolygonEventLog {
 	return &PolygonEventLog{
 		Address:         obj.Address,
 		Topics:          obj.Topics,
@@ -551,24 +567,50 @@ func (c *Client) DecodeProtoBlocks(data []string) ([]*PolygonBlock, error) {
 	return blocks, nil
 }
 
-func (c *Client) DecodeProtoEventsToLabels(events []string, blocksCache map[uint64]uint64, abiMap map[string]map[string]map[string]string) ([]indexer.EventLabel, error) {
+func (c *Client) DecodeProtoEvents(rawData *bytes.Buffer) ([]*seer_common.EventJson, error) {
+	var events []*seer_common.EventJson
 
-	decodedEvents, err := c.DecodeProtoEventLogs(events)
+	for {
+		protoEvent := &PolygonEventLog{}
+		if unmErr := protodelim.UnmarshalFrom(rawData, protoEvent); unmErr != nil {
+			if unmErr == io.EOF {
+				break // End of the buffer
+			}
+			return nil, unmErr
+		}
 
-	if err != nil {
-		return nil, err
+		event := ToEvenFromLogProto(protoEvent)
+		events = append(events, event)
+	}
+
+	return events, nil
+}
+
+func (c *Client) DecodeProtoEventsToLabels(rawData *bytes.Buffer, blocksCache map[uint64]uint64, abiMap map[string]map[string]map[string]string) ([]indexer.EventLabel, error) {
+	var protoEvents []*PolygonEventLog
+	for {
+		protoEvent := &PolygonEventLog{}
+		if unmErr := protodelim.UnmarshalFrom(rawData, protoEvent); unmErr != nil {
+			if unmErr == io.EOF {
+				break // End of the buffer
+			}
+			return nil, unmErr
+		}
+
+		protoEvents = append(protoEvents, protoEvent)
 	}
 
 	var labels []indexer.EventLabel
 
-	for _, event := range decodedEvents {
+	for _, event := range protoEvents {
 
 		var topicSelector string
 
 		if len(event.Topics) > 0 {
 			topicSelector = event.Topics[0]
 		} else {
-			continue
+			// 0x0 is the default topic selector
+			topicSelector = "0x0"
 		}
 
 		// Get the ABI string
