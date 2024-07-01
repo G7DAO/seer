@@ -56,7 +56,7 @@ message XaiSepoliaBlock {
   string total_difficulty = 17;  // The total difficulty of the chain until this block
   string transactions_root = 18;  // The root hash of the transactions trie
   uint64 indexed_at = 19; // When the block was indexed by crawler
-  repeated XaiSepoliaTransaction transactions = 20;  // The transactions included in this block TODO: Remove this field 
+  repeated XaiSepoliaTransaction transactions = 20;  // The transactions included in this block
   string mix_hash = 21; // The timestamp of this block
   string send_count = 22;  // The number of sends in this block
   string send_root = 23;  // The root hash of the sends trie
@@ -74,7 +74,6 @@ message XaiSepoliaEventLog {
   uint64 log_index = 8; // The index of the log in the block
   uint64 transaction_index = 9; // The index of the transaction in the block
 }
-
 
 message XaiSepoliaBlockBatch {
   repeated XaiSepoliaBlock blocks = 1;

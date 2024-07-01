@@ -217,8 +217,8 @@ func CreateStarknetCommand() *cobra.Command {
 }
 
 func CreateCrawlerCommand() *cobra.Command {
-	var startBlock, endBlock, batchSize, confirmations int64
-	var timeout, threads int
+	var startBlock, endBlock, confirmations int64
+	var timeout, threads, protoSizeLimit, protoTimeLimit int
 	var chain, baseDir string
 	var force bool
 
@@ -247,7 +247,7 @@ func CreateCrawlerCommand() *cobra.Command {
 
 			indexer.InitDBConnection()
 
-			newCrawler, crawlerError := crawler.NewCrawler(chain, startBlock, endBlock, batchSize, confirmations, timeout, baseDir, force)
+			newCrawler, crawlerError := crawler.NewCrawler(chain, startBlock, endBlock, confirmations, timeout, baseDir, force, protoSizeLimit, protoTimeLimit)
 			if crawlerError != nil {
 				return crawlerError
 			}
@@ -274,10 +274,11 @@ func CreateCrawlerCommand() *cobra.Command {
 	crawlerCmd.Flags().Int64Var(&endBlock, "end-block", 0, "The block number to end crawling at (default: endless)")
 	crawlerCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
 	crawlerCmd.Flags().IntVar(&threads, "threads", 1, "Number of go-routines for concurrent crawling (default: 1)")
-	crawlerCmd.Flags().Int64Var(&batchSize, "batch-size", 10, "The number of blocks to crawl in each batch (default: 10)")
 	crawlerCmd.Flags().Int64Var(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
 	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
 	crawlerCmd.Flags().BoolVar(&force, "force", false, "Set this flag to force the crawler start from the specified block, otherwise it checks database latest indexed block number (default: false)")
+	crawlerCmd.Flags().IntVar(&protoSizeLimit, "proto-size-limit", 100, "Proto file size limit in Mb (default: 100Mb)")
+	crawlerCmd.Flags().IntVar(&protoTimeLimit, "proto-time-limit", 5, "Proto time limit in minutes (default: 5min)")
 
 	return crawlerCmd
 }

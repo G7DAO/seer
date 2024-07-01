@@ -274,39 +274,36 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 	return blocks, nil
 }
 
-// ParseBlocksAndTransactions parses blocks and their transactions into custom data structures.
+// ParseBlocksWithTransactions parses blocks and their transactions into custom data structure.
 // This method showcases how to handle and transform detailed block and transaction data.
-func (c *Client) ParseBlocksAndTransactions(from, to *big.Int, debug bool, maxRequests int) ([]*XaiBlock, []*XaiTransaction, error) {
-	var blocksJson []*seer_common.BlockJson
+func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxRequests int) ([]*XaiBlock, error) {
+	var blocksWithTxsJson []*seer_common.BlockJson
 	var fetchErr error
 	if maxRequests > 1 {
-		blocksJson, fetchErr = c.FetchBlocksInRangeAsync(from, to, debug, maxRequests)
+		blocksWithTxsJson, fetchErr = c.FetchBlocksInRangeAsync(from, to, debug, maxRequests)
 	} else {
-		blocksJson, fetchErr = c.FetchBlocksInRange(from, to, debug)
+		blocksWithTxsJson, fetchErr = c.FetchBlocksInRange(from, to, debug)
 	}
 	if fetchErr != nil {
-		return nil, nil, fetchErr
+		return nil, fetchErr
 	}
 
 	var parsedBlocks []*XaiBlock
-	var parsedTransactions []*XaiTransaction
-	for _, blockJson := range blocksJson {
+	for _, blockAndTxsJson := range blocksWithTxsJson {
 		// Convert BlockJson to Block and Transactions as required.
-		parsedBlock := ToProtoSingleBlock(blockJson)
+		parsedBlock := ToProtoSingleBlock(blockAndTxsJson)
 
-		// Example: Parsing transactions within the block
-		for _, txJson := range blockJson.Transactions {
-
-			txJson.BlockTimestamp = blockJson.Timestamp
+		for _, txJson := range blockAndTxsJson.Transactions {
+			txJson.BlockTimestamp = blockAndTxsJson.Timestamp
 
 			parsedTransaction := ToProtoSingleTransaction(&txJson)
-			parsedTransactions = append(parsedTransactions, parsedTransaction)
+			parsedBlock.Transactions = append(parsedBlock.Transactions, parsedTransaction)
 		}
 
 		parsedBlocks = append(parsedBlocks, parsedBlock)
 	}
 
-	return parsedBlocks, parsedTransactions, nil
+	return parsedBlocks, nil
 }
 
 func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*XaiEventLog, error) {
@@ -329,61 +326,107 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 	return parsedEvents, nil
 }
 
-func (c *Client) FetchAsProtoBlocks(from, to *big.Int, debug bool, maxRequests int) ([]proto.Message, []proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error) {
-	parsedBlocks, parsedTransactions, err := c.ParseBlocksAndTransactions(from, to, debug, maxRequests)
+func (c *Client) FetchAsProtoBlocks(from, to *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error) {
+	parsedBlocks, err := c.ParseBlocksWithTransactions(from, to, debug, maxRequests)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
+
+	var blocksProto []proto.Message
+
+	var blocksIndex []indexer.BlockIndex
+	var transactionsIndex []indexer.TransactionIndex
 
 	blocksCache := make(map[uint64]indexer.BlockCache)
 
-	var blocksProto []proto.Message
-	var blockIndex []indexer.BlockIndex
-	for index, block := range parsedBlocks {
-		blocksProto = append(blocksProto, block) // Assuming block is already a proto.Message
+	for bI, block := range parsedBlocks {
+		blocksProto = append(blocksProto, block) // Assuming block is a proto.Message
+
+		for txI, transaction := range block.Transactions {
+			selector := "0x"
+
+			if len(transaction.Input) > 10 {
+				selector = transaction.Input[:10]
+			}
+
+			transactionsIndex = append(transactionsIndex, indexer.TransactionIndex{
+				BlockNumber:      transaction.BlockNumber,
+				BlockHash:        transaction.BlockHash,
+				BlockTimestamp:   transaction.BlockTimestamp,
+				FromAddress:      transaction.FromAddress,
+				ToAddress:        transaction.ToAddress,
+				RowID:            uint64(txI),
+				Selector:         selector, // First 10 characters of the input data 0x + 4 bytes of the function signature
+				TransactionHash:  transaction.Hash,
+				TransactionIndex: transaction.TransactionIndex,
+				Type:             transaction.TransactionType,
+				Path:             "",
+			})
+		}
+
+		blocksIndex = append(blocksIndex, indexer.NewBlockIndex("xai",
+			block.BlockNumber,
+			block.Hash,
+			block.Timestamp,
+			block.ParentHash,
+			uint64(bI),
+			"",
+			block.L1BlockNumber,
+		))
+
 		blocksCache[block.BlockNumber] = indexer.BlockCache{
 			BlockNumber:    block.BlockNumber,
 			BlockHash:      block.Hash,
 			BlockTimestamp: block.Timestamp,
 		} // Assuming block.BlockNumber is int64 and block.Hash is string
-		blockIndex = append(blockIndex, indexer.NewBlockIndex("xai",
-			block.BlockNumber,
-			block.Hash,
-			block.Timestamp,
-			block.ParentHash,
-			uint64(index),
-			"",
-			block.L1BlockNumber,
-		))
 	}
 
-	var transactionsProto []proto.Message
-	var transactionIndex []indexer.TransactionIndex
-	for index, transaction := range parsedTransactions {
-		transactionsProto = append(transactionsProto, transaction) // Assuming transaction is also a proto.Message
+	return blocksProto, blocksIndex, transactionsIndex, blocksCache, nil
+}
 
-		selector := "0x"
+func (c *Client) FetchAsProtoEventsAndExtendBlock(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]proto.Message, []indexer.LogIndex, error) {
+	parsedEvents, err := c.ParseEvents(from, to, blocksCache, debug)
+	if err != nil {
+		return nil, nil, err
+	}
 
-		if len(transaction.Input) > 10 {
-			selector = transaction.Input[:10]
+	var eventsProto []proto.Message
+	var eventsIndex []indexer.LogIndex
+	for eI, event := range parsedEvents {
+		eventsProto = append(eventsProto, event) // Assuming event is a proto.Message
+
+		var topic0, topic1, topic2 *string
+
+		if len(event.Topics) == 0 {
+			fmt.Println("No topics found for event: ", event)
+		} else {
+			topic0 = &event.Topics[0] // First topic
 		}
 
-		transactionIndex = append(transactionIndex, indexer.TransactionIndex{
-			BlockNumber:      transaction.BlockNumber,
-			BlockHash:        transaction.BlockHash,
-			BlockTimestamp:   transaction.BlockTimestamp,
-			FromAddress:      transaction.FromAddress,
-			ToAddress:        transaction.ToAddress,
-			RowID:            uint64(index),
-			Selector:         selector, // First 10 characters of the input data 0x + 4 bytes of the function signature
-			TransactionHash:  transaction.Hash,
-			TransactionIndex: transaction.TransactionIndex,
-			Type:             transaction.TransactionType,
-			Path:             "",
+		// Assign topics based on availability
+		if len(event.Topics) > 1 {
+			topic1 = &event.Topics[1] // Second topic, if present
+		}
+		if len(event.Topics) > 2 {
+			topic2 = &event.Topics[2] // Third topic, if present
+		}
+
+		eventsIndex = append(eventsIndex, indexer.LogIndex{
+			Address:         event.Address,
+			BlockNumber:     event.BlockNumber,
+			BlockHash:       event.BlockHash,
+			BlockTimestamp:  blocksCache[event.BlockNumber].BlockTimestamp,
+			TransactionHash: event.TransactionHash,
+			Selector:        topic0, // First topic
+			Topic1:          topic1,
+			Topic2:          topic2,
+			RowID:           uint64(eI),
+			LogIndex:        event.LogIndex,
+			Path:            "",
 		})
 	}
 
-	return blocksProto, transactionsProto, blockIndex, transactionIndex, blocksCache, nil
+	return eventsProto, eventsIndex, nil
 }
 
 func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]indexer.BlockCache, debug bool) ([]proto.Message, []indexer.LogIndex, error) {
@@ -432,6 +475,7 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 	return eventsProto, eventsIndex, nil
 
 }
+
 func ToProtoSingleBlock(obj *seer_common.BlockJson) *XaiBlock {
 	return &XaiBlock{
 		BlockNumber:      fromHex(obj.BlockNumber).Uint64(),
