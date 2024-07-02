@@ -68,7 +68,8 @@ type BlockchainClient interface {
 	FetchAsProtoEvents(*big.Int, *big.Int, map[uint64]indexer.BlockCache, bool) ([]proto.Message, []indexer.LogIndex, error)
 	FetchAsProtoBlocks(*big.Int, *big.Int, bool, int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error)
 	FetchAsProtoEventsAndExtendBlock(*big.Int, *big.Int, []proto.Message, map[uint64]indexer.BlockCache, bool) ([]proto.Message, []indexer.LogIndex, error)
-	DecodeProtoEntireBlock(*bytes.Buffer) ([]*seer_common.BlockJson, error)
+	DecodeProtoEntireBlockToJson(*bytes.Buffer) ([]*seer_common.BlockJson, error)
+	DecodeProtoEntireBlockToLabels(*bytes.Buffer, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.EventLabel, []indexer.TransactionLabel, error)
 	DecodeProtoEventsToLabels(*bytes.Buffer, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.EventLabel, error)
 	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error)
 	ChainType() string

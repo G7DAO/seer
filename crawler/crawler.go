@@ -105,19 +105,19 @@ func retryOperation(attempts int, sleep time.Duration, fn func() error) error {
 
 func updateBlockIndexFilepaths(indices []indexer.BlockIndex, basePath, batchDir string) {
 	for i := range indices {
-		indices[i].Path = filepath.Join(basePath, batchDir, "blocks.proto")
+		indices[i].Path = filepath.Join(basePath, batchDir, "data.proto")
 	}
 }
 
 func updateTransactionIndexFilepaths(indices []indexer.TransactionIndex, basePath, batchDir string) {
 	for i := range indices {
-		indices[i].Path = filepath.Join(basePath, batchDir, "transactions.proto")
+		indices[i].Path = filepath.Join(basePath, batchDir, "data.proto")
 	}
 }
 
 func UpdateEventIndexFilepaths(indices []indexer.LogIndex, basePath, batchDir string) {
 	for i := range indices {
-		indices[i].Path = filepath.Join(basePath, batchDir, "logs.proto")
+		indices[i].Path = filepath.Join(basePath, batchDir, "data.proto")
 	}
 }
 

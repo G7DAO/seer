@@ -406,7 +406,7 @@ func CreateInspectorCommand() *cobra.Command {
 				return cleintErr
 			}
 
-			output, decErr := client.DecodeProtoEntireBlock(&rawData)
+			output, decErr := client.DecodeProtoEntireBlockToJson(&rawData)
 			if decErr != nil {
 				return decErr
 			}

@@ -186,7 +186,7 @@ func (d *Synchronizer) getCustomers(customerDbUriFlag string) (map[string]Custom
 
 		pgx, pgxErr := indexer.NewPostgreSQLpgxWithCustomURI(connectionString)
 		if pgxErr != nil {
-			log.Println("Error creating RDS connection for %s customer, err: %v", id, pgxErr)
+			log.Printf("Error creating RDS connection for %s customer, err: %v", id, pgxErr)
 			continue
 		}
 
@@ -353,7 +353,6 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 				groupByPathEvents := make(map[string][]uint64)
 
 				for _, event := range update.Data.Events {
-
 					if _, ok := groupByPathEvents[event.Path]; !ok {
 						groupByPathEvents[event.Path] = []uint64{}
 					}
@@ -373,40 +372,44 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 				var decodedEvents []indexer.EventLabel
 
 				for _, item := range eventsReadMap {
-
 					if crawler.SEER_CRAWLER_DEBUG {
 						log.Printf("Key: %s", item.Key)
 					}
 
 					// Read events from storage
-					rawEvents, readErr := d.StorageInstance.Read(item.Key)
+					rawData, readErr := d.StorageInstance.Read(item.Key)
 					if readErr != nil {
 						errChan <- fmt.Errorf("error reading events for customer %s: %w", update.CustomerID, readErr)
 						return
 					}
 
 					// Decode the events using ABIs
-					decodedEventsPack, decErr := d.Client.DecodeProtoEventsToLabels(&rawEvents, update.BlocksCache, update.Abis)
+					
+					
+					
+					
+					// decodedEvents, decodedTransactions, decErr
+					decodedEvents, _, decErr := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.BlocksCache, update.Abis)
 					if decErr != nil {
 						fmt.Println("Error decoding events: ", decErr)
 						errChan <- fmt.Errorf("error decoding events for customer %s: %w", update.CustomerID, decErr)
 						return
 					}
 
-					decodedEvents = append(decodedEvents, decodedEventsPack...)
+					decodedEvents = append(decodedEvents, decodedEvents...)
 				}
 
-				// Write events to user RDS
-				customer.Pgx.WriteEvents(
-					d.blockchain,
-					decodedEvents,
-				)
+				if len(decodedEvents) > 0 {
+					// Write events to user RDS
+					customer.Pgx.WriteEvents(
+						d.blockchain,
+						decodedEvents,
+					)
+				}
 
 				// Transactions
 				groupByPathTransactions := make(map[string][]uint64)
-
 				for _, transaction := range update.Data.Transactions {
-
 					if _, ok := groupByPathTransactions[transaction.Path]; !ok {
 						groupByPathTransactions[transaction.Path] = []uint64{}
 					}
