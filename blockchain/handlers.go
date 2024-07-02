@@ -52,7 +52,7 @@ func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 		return client, err
 	} else {
 		return nil, errors.New("unsupported chain type")
-	} // Ensure ethereum.Client implements BlockchainClient.
+	}
 }
 
 type BlockData struct {
@@ -67,25 +67,25 @@ type BlockchainClient interface {
 	GetLatestBlockNumber() (*big.Int, error)
 	FetchAsProtoEvents(*big.Int, *big.Int, map[uint64]indexer.BlockCache, bool) ([]proto.Message, []indexer.LogIndex, error)
 	FetchAsProtoBlocks(*big.Int, *big.Int, bool, int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error)
-	FetchAsProtoEventsAndExtendBlock(*big.Int, *big.Int, map[uint64]indexer.BlockCache, bool) ([]proto.Message, []indexer.LogIndex, error)
-	DecodeProtoEvents(*bytes.Buffer) ([]*seer_common.EventJson, error)
+	FetchAsProtoEventsAndExtendBlock(*big.Int, *big.Int, []proto.Message, map[uint64]indexer.BlockCache, bool) ([]proto.Message, []indexer.LogIndex, error)
+	DecodeProtoEntireBlock(*bytes.Buffer) ([]*seer_common.BlockJson, error)
 	DecodeProtoEventsToLabels(*bytes.Buffer, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.EventLabel, error)
 	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error)
 	ChainType() string
 }
 
-func CrawlEntireBlocks(client BlockchainClient, startBlock *big.Int, endBlock *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, []proto.Message, []indexer.LogIndex, error) {
+func CrawlEntireBlocks(client BlockchainClient, startBlock *big.Int, endBlock *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, []indexer.LogIndex, error) {
 	blocks, blocksIndex, txsIndex, blocksCache, pBlockErr := client.FetchAsProtoBlocks(startBlock, endBlock, debug, maxRequests)
 	if pBlockErr != nil {
-		return nil, nil, nil, nil, nil, pBlockErr
+		return nil, nil, nil, nil, pBlockErr
 	}
 
-	eventsProto, eventsIndex, extErr := client.FetchAsProtoEventsAndExtendBlock(startBlock, endBlock, blocksCache, debug)
+	blocks, eventsIndex, extErr := client.FetchAsProtoEventsAndExtendBlock(startBlock, endBlock, blocks, blocksCache, debug)
 	if extErr != nil {
-		return nil, nil, nil, nil, nil, extErr
+		return nil, nil, nil, nil, extErr
 	}
 
-	return blocks, blocksIndex, txsIndex, eventsProto, eventsIndex, nil
+	return blocks, blocksIndex, txsIndex, eventsIndex, nil
 }
 
 func CrawlBlocks(client BlockchainClient, startBlock *big.Int, endBlock *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error) {

@@ -223,7 +223,7 @@ func (c *Crawler) Start(threads int) {
 			log.Printf("Operates with batch of blocks: %s", batchDir)
 
 			// Fetch blocks with transactions
-			blocks, blocksIndex, txsIndex, events, eventsIndex, crawlErr := seer_blockchain.CrawlEntireBlocks(c.Client, big.NewInt(c.startBlock), big.NewInt(tempEndBlock), SEER_CRAWLER_DEBUG, threads)
+			blocks, blocksIndex, txsIndex, eventsIndex, crawlErr := seer_blockchain.CrawlEntireBlocks(c.Client, big.NewInt(c.startBlock), big.NewInt(tempEndBlock), SEER_CRAWLER_DEBUG, threads)
 			if crawlErr != nil {
 				return fmt.Errorf("failed to crawl blocks, txs and events: %w", err)
 			}
@@ -233,19 +233,10 @@ func (c *Crawler) Start(threads int) {
 			for _, block := range blocks {
 				protodelim.MarshalTo(&blocksBuffer, block)
 			}
-			if err := c.StorageInstance.Save(batchDir, "blocks.proto", blocksBuffer); err != nil {
+			if err := c.StorageInstance.Save(batchDir, "data.proto", blocksBuffer); err != nil {
 				return fmt.Errorf("failed to save blocks.proto: %w", err)
 			}
-			log.Printf("Saved .proto blocks with transactions to %s", batchDir)
-
-			var eventsBuffer bytes.Buffer
-			for _, event := range events {
-				protodelim.MarshalTo(&eventsBuffer, event)
-			}
-			if err := c.StorageInstance.Save(batchDir, "logs.proto", eventsBuffer); err != nil {
-				return fmt.Errorf("failed to save logs.proto: %w", err)
-			}
-			log.Printf("Saved logs.proto to %s", batchDir)
+			log.Printf("Saved .proto blocks with transactions and events to %s", batchDir)
 
 			// Save indexes data
 			updateBlockIndexFilepaths(blocksIndex, c.basePath, batchDir)

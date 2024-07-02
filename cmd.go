@@ -365,7 +365,7 @@ func CreateInspectorCommand() *cobra.Command {
 		Short: "Inspect storage and database consistency",
 	}
 
-	var chain, baseDir, delim, returnFunc, batch, target string
+	var chain, baseDir, delim, returnFunc, batch string
 	var timeout int
 
 	readCommand := &cobra.Command{
@@ -382,12 +382,6 @@ func CreateInspectorCommand() *cobra.Command {
 				return crawlerErr
 			}
 
-			if target == "" {
-				return errors.New("target is required via --target")
-			} else if target != "blocks" && target != "logs" && target != "transactions" {
-				return errors.New("target should be: blocks or logs or transactions")
-			}
-
 			if batch == "" {
 				return errors.New("batch is required via --batch")
 			}
@@ -401,8 +395,7 @@ func CreateInspectorCommand() *cobra.Command {
 				return newStorageErr
 			}
 
-			targetFile := fmt.Sprintf("%s.proto", target)
-			targetFilePath := filepath.Join(basePath, batch, targetFile)
+			targetFilePath := filepath.Join(basePath, batch, "data.proto")
 			rawData, readErr := storageInstance.Read(targetFilePath)
 			if readErr != nil {
 				return readErr
@@ -413,16 +406,9 @@ func CreateInspectorCommand() *cobra.Command {
 				return cleintErr
 			}
 
-			var output any
-			var decErr error
-			switch target {
-			case "logs":
-				output, decErr = client.DecodeProtoEvents(&rawData)
-				if decErr != nil {
-					return decErr
-				}
-			default:
-				return fmt.Errorf("unsupported target %s", target)
+			output, decErr := client.DecodeProtoEntireBlock(&rawData)
+			if decErr != nil {
+				return decErr
 			}
 
 			jsonOutput, marErr := json.Marshal(output)
@@ -439,7 +425,6 @@ func CreateInspectorCommand() *cobra.Command {
 	readCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
 	readCommand.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
 	readCommand.Flags().StringVar(&batch, "batch", "", "What batch to read")
-	readCommand.Flags().StringVar(&target, "target", "", "What to read: blocks, logs or transactions")
 
 	var storageVerify bool
 

@@ -168,20 +168,6 @@ func (c *Client) ClientFilterLogs(ctx context.Context, q ethereum.FilterQuery, d
 	return logs, nil
 }
 
-// fetchBlocks returns the blocks for a given range.
-func (c *Client) fetchBlocks(ctx context.Context, from, to *big.Int) ([]*seer_common.BlockJson, error) {
-	var blocks []*seer_common.BlockJson
-
-	for i := from; i.Cmp(to) <= 0; i.Add(i, big.NewInt(1)) {
-		block, err := c.GetBlockByNumber(ctx, i)
-		if err != nil {
-			return nil, err
-		}
-		blocks = append(blocks, block)
-	}
-	return blocks, nil
-}
-
 // Utility function to convert big.Int to its hexadecimal representation.
 func toHex(number *big.Int) string {
 	return fmt.Sprintf("0x%x", number)
@@ -384,16 +370,35 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int, debug bool, maxRequests i
 	return blocksProto, blocksIndex, transactionsIndex, blocksCache, nil
 }
 
-func (c *Client) FetchAsProtoEventsAndExtendBlock(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]proto.Message, []indexer.LogIndex, error) {
+func (c *Client) FetchAsProtoEventsAndExtendBlock(from, to *big.Int, blocksProto []proto.Message, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]proto.Message, []indexer.LogIndex, error) {
 	parsedEvents, err := c.ParseEvents(from, to, blocksCache, debug)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var eventsProto []proto.Message
+	// Parse proto Message to block with transactions structure
+	var blocks []*XaiSepoliaBlock
+	for _, b := range blocksProto {
+		block, ok := b.(*XaiSepoliaBlock)
+		if !ok {
+			log.Printf("Unexpected proto message type: %T", b)
+			continue
+		}
+		blocks = append(blocks, block)
+	}
+
 	var eventsIndex []indexer.LogIndex
 	for eI, event := range parsedEvents {
-		eventsProto = append(eventsProto, event) // Assuming event is a proto.Message
+		for _, b := range blocks {
+			if b.BlockNumber != event.BlockNumber {
+				continue
+			}
+			for _, tx := range b.Transactions {
+				if tx.Hash == event.TransactionHash {
+					tx.Logs = append(tx.Logs, event)
+				}
+			}
+		}
 
 		var topic0, topic1, topic2 *string
 
@@ -426,7 +431,12 @@ func (c *Client) FetchAsProtoEventsAndExtendBlock(from, to *big.Int, blocksCache
 		})
 	}
 
-	return eventsProto, eventsIndex, nil
+	var updatedBlocksProto []proto.Message
+	for _, b := range blocks {
+		updatedBlocksProto = append(updatedBlocksProto, b)
+	}
+
+	return updatedBlocksProto, eventsIndex, nil
 }
 
 func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]indexer.BlockCache, debug bool) ([]proto.Message, []indexer.LogIndex, error) {
@@ -473,7 +483,88 @@ func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]i
 	}
 
 	return eventsProto, eventsIndex, nil
+}
 
+func ToEntireBlockFromLogProto(obj *XaiSepoliaBlock) *seer_common.BlockJson {
+	var txs []seer_common.TransactionJson
+	for _, tx := range obj.Transactions {
+		var accessList []seer_common.AccessList
+		for _, al := range tx.AccessList {
+			accessList = append(accessList, seer_common.AccessList{
+				Address:     al.Address,
+				StorageKeys: al.StorageKeys,
+			})
+		}
+		var events []seer_common.EventJson
+		for _, e := range tx.Logs {
+			events = append(events, seer_common.EventJson{
+				Address:          e.Address,
+				Topics:           e.Topics,
+				Data:             e.Data,
+				BlockNumber:      fmt.Sprintf("%d", e.BlockNumber),
+				TransactionHash:  e.TransactionHash,
+				BlockHash:        e.BlockHash,
+				Removed:          e.Removed,
+				LogIndex:         fmt.Sprintf("%d", e.LogIndex),
+				TransactionIndex: fmt.Sprintf("%d", e.TransactionIndex),
+			})
+		}
+		txs = append(txs, seer_common.TransactionJson{
+			BlockHash:            tx.BlockHash,
+			BlockNumber:          fmt.Sprintf("%d", tx.BlockNumber),
+			ChainId:              tx.ChainId,
+			FromAddress:          tx.FromAddress,
+			Gas:                  tx.Gas,
+			GasPrice:             tx.GasPrice,
+			Hash:                 tx.Hash,
+			Input:                tx.Input,
+			MaxFeePerGas:         tx.MaxFeePerGas,
+			MaxPriorityFeePerGas: tx.MaxPriorityFeePerGas,
+			Nonce:                tx.Nonce,
+			V:                    tx.V,
+			R:                    tx.R,
+			S:                    tx.S,
+			ToAddress:            tx.ToAddress,
+			TransactionIndex:     fmt.Sprintf("%d", tx.TransactionIndex),
+			TransactionType:      fmt.Sprintf("%d", tx.TransactionType),
+			Value:                tx.Value,
+			IndexedAt:            fmt.Sprintf("%d", tx.IndexedAt),
+			BlockTimestamp:       fmt.Sprintf("%d", tx.BlockTimestamp),
+			AccessList:           accessList,
+			YParity:              tx.YParity,
+
+			Events: events,
+		})
+	}
+
+	return &seer_common.BlockJson{
+		Difficulty:       fmt.Sprintf("%d", obj.Difficulty),
+		ExtraData:        obj.ExtraData,
+		GasLimit:         fmt.Sprintf("%d", obj.GasLimit),
+		GasUsed:          fmt.Sprintf("%d", obj.GasUsed),
+		Hash:             obj.Hash,
+		LogsBloom:        obj.LogsBloom,
+		Miner:            obj.Miner,
+		Nonce:            obj.Nonce,
+		BlockNumber:      fmt.Sprintf("%d", obj.BlockNumber),
+		ParentHash:       obj.ParentHash,
+		ReceiptsRoot:     obj.ReceiptsRoot,
+		Sha3Uncles:       obj.Sha3Uncles,
+		StateRoot:        obj.StateRoot,
+		Timestamp:        fmt.Sprintf("%d", obj.Timestamp),
+		TotalDifficulty:  obj.TotalDifficulty,
+		TransactionsRoot: obj.TransactionsRoot,
+		Size:             fmt.Sprintf("%d", obj.Size),
+		BaseFeePerGas:    obj.BaseFeePerGas,
+		IndexedAt:        fmt.Sprintf("%d", obj.IndexedAt),
+
+		MixHash:       obj.MixHash,
+		SendCount:     obj.SendCount,
+		SendRoot:      obj.SendRoot,
+		L1BlockNumber: fmt.Sprintf("%d", obj.L1BlockNumber),
+
+		Transactions: txs,
+	}
 }
 
 func ToProtoSingleBlock(obj *seer_common.BlockJson) *XaiSepoliaBlock {
@@ -616,23 +707,23 @@ func (c *Client) DecodeProtoBlocks(data []string) ([]*XaiSepoliaBlock, error) {
 	return blocks, nil
 }
 
-func (c *Client) DecodeProtoEvents(rawData *bytes.Buffer) ([]*seer_common.EventJson, error) {
-	var events []*seer_common.EventJson
+func (c *Client) DecodeProtoEntireBlock(rawData *bytes.Buffer) ([]*seer_common.BlockJson, error) {
+	var blocks []*seer_common.BlockJson
 
 	for {
-		protoEvent := &XaiSepoliaEventLog{}
-		if unmErr := protodelim.UnmarshalFrom(rawData, protoEvent); unmErr != nil {
+		protoBlock := &XaiSepoliaBlock{}
+		if unmErr := protodelim.UnmarshalFrom(rawData, protoBlock); unmErr != nil {
 			if unmErr == io.EOF {
 				break // End of the buffer
 			}
 			return nil, unmErr
 		}
 
-		event := ToEvenFromLogProto(protoEvent)
-		events = append(events, event)
+		block := ToEntireBlockFromLogProto(protoBlock)
+		blocks = append(blocks, block)
 	}
 
-	return events, nil
+	return blocks, nil
 }
 
 func (c *Client) DecodeProtoEventsToLabels(rawData *bytes.Buffer, blocksCache map[uint64]uint64, abiMap map[string]map[string]map[string]string) ([]indexer.EventLabel, error) {
