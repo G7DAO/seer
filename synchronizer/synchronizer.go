@@ -281,6 +281,8 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		return isEnd, idxLatestErr
 	}
 
+	fmt.Println("Indexed latest block:", indexedLatestBlock)
+
 	if d.endBlock != 0 && indexedLatestBlock > d.endBlock {
 		indexedLatestBlock = d.endBlock
 	}
@@ -315,6 +317,9 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		if crawler.SEER_CRAWLER_DEBUG {
 			log.Printf("Syncing %d blocks from %d to %d\n", tempEndBlock-d.startBlock, d.startBlock, tempEndBlock)
 		}
+
+		fmt.Println("Reading updates from the indexer db")
+		fmt.Println("from block", d.startBlock, "to block", tempEndBlock)
 
 		// Read updates from the indexer db
 		// This function will return a list of customer updates 1 update is 1 customer
@@ -369,7 +374,8 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 					})
 				}
 
-				var decodedEvents []indexer.EventLabel
+				var decodedEventsPack []indexer.EventLabel
+				var decodedTransactionsPack []indexer.TransactionLabel
 
 				for _, item := range eventsReadMap {
 					if crawler.SEER_CRAWLER_DEBUG {
@@ -384,74 +390,36 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 					}
 
 					// Decode the events using ABIs
-					
-					
-					
-					
+
 					// decodedEvents, decodedTransactions, decErr
-					decodedEvents, _, decErr := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.BlocksCache, update.Abis)
+					decodedEvents, decodedTransactions, decErr := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.BlocksCache, update.Abis)
 					if decErr != nil {
 						fmt.Println("Error decoding events: ", decErr)
 						errChan <- fmt.Errorf("error decoding events for customer %s: %w", update.CustomerID, decErr)
 						return
 					}
 
-					decodedEvents = append(decodedEvents, decodedEvents...)
+					decodedEventsPack = append(decodedEventsPack, decodedEvents...)
+					decodedTransactionsPack = append(decodedTransactionsPack, decodedTransactions...)
 				}
 
-				if len(decodedEvents) > 0 {
+				if len(decodedEventsPack) > 0 {
 					// Write events to user RDS
 					customer.Pgx.WriteEvents(
 						d.blockchain,
-						decodedEvents,
+						decodedEventsPack,
 					)
 				}
 
-				// Transactions
-				groupByPathTransactions := make(map[string][]uint64)
-				for _, transaction := range update.Data.Transactions {
-					if _, ok := groupByPathTransactions[transaction.Path]; !ok {
-						groupByPathTransactions[transaction.Path] = []uint64{}
-					}
-
-					groupByPathTransactions[transaction.Path] = append(groupByPathTransactions[transaction.Path], transaction.RowID)
-				}
-
-				transactionsReadMap := []storage.ReadItem{}
-
-				for path, rowIds := range groupByPathTransactions {
-					transactionsReadMap = append(transactionsReadMap, storage.ReadItem{
-						Key:    path,
-						RowIds: rowIds,
-					})
-				}
-				encodedTransactions, err := d.StorageInstance.ReadBatch(transactionsReadMap)
-
-				if err != nil {
-					errChan <- fmt.Errorf("error reading transactions for customer %s: %w", update.CustomerID, err)
-					return
-				}
-
-				// remap the transactions to a single slice
-
-				var all_transactions []string
-
-				for _, data := range encodedTransactions {
-					all_transactions = append(all_transactions, data...)
-				}
-
-				decodedTransactions, err := d.Client.DecodeProtoTransactionsToLabels(all_transactions, update.BlocksCache, update.Abis)
-
-				if err != nil {
-					errChan <- fmt.Errorf("error decoding transactions for customer %s: %w", update.CustomerID, err)
-					return
-				}
+				// // Transactions
 
 				// Write transactions to user RDS
-				customer.Pgx.WriteTransactions(
-					d.blockchain,
-					decodedTransactions,
-				)
+				if len(decodedTransactionsPack) > 0 {
+					customer.Pgx.WriteTransactions(
+						d.blockchain,
+						decodedTransactionsPack,
+					)
+				}
 
 				<-sem
 			}(update)

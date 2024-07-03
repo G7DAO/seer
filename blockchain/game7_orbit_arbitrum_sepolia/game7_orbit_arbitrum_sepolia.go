@@ -326,7 +326,6 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int, debug bool, maxRequests i
 	blocksCache := make(map[uint64]indexer.BlockCache)
 
 	for bI, block := range parsedBlocks {
-		fmt.Println("a", bI, block.BlockNumber)
 		blocksProto = append(blocksProto, block) // Assuming block is a proto.Message
 
 		for txI, transaction := range block.Transactions {
@@ -433,8 +432,7 @@ func (c *Client) FetchAsProtoEventsAndExtendBlock(from, to *big.Int, blocksProto
 	}
 
 	var updatedBlocksProto []proto.Message
-	for bI, b := range blocks {
-		fmt.Println("b", bI, b.BlockNumber)
+	for _, b := range blocks {
 		updatedBlocksProto = append(updatedBlocksProto, b)
 	}
 
@@ -748,12 +746,18 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 
 	for _, b := range blocks {
 		for _, tx := range b.Transactions {
+
+			if len(tx.Input) < 10 { // If input is less than 3 characters then it direct transfer
+				continue
+			}
+
 			// Process transaction labels
 			selector := tx.Input[:10]
 
-			if abiMap[tx.ToAddress] != nil {
+			if abiMap[tx.ToAddress] != nil && abiMap[tx.ToAddress][selector] != nil {
 				txContractAbi, err := abi.JSON(strings.NewReader(abiMap[tx.ToAddress][selector]["abi"]))
 				if err != nil {
+					fmt.Println("Error initializing contract ABI transactions: ", err)
 					return nil, nil, err
 				}
 
@@ -803,7 +807,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 					topicSelector = "0x0"
 				}
 
-				if abiMap[e.Address] == nil {
+				if abiMap[e.Address] == nil || abiMap[e.Address][topicSelector] == nil {
 					continue
 				}
 
@@ -825,6 +829,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 				// Convert decodedArgs map to JSON
 				labelDataBytes, err := json.Marshal(decodedArgs)
 				if err != nil {
+					fmt.Println("Error converting decodedArgs to JSON: ", err)
 					return nil, nil, err
 				}
 
