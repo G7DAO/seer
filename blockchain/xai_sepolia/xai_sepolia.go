@@ -532,8 +532,8 @@ func ToEntireBlockFromLogProto(obj *XaiSepoliaBlock) *seer_common.BlockJson {
 			BlockTimestamp:       fmt.Sprintf("%d", tx.BlockTimestamp),
 			AccessList:           accessList,
 			YParity:              tx.YParity,
-		
-			Events:               events,
+
+			Events: events,
 		})
 	}
 
@@ -558,10 +558,10 @@ func ToEntireBlockFromLogProto(obj *XaiSepoliaBlock) *seer_common.BlockJson {
 		BaseFeePerGas:    obj.BaseFeePerGas,
 		IndexedAt:        fmt.Sprintf("%d", obj.IndexedAt),
 
-		MixHash:       obj.MixHash, 
-		SendCount:     obj.SendCount, 
-		SendRoot:      obj.SendRoot, 
-		L1BlockNumber: fmt.Sprintf("%d", obj.L1BlockNumber), 
+		MixHash:       obj.MixHash,
+		SendCount:     obj.SendCount,
+		SendRoot:      obj.SendRoot,
+		L1BlockNumber: fmt.Sprintf("%d", obj.L1BlockNumber),
 
 		Transactions: txs,
 	}
@@ -589,10 +589,10 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *XaiSepoliaBlock {
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        fromHex(obj.IndexedAt).Uint64(),
 
-		MixHash:       obj.MixHash, 
-		SendCount:     obj.SendCount, 
-		SendRoot:      obj.SendRoot, 
-		L1BlockNumber: fromHex(obj.L1BlockNumber).Uint64(), 
+		MixHash:       obj.MixHash,
+		SendCount:     obj.SendCount,
+		SendRoot:      obj.SendRoot,
+		L1BlockNumber: fromHex(obj.L1BlockNumber).Uint64(),
 	}
 }
 

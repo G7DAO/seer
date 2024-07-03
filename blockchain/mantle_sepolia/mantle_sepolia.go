@@ -532,8 +532,8 @@ func ToEntireBlockFromLogProto(obj *MantleSepoliaBlock) *seer_common.BlockJson {
 			BlockTimestamp:       fmt.Sprintf("%d", tx.BlockTimestamp),
 			AccessList:           accessList,
 			YParity:              tx.YParity,
-		
-			Events:               events,
+
+			Events: events,
 		})
 	}
 
@@ -557,11 +557,6 @@ func ToEntireBlockFromLogProto(obj *MantleSepoliaBlock) *seer_common.BlockJson {
 		Size:             fmt.Sprintf("%d", obj.Size),
 		BaseFeePerGas:    obj.BaseFeePerGas,
 		IndexedAt:        fmt.Sprintf("%d", obj.IndexedAt),
-
-		
-		
-		
-		
 
 		Transactions: txs,
 	}
@@ -588,11 +583,6 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *MantleSepoliaBlock {
 		TotalDifficulty:  obj.TotalDifficulty,
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        fromHex(obj.IndexedAt).Uint64(),
-
-		
-		
-		
-		
 	}
 }
 

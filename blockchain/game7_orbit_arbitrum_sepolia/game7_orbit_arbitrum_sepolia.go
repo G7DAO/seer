@@ -326,6 +326,7 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int, debug bool, maxRequests i
 	blocksCache := make(map[uint64]indexer.BlockCache)
 
 	for bI, block := range parsedBlocks {
+		fmt.Println("a", bI, block.BlockNumber)
 		blocksProto = append(blocksProto, block) // Assuming block is a proto.Message
 
 		for txI, transaction := range block.Transactions {
@@ -432,7 +433,8 @@ func (c *Client) FetchAsProtoEventsAndExtendBlock(from, to *big.Int, blocksProto
 	}
 
 	var updatedBlocksProto []proto.Message
-	for _, b := range blocks {
+	for bI, b := range blocks {
+		fmt.Println("b", bI, b.BlockNumber)
 		updatedBlocksProto = append(updatedBlocksProto, b)
 	}
 
@@ -532,8 +534,8 @@ func ToEntireBlockFromLogProto(obj *Game7OrbitArbitrumSepoliaBlock) *seer_common
 			BlockTimestamp:       fmt.Sprintf("%d", tx.BlockTimestamp),
 			AccessList:           accessList,
 			YParity:              tx.YParity,
-		
-			Events:               events,
+
+			Events: events,
 		})
 	}
 
@@ -558,10 +560,10 @@ func ToEntireBlockFromLogProto(obj *Game7OrbitArbitrumSepoliaBlock) *seer_common
 		BaseFeePerGas:    obj.BaseFeePerGas,
 		IndexedAt:        fmt.Sprintf("%d", obj.IndexedAt),
 
-		MixHash:       obj.MixHash, 
-		SendCount:     obj.SendCount, 
-		SendRoot:      obj.SendRoot, 
-		L1BlockNumber: fmt.Sprintf("%d", obj.L1BlockNumber), 
+		MixHash:       obj.MixHash,
+		SendCount:     obj.SendCount,
+		SendRoot:      obj.SendRoot,
+		L1BlockNumber: fmt.Sprintf("%d", obj.L1BlockNumber),
 
 		Transactions: txs,
 	}
@@ -589,10 +591,10 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *Game7OrbitArbitrumSepoliaBl
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        fromHex(obj.IndexedAt).Uint64(),
 
-		MixHash:       obj.MixHash, 
-		SendCount:     obj.SendCount, 
-		SendRoot:      obj.SendRoot, 
-		L1BlockNumber: fromHex(obj.L1BlockNumber).Uint64(), 
+		MixHash:       obj.MixHash,
+		SendCount:     obj.SendCount,
+		SendRoot:      obj.SendRoot,
+		L1BlockNumber: fromHex(obj.L1BlockNumber).Uint64(),
 	}
 }
 

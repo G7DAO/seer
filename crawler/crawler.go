@@ -103,24 +103,6 @@ func retryOperation(attempts int, sleep time.Duration, fn func() error) error {
 	return fmt.Errorf("failed after %d attempts", attempts)
 }
 
-func updateBlockIndexFilepaths(indices []indexer.BlockIndex, basePath, batchDir string) {
-	for i := range indices {
-		indices[i].Path = filepath.Join(basePath, batchDir, "data.proto")
-	}
-}
-
-func updateTransactionIndexFilepaths(indices []indexer.TransactionIndex, basePath, batchDir string) {
-	for i := range indices {
-		indices[i].Path = filepath.Join(basePath, batchDir, "data.proto")
-	}
-}
-
-func UpdateEventIndexFilepaths(indices []indexer.LogIndex, basePath, batchDir string) {
-	for i := range indices {
-		indices[i].Path = filepath.Join(basePath, batchDir, "data.proto")
-	}
-}
-
 func SetDefaultStartBlock(confirmations int64, latestBlockNumber *big.Int) int64 {
 	startBlock := latestBlockNumber.Int64() - confirmations - 100
 	log.Printf("Start block set with shift: %d\n", startBlock)
@@ -239,29 +221,33 @@ func (c *Crawler) Start(threads int) {
 			log.Printf("Saved .proto blocks with transactions and events to %s", batchDir)
 
 			// Save indexes data
-			updateBlockIndexFilepaths(blocksIndex, c.basePath, batchDir)
 			interfaceBlockIndex := make([]interface{}, len(blocksIndex))
 			for i, v := range blocksIndex {
+				blocksIndex[i].Path = filepath.Join(c.basePath, batchDir, "data.proto")
 				interfaceBlockIndex[i] = v
 			}
+
+			interfaceTransactionIndex := make([]interface{}, len(txsIndex))
+			for i, v := range txsIndex {
+				txsIndex[i].Path = filepath.Join(c.basePath, batchDir, "data.proto")
+				interfaceTransactionIndex[i] = v
+			}
+
+			interfaceEventsIndex := make([]interface{}, len(eventsIndex))
+			for i, v := range eventsIndex {
+				eventsIndex[i].Path = filepath.Join(c.basePath, batchDir, "data.proto")
+				interfaceEventsIndex[i] = v
+			}
+
+			// TODO: Unite in one commit
 			if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceBlockIndex, "block"); err != nil {
 				return fmt.Errorf("failed to write block index to database: %w", err)
 			}
 
-			updateTransactionIndexFilepaths(txsIndex, c.basePath, batchDir)
-			interfaceTransactionIndex := make([]interface{}, len(txsIndex))
-			for i, v := range txsIndex {
-				interfaceTransactionIndex[i] = v
-			}
 			if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceTransactionIndex, "transaction"); err != nil {
 				return fmt.Errorf("failed to write transaction index to database: %w", err)
 			}
 
-			UpdateEventIndexFilepaths(eventsIndex, c.basePath, batchDir)
-			interfaceEventsIndex := make([]interface{}, len(eventsIndex))
-			for i, v := range eventsIndex {
-				interfaceEventsIndex[i] = v
-			}
 			if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceEventsIndex, "log"); err != nil {
 				return fmt.Errorf("failed to write event index to database: %w", err)
 			}
