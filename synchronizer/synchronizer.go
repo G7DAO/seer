@@ -318,9 +318,6 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 			log.Printf("Syncing %d blocks from %d to %d\n", tempEndBlock-d.startBlock, d.startBlock, tempEndBlock)
 		}
 
-		fmt.Println("Reading updates from the indexer db")
-		fmt.Println("from block", d.startBlock, "to block", tempEndBlock)
-
 		// Read updates from the indexer db
 		// This function will return a list of customer updates 1 update is 1 customer
 		updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, tempEndBlock, customerIds)

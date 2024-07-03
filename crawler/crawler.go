@@ -216,26 +216,26 @@ func (c *Crawler) Start(threads int) {
 				protodelim.MarshalTo(&blocksBuffer, block)
 			}
 			if err := c.StorageInstance.Save(batchDir, "data.proto", blocksBuffer); err != nil {
-				return fmt.Errorf("failed to save blocks.proto: %w", err)
+				return fmt.Errorf("failed to save data.proto: %w", err)
 			}
 			log.Printf("Saved .proto blocks with transactions and events to %s", batchDir)
 
 			// Save indexes data
 			interfaceBlockIndex := make([]interface{}, len(blocksIndex))
 			for i, v := range blocksIndex {
-				blocksIndex[i].Path = filepath.Join(c.basePath, batchDir, "data.proto")
+				v.Path = filepath.Join(c.basePath, batchDir, "data.proto")
 				interfaceBlockIndex[i] = v
 			}
 
 			interfaceTransactionIndex := make([]interface{}, len(txsIndex))
 			for i, v := range txsIndex {
-				txsIndex[i].Path = filepath.Join(c.basePath, batchDir, "data.proto")
+				v.Path = filepath.Join(c.basePath, batchDir, "data.proto")
 				interfaceTransactionIndex[i] = v
 			}
 
 			interfaceEventsIndex := make([]interface{}, len(eventsIndex))
 			for i, v := range eventsIndex {
-				eventsIndex[i].Path = filepath.Join(c.basePath, batchDir, "data.proto")
+				v.Path = filepath.Join(c.basePath, batchDir, "data.proto")
 				interfaceEventsIndex[i] = v
 			}
 
