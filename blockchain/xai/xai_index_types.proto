@@ -75,6 +75,6 @@ message XaiEventLog {
   uint64 transaction_index = 9; // The index of the transaction in the block
 }
 
-message XaiBlockBatch {
+message XaiBlocksBatch {
   repeated XaiBlock blocks = 1;
 }

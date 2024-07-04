@@ -12,7 +12,7 @@ import (
 	seer_blockchain "github.com/moonstream-to/seer/blockchain"
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/storage"
-	"google.golang.org/protobuf/encoding/protodelim"
+	"google.golang.org/protobuf/proto"
 )
 
 var CurrentBlockchainState BlockchainState
@@ -162,7 +162,7 @@ func (c *Crawler) PushPackOfData(blocksBufferPack *bytes.Buffer, blocksIndexPack
 
 // Start initiates the crawling process for the configured blockchain.
 func (c *Crawler) Start(threads int) {
-	protoBufferSizeLimit := c.protoSizeLimit * 1024 * 1024 // In Mb
+	// protoBufferSizeLimit := c.protoSizeLimit * 1024 * 1024 // In Mb
 	protoDurationTimeLimit := time.Duration(c.protoTimeLimit) * time.Second
 
 	batchSize := int64(10)
@@ -193,7 +193,7 @@ func (c *Crawler) Start(threads int) {
 	}
 
 	// Variables to accumulate packs before write
-	var blocksBufferPack bytes.Buffer
+	var blocksPack []proto.Message
 	packCrawlStartTs := time.Now()
 	var blocksIndexPack []indexer.BlockIndex
 	var txsIndexPack []indexer.TransactionIndex
@@ -258,21 +258,28 @@ func (c *Crawler) Start(threads int) {
 				return fmt.Errorf("failed to crawl blocks, txs and events: %w", err)
 			}
 
-			// Append .proto data to buffer
-			for _, block := range blocks {
-				protodelim.MarshalTo(&blocksBufferPack, block)
-			}
+			blocksPack = append(blocksPack, blocks...)
 
 			blocksIndexPack = append(blocksIndexPack, blocksIndex...)
 			txsIndexPack = append(txsIndexPack, txsIndex...)
 			eventsIndexPack = append(eventsIndexPack, eventsIndex...)
 
-			if blocksBufferPack.Len() > protoBufferSizeLimit || packCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) {
-				if pushEr := c.PushPackOfData(&blocksBufferPack, blocksIndexPack, txsIndexPack, eventsIndexPack, packStartBlock, tempEndBlock); err != nil {
+			if packCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) {
+				blocksBatch, batchErr := c.Client.ProcessBlocksToBatch(blocksPack)
+				if batchErr != nil {
+					return fmt.Errorf("unable to process blocks to batch: %w", batchErr)
+				}
+
+				dataBytes, err := proto.Marshal(blocksBatch)
+				if err != nil {
+					log.Fatalf("Failed to marshal blocks: %v", err)
+				}
+
+				if pushEr := c.PushPackOfData(bytes.NewBuffer(dataBytes), blocksIndexPack, txsIndexPack, eventsIndexPack, packStartBlock, tempEndBlock); err != nil {
 					return fmt.Errorf("unable to push data correctly: %w", pushEr)
 				}
 
-				blocksBufferPack.Reset()
+				blocksPack = []proto.Message{}
 
 				packStartBlock = tempEndBlock + 1
 				packCrawlStartTs = time.Now()
@@ -291,12 +298,20 @@ func (c *Crawler) Start(threads int) {
 		c.startBlock = tempEndBlock + 1
 	}
 
-	if blocksBufferPack.Len() != 0 || packCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) {
-		if pushEr := c.PushPackOfData(&blocksBufferPack, blocksIndexPack, txsIndexPack, eventsIndexPack, packStartBlock, tempEndBlock); err != nil {
-			log.Printf("Unable to push last pack of data correctly, err: %v", pushEr)
+	if len(blocksPack) > 0 {
+		blocksBatch, batchErr := c.Client.ProcessBlocksToBatch(blocksPack)
+		if batchErr != nil {
+			log.Printf("Unable to process blocks to batch, err: %v", batchErr)
 		}
 
-		blocksBufferPack.Reset()
+		dataBytes, err := proto.Marshal(blocksBatch)
+		if err != nil {
+			log.Fatalf("Failed to marshal blocks: %v", err)
+		}
+
+		if pushEr := c.PushPackOfData(bytes.NewBuffer(dataBytes), blocksIndexPack, txsIndexPack, eventsIndexPack, packStartBlock, tempEndBlock); err != nil {
+			log.Printf("Unable to push last pack of data correctly, err: %v", pushEr)
+		}
 
 		packStartBlock = tempEndBlock + 1
 		packCrawlStartTs = time.Now()

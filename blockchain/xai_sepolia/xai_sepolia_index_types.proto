@@ -75,6 +75,6 @@ message XaiSepoliaEventLog {
   uint64 transaction_index = 9; // The index of the transaction in the block
 }
 
-message XaiSepoliaBlockBatch {
+message XaiSepoliaBlocksBatch {
   repeated XaiSepoliaBlock blocks = 1;
 }

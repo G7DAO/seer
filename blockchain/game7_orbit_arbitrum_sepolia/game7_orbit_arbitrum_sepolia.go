@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"math/big"
 	"strings"
@@ -19,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
-	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/proto"
 
 	seer_common "github.com/moonstream-to/seer/blockchain/common"
@@ -292,7 +290,7 @@ func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxR
 	return parsedBlocks, nil
 }
 
-func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*Game7OrbitArbitrumSepoliaEventLog, error) {
+func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*Game7OrbitArbitrumSepoliaEventLog, []indexer.LogIndex, error) {
 	logs, err := c.ClientFilterLogs(context.Background(), ethereum.FilterQuery{
 		FromBlock: from,
 		ToBlock:   to,
@@ -300,56 +298,107 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 
 	if err != nil {
 		fmt.Println("Error fetching logs: ", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	var parsedEvents []*Game7OrbitArbitrumSepoliaEventLog
-	for _, log := range logs {
+	var eventsIndex []indexer.LogIndex
+
+	for i, log := range logs {
 		parsedEvent := ToProtoSingleEventLog(log)
 		parsedEvents = append(parsedEvents, parsedEvent)
+
+		// Prepare events to index
+		var topic0, topic1, topic2 *string
+
+		if len(parsedEvent.Topics) == 0 {
+			fmt.Println("No topics found for event: ", parsedEvent)
+		} else {
+			topic0 = &parsedEvent.Topics[0] // First topic
+		}
+
+		// Assign topics based on availability
+		if len(parsedEvent.Topics) > 1 {
+			topic1 = &parsedEvent.Topics[1] // Second topic, if present
+		}
+		if len(parsedEvent.Topics) > 2 {
+			topic2 = &parsedEvent.Topics[2] // Third topic, if present
+		}
+
+		eventsIndex = append(eventsIndex, indexer.LogIndex{
+			Address:         parsedEvent.Address,
+			BlockNumber:     parsedEvent.BlockNumber,
+			BlockHash:       parsedEvent.BlockHash,
+			BlockTimestamp:  blocksCache[parsedEvent.BlockNumber].BlockTimestamp,
+			TransactionHash: parsedEvent.TransactionHash,
+			Selector:        topic0, // First topic
+			Topic1:          topic1,
+			Topic2:          topic2,
+			RowID:           uint64(i), // TODO: Remove
+			LogIndex:        parsedEvent.LogIndex,
+			Path:            "",
+		})
 	}
 
-	return parsedEvents, nil
+	return parsedEvents, eventsIndex, nil
 }
 
-func (c *Client) FetchAsProtoBlocks(from, to *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, map[uint64]indexer.BlockCache, error) {
-	parsedBlocks, err := c.ParseBlocksWithTransactions(from, to, debug, maxRequests)
+func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, []indexer.LogIndex, error) {
+	blocks, err := c.ParseBlocksWithTransactions(from, to, debug, maxRequests)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	blocksCache := make(map[uint64]indexer.BlockCache)
+
+	for _, block := range blocks {
+		blocksCache[block.BlockNumber] = indexer.BlockCache{
+			BlockNumber:    block.BlockNumber,
+			BlockHash:      block.Hash,
+			BlockTimestamp: block.Timestamp,
+		} // Assuming block.BlockNumber is int64 and block.Hash is string
+	}
+
+	events, eventsIndex, err := c.ParseEvents(from, to, blocksCache, debug)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
 	var blocksProto []proto.Message
-
 	var blocksIndex []indexer.BlockIndex
-	var transactionsIndex []indexer.TransactionIndex
+	var txsIndex []indexer.TransactionIndex
 
-	blocksCache := make(map[uint64]indexer.BlockCache)
-
-	for bI, block := range parsedBlocks {
-		blocksProto = append(blocksProto, block) // Assuming block is a proto.Message
-
-		for txI, transaction := range block.Transactions {
-			selector := "0x"
-
-			if len(transaction.Input) > 10 {
-				selector = transaction.Input[:10]
+	for bI, block := range blocks {
+		for txI, tx := range block.Transactions {
+			for _, event := range events {
+				if tx.Hash == event.TransactionHash {
+					tx.Logs = append(tx.Logs, event)
+				}
 			}
 
-			transactionsIndex = append(transactionsIndex, indexer.TransactionIndex{
-				BlockNumber:      transaction.BlockNumber,
-				BlockHash:        transaction.BlockHash,
-				BlockTimestamp:   transaction.BlockTimestamp,
-				FromAddress:      transaction.FromAddress,
-				ToAddress:        transaction.ToAddress,
+			// Prepare transactions to index
+			txSelector := "0x"
+
+			if len(tx.Input) > 10 {
+				txSelector = tx.Input[:10]
+			}
+
+			txsIndex = append(txsIndex, indexer.TransactionIndex{
+				BlockNumber:      tx.BlockNumber,
+				BlockHash:        tx.BlockHash,
+				BlockTimestamp:   tx.BlockTimestamp,
+				FromAddress:      tx.FromAddress,
+				ToAddress:        tx.ToAddress,
 				RowID:            uint64(txI),
-				Selector:         selector, // First 10 characters of the input data 0x + 4 bytes of the function signature
-				TransactionHash:  transaction.Hash,
-				TransactionIndex: transaction.TransactionIndex,
-				Type:             transaction.TransactionType,
+				Selector:         txSelector, // First 10 characters of the input data 0x + 4 bytes of the function signature
+				TransactionHash:  tx.Hash,
+				TransactionIndex: tx.TransactionIndex,
+				Type:             tx.TransactionType,
 				Path:             "",
 			})
 		}
 
+		// Prepare blocks to index
 		blocksIndex = append(blocksIndex, indexer.NewBlockIndex("game7_orbit_arbitrum_sepolia",
 			block.BlockNumber,
 			block.Hash,
@@ -360,211 +409,115 @@ func (c *Client) FetchAsProtoBlocks(from, to *big.Int, debug bool, maxRequests i
 			block.L1BlockNumber,
 		))
 
-		blocksCache[block.BlockNumber] = indexer.BlockCache{
-			BlockNumber:    block.BlockNumber,
-			BlockHash:      block.Hash,
-			BlockTimestamp: block.Timestamp,
-		} // Assuming block.BlockNumber is int64 and block.Hash is string
+		blocksProto = append(blocksProto, block) // Assuming block is already a proto.Message
 	}
 
-	return blocksProto, blocksIndex, transactionsIndex, blocksCache, nil
+	return blocksProto, blocksIndex, txsIndex, eventsIndex, nil
 }
 
-func (c *Client) FetchAsProtoEventsAndExtendBlock(from, to *big.Int, blocksProto []proto.Message, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]proto.Message, []indexer.LogIndex, error) {
-	parsedEvents, err := c.ParseEvents(from, to, blocksCache, debug)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Parse proto Message to block with transactions structure
+func (c *Client) ProcessBlocksToBatch(msgs []proto.Message) (proto.Message, error) {
 	var blocks []*Game7OrbitArbitrumSepoliaBlock
-	for _, b := range blocksProto {
-		block, ok := b.(*Game7OrbitArbitrumSepoliaBlock)
+	for _, msg := range msgs {
+		block, ok := msg.(*Game7OrbitArbitrumSepoliaBlock)
 		if !ok {
-			log.Printf("Unexpected proto message type: %T", b)
-			continue
+			return nil, fmt.Errorf("failed to type assert proto.Message to *Game7OrbitArbitrumSepoliaBlock")
 		}
 		blocks = append(blocks, block)
 	}
 
-	var eventsIndex []indexer.LogIndex
-	for eI, event := range parsedEvents {
-		for _, b := range blocks {
-			if b.BlockNumber != event.BlockNumber {
-				continue
-			}
-			for _, tx := range b.Transactions {
-				if tx.Hash == event.TransactionHash {
-					tx.Logs = append(tx.Logs, event)
-				}
-			}
-		}
-
-		var topic0, topic1, topic2 *string
-
-		if len(event.Topics) == 0 {
-			fmt.Println("No topics found for event: ", event)
-		} else {
-			topic0 = &event.Topics[0] // First topic
-		}
-
-		// Assign topics based on availability
-		if len(event.Topics) > 1 {
-			topic1 = &event.Topics[1] // Second topic, if present
-		}
-		if len(event.Topics) > 2 {
-			topic2 = &event.Topics[2] // Third topic, if present
-		}
-
-		eventsIndex = append(eventsIndex, indexer.LogIndex{
-			Address:         event.Address,
-			BlockNumber:     event.BlockNumber,
-			BlockHash:       event.BlockHash,
-			BlockTimestamp:  blocksCache[event.BlockNumber].BlockTimestamp,
-			TransactionHash: event.TransactionHash,
-			Selector:        topic0, // First topic
-			Topic1:          topic1,
-			Topic2:          topic2,
-			RowID:           uint64(eI),
-			LogIndex:        event.LogIndex,
-			Path:            "",
-		})
-	}
-
-	var updatedBlocksProto []proto.Message
-	for _, b := range blocks {
-		updatedBlocksProto = append(updatedBlocksProto, b)
-	}
-
-	return updatedBlocksProto, eventsIndex, nil
+	return &Game7OrbitArbitrumSepoliaBlocksBatch{
+		Blocks: blocks,
+	}, nil
 }
 
-func (c *Client) FetchAsProtoEvents(from, to *big.Int, blocksCahche map[uint64]indexer.BlockCache, debug bool) ([]proto.Message, []indexer.LogIndex, error) {
-	parsedEvents, err := c.ParseEvents(from, to, blocksCahche, debug)
-
-	if err != nil {
-		return nil, nil, err
+func ToEntireBlocksBatchFromLogProto(obj *Game7OrbitArbitrumSepoliaBlocksBatch) *seer_common.BlocksBatchJson {
+	blocksBatchJson := seer_common.BlocksBatchJson{
+		Blocks: []seer_common.BlockJson{},
 	}
 
-	var eventsProto []proto.Message
-	var eventsIndex []indexer.LogIndex
-	for index, event := range parsedEvents {
-		eventsProto = append(eventsProto, event) // Assuming event is already a proto.Message
+	for _, b := range obj.Blocks {
+		var txs []seer_common.TransactionJson
+		for _, tx := range b.Transactions {
+			var accessList []seer_common.AccessList
+			for _, al := range tx.AccessList {
+				accessList = append(accessList, seer_common.AccessList{
+					Address:     al.Address,
+					StorageKeys: al.StorageKeys,
+				})
+			}
+			var events []seer_common.EventJson
+			for _, e := range tx.Logs {
+				events = append(events, seer_common.EventJson{
+					Address:          e.Address,
+					Topics:           e.Topics,
+					Data:             e.Data,
+					BlockNumber:      fmt.Sprintf("%d", e.BlockNumber),
+					TransactionHash:  e.TransactionHash,
+					BlockHash:        e.BlockHash,
+					Removed:          e.Removed,
+					LogIndex:         fmt.Sprintf("%d", e.LogIndex),
+					TransactionIndex: fmt.Sprintf("%d", e.TransactionIndex),
+				})
+			}
+			txs = append(txs, seer_common.TransactionJson{
+				BlockHash:            tx.BlockHash,
+				BlockNumber:          fmt.Sprintf("%d", tx.BlockNumber),
+				ChainId:              tx.ChainId,
+				FromAddress:          tx.FromAddress,
+				Gas:                  tx.Gas,
+				GasPrice:             tx.GasPrice,
+				Hash:                 tx.Hash,
+				Input:                tx.Input,
+				MaxFeePerGas:         tx.MaxFeePerGas,
+				MaxPriorityFeePerGas: tx.MaxPriorityFeePerGas,
+				Nonce:                tx.Nonce,
+				V:                    tx.V,
+				R:                    tx.R,
+				S:                    tx.S,
+				ToAddress:            tx.ToAddress,
+				TransactionIndex:     fmt.Sprintf("%d", tx.TransactionIndex),
+				TransactionType:      fmt.Sprintf("%d", tx.TransactionType),
+				Value:                tx.Value,
+				IndexedAt:            fmt.Sprintf("%d", tx.IndexedAt),
+				BlockTimestamp:       fmt.Sprintf("%d", tx.BlockTimestamp),
+				AccessList:           accessList,
+				YParity:              tx.YParity,
 
-		var topic0, topic1, topic2 *string
-
-		if len(event.Topics) == 0 {
-			fmt.Println("No topics found for event: ", event)
-		} else {
-			topic0 = &event.Topics[0] // First topic
+				Events: events,
+			})
 		}
 
-		// Assign topics based on availability
-		if len(event.Topics) > 1 {
-			topic1 = &event.Topics[1] // Second topic, if present
-		}
-		if len(event.Topics) > 2 {
-			topic2 = &event.Topics[2] // Third topic, if present
-		}
+		blocksBatchJson.Blocks = append(blocksBatchJson.Blocks, seer_common.BlockJson{
+			Difficulty:       fmt.Sprintf("%d", b.Difficulty),
+			ExtraData:        b.ExtraData,
+			GasLimit:         fmt.Sprintf("%d", b.GasLimit),
+			GasUsed:          fmt.Sprintf("%d", b.GasUsed),
+			Hash:             b.Hash,
+			LogsBloom:        b.LogsBloom,
+			Miner:            b.Miner,
+			Nonce:            b.Nonce,
+			BlockNumber:      fmt.Sprintf("%d", b.BlockNumber),
+			ParentHash:       b.ParentHash,
+			ReceiptsRoot:     b.ReceiptsRoot,
+			Sha3Uncles:       b.Sha3Uncles,
+			StateRoot:        b.StateRoot,
+			Timestamp:        fmt.Sprintf("%d", b.Timestamp),
+			TotalDifficulty:  b.TotalDifficulty,
+			TransactionsRoot: b.TransactionsRoot,
+			Size:             fmt.Sprintf("%d", b.Size),
+			BaseFeePerGas:    b.BaseFeePerGas,
+			IndexedAt:        fmt.Sprintf("%d", b.IndexedAt),
 
-		eventsIndex = append(eventsIndex, indexer.LogIndex{
-			Address:         event.Address,
-			BlockNumber:     event.BlockNumber,
-			BlockHash:       event.BlockHash,
-			BlockTimestamp:  blocksCahche[event.BlockNumber].BlockTimestamp,
-			TransactionHash: event.TransactionHash,
-			Selector:        topic0, // First topic
-			Topic1:          topic1,
-			Topic2:          topic2,
-			RowID:           uint64(index),
-			LogIndex:        event.LogIndex,
-			Path:            "",
+			MixHash:       b.MixHash,
+			SendCount:     b.SendCount,
+			SendRoot:      b.SendRoot,
+			L1BlockNumber: fmt.Sprintf("%d", b.L1BlockNumber),
+
+			Transactions: txs,
 		})
 	}
 
-	return eventsProto, eventsIndex, nil
-}
-
-func ToEntireBlockFromLogProto(obj *Game7OrbitArbitrumSepoliaBlock) *seer_common.BlockJson {
-	var txs []seer_common.TransactionJson
-	for _, tx := range obj.Transactions {
-		var accessList []seer_common.AccessList
-		for _, al := range tx.AccessList {
-			accessList = append(accessList, seer_common.AccessList{
-				Address:     al.Address,
-				StorageKeys: al.StorageKeys,
-			})
-		}
-		var events []seer_common.EventJson
-		for _, e := range tx.Logs {
-			events = append(events, seer_common.EventJson{
-				Address:          e.Address,
-				Topics:           e.Topics,
-				Data:             e.Data,
-				BlockNumber:      fmt.Sprintf("%d", e.BlockNumber),
-				TransactionHash:  e.TransactionHash,
-				BlockHash:        e.BlockHash,
-				Removed:          e.Removed,
-				LogIndex:         fmt.Sprintf("%d", e.LogIndex),
-				TransactionIndex: fmt.Sprintf("%d", e.TransactionIndex),
-			})
-		}
-		txs = append(txs, seer_common.TransactionJson{
-			BlockHash:            tx.BlockHash,
-			BlockNumber:          fmt.Sprintf("%d", tx.BlockNumber),
-			ChainId:              tx.ChainId,
-			FromAddress:          tx.FromAddress,
-			Gas:                  tx.Gas,
-			GasPrice:             tx.GasPrice,
-			Hash:                 tx.Hash,
-			Input:                tx.Input,
-			MaxFeePerGas:         tx.MaxFeePerGas,
-			MaxPriorityFeePerGas: tx.MaxPriorityFeePerGas,
-			Nonce:                tx.Nonce,
-			V:                    tx.V,
-			R:                    tx.R,
-			S:                    tx.S,
-			ToAddress:            tx.ToAddress,
-			TransactionIndex:     fmt.Sprintf("%d", tx.TransactionIndex),
-			TransactionType:      fmt.Sprintf("%d", tx.TransactionType),
-			Value:                tx.Value,
-			IndexedAt:            fmt.Sprintf("%d", tx.IndexedAt),
-			BlockTimestamp:       fmt.Sprintf("%d", tx.BlockTimestamp),
-			AccessList:           accessList,
-			YParity:              tx.YParity,
-
-			Events: events,
-		})
-	}
-
-	return &seer_common.BlockJson{
-		Difficulty:       fmt.Sprintf("%d", obj.Difficulty),
-		ExtraData:        obj.ExtraData,
-		GasLimit:         fmt.Sprintf("%d", obj.GasLimit),
-		GasUsed:          fmt.Sprintf("%d", obj.GasUsed),
-		Hash:             obj.Hash,
-		LogsBloom:        obj.LogsBloom,
-		Miner:            obj.Miner,
-		Nonce:            obj.Nonce,
-		BlockNumber:      fmt.Sprintf("%d", obj.BlockNumber),
-		ParentHash:       obj.ParentHash,
-		ReceiptsRoot:     obj.ReceiptsRoot,
-		Sha3Uncles:       obj.Sha3Uncles,
-		StateRoot:        obj.StateRoot,
-		Timestamp:        fmt.Sprintf("%d", obj.Timestamp),
-		TotalDifficulty:  obj.TotalDifficulty,
-		TransactionsRoot: obj.TransactionsRoot,
-		Size:             fmt.Sprintf("%d", obj.Size),
-		BaseFeePerGas:    obj.BaseFeePerGas,
-		IndexedAt:        fmt.Sprintf("%d", obj.IndexedAt),
-
-		MixHash:       obj.MixHash,
-		SendCount:     obj.SendCount,
-		SendRoot:      obj.SendRoot,
-		L1BlockNumber: fmt.Sprintf("%d", obj.L1BlockNumber),
-
-		Transactions: txs,
-	}
+	return &blocksBatchJson
 }
 
 func ToProtoSingleBlock(obj *seer_common.BlockJson) *Game7OrbitArbitrumSepoliaBlock {
@@ -707,44 +660,35 @@ func (c *Client) DecodeProtoBlocks(data []string) ([]*Game7OrbitArbitrumSepoliaB
 	return blocks, nil
 }
 
-func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) ([]*seer_common.BlockJson, error) {
-	var blocks []*seer_common.BlockJson
+func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) (*seer_common.BlocksBatchJson, error) {
+	var protoBlocksBatch Game7OrbitArbitrumSepoliaBlocksBatch
 
-	for {
-		protoBlock := &Game7OrbitArbitrumSepoliaBlock{}
-		if unmErr := protodelim.UnmarshalFrom(rawData, protoBlock); unmErr != nil {
-			if unmErr == io.EOF {
-				break // End of the buffer
-			}
-			return nil, unmErr
-		}
+	dataBytes := rawData.Bytes()
 
-		block := ToEntireBlockFromLogProto(protoBlock)
-		blocks = append(blocks, block)
+	err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal data: %v", err)
 	}
 
-	return blocks, nil
+	blocksBatchJson := ToEntireBlocksBatchFromLogProto(&protoBlocksBatch)
+
+	return blocksBatchJson, nil
 }
 
 func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCache map[uint64]uint64, abiMap map[string]map[string]map[string]string) ([]indexer.EventLabel, []indexer.TransactionLabel, error) {
-	var blocks []*Game7OrbitArbitrumSepoliaBlock
+	var protoBlocksBatch Game7OrbitArbitrumSepoliaBlocksBatch
 
-	for {
-		block := &Game7OrbitArbitrumSepoliaBlock{}
-		if unmErr := protodelim.UnmarshalFrom(rawData, block); unmErr != nil {
-			if unmErr == io.EOF {
-				break // End of the buffer
-			}
-			return nil, nil, unmErr
-		}
+	dataBytes := rawData.Bytes()
 
-		blocks = append(blocks, block)
+	err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal data: %v", err)
 	}
 
 	var labels []indexer.EventLabel
 	var txLabels []indexer.TransactionLabel
 
-	for _, b := range blocks {
+	for _, b := range protoBlocksBatch.Blocks {
 		for _, tx := range b.Transactions {
 
 			if len(tx.Input) < 10 { // If input is less than 3 characters then it direct transfer
@@ -853,78 +797,6 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 	}
 
 	return labels, txLabels, nil
-}
-
-func (c *Client) DecodeProtoEventsToLabels(rawData *bytes.Buffer, blocksCache map[uint64]uint64, abiMap map[string]map[string]map[string]string) ([]indexer.EventLabel, error) {
-	var protoEvents []*Game7OrbitArbitrumSepoliaEventLog
-	for {
-		protoEvent := &Game7OrbitArbitrumSepoliaEventLog{}
-		if unmErr := protodelim.UnmarshalFrom(rawData, protoEvent); unmErr != nil {
-			if unmErr == io.EOF {
-				break // End of the buffer
-			}
-			return nil, unmErr
-		}
-
-		protoEvents = append(protoEvents, protoEvent)
-	}
-
-	var labels []indexer.EventLabel
-
-	for _, event := range protoEvents {
-
-		var topicSelector string
-
-		if len(event.Topics) > 0 {
-			topicSelector = event.Topics[0]
-		} else {
-			// 0x0 is the default topic selector
-			topicSelector = "0x0"
-		}
-
-		// Get the ABI string
-		contractAbi, err := abi.JSON(strings.NewReader(abiMap[event.Address][topicSelector]["abi"]))
-		if err != nil {
-			fmt.Println("Error initializing contract ABI: ", err)
-			return nil, err
-		}
-
-		// Decode the event data
-		decodedArgs, err := seer_common.DecodeLogArgsToLabelData(&contractAbi, event.Topics, event.Data)
-
-		if err != nil {
-			fmt.Println("Error decoding event data: ", err)
-			return nil, err
-		}
-
-		// Convert decodedArgs map to JSON
-		labelDataBytes, err := json.Marshal(decodedArgs)
-		if err != nil {
-			return nil, err
-		}
-
-		// Convert JSON byte slice to string
-		labelDataString := string(labelDataBytes)
-
-		// Convert event to label
-		eventLabel := indexer.EventLabel{
-			Label:           indexer.SeerCrawlerLabel,
-			LabelName:       abiMap[event.Address][topicSelector]["abi_name"],
-			LabelType:       "event",
-			BlockNumber:     event.BlockNumber,
-			BlockHash:       event.BlockHash,
-			Address:         event.Address,
-			TransactionHash: event.TransactionHash,
-			LabelData:       labelDataString,
-			BlockTimestamp:  blocksCache[event.BlockNumber],
-			LogIndex:        event.LogIndex,
-		}
-
-		labels = append(labels, eventLabel)
-
-	}
-
-	return labels, nil
 }
 
 func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCache map[uint64]uint64, abiMap map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error) {
