@@ -48,12 +48,12 @@ type Crawler struct {
 	force          bool
 	baseDir        string
 	basePath       string
-	protoSizeLimit int
+	protoSizeLimit uint64
 	protoTimeLimit int
 }
 
 // NewCrawler creates a new crawler instance with the given blockchain handler.
-func NewCrawler(blockchain string, startBlock, endBlock, confirmations int64, timeout int, baseDir string, force bool, protoSizeLimit, protoTimeLimit int) (*Crawler, error) {
+func NewCrawler(blockchain string, startBlock, endBlock, confirmations int64, timeout int, baseDir string, force bool, protoSizeLimit uint64, protoTimeLimit int) (*Crawler, error) {
 	var crawler Crawler
 
 	basePath := filepath.Join(baseDir, SeerCrawlerStoragePrefix, "data", blockchain)
@@ -162,6 +162,7 @@ func (c *Crawler) PushPackOfData(blocksBufferPack *bytes.Buffer, blocksIndexPack
 
 // Start initiates the crawling process for the configured blockchain.
 func (c *Crawler) Start(threads int) {
+	protoBufferSizeLimit := c.protoSizeLimit * 1024 * 1024 // In Mb
 	protoDurationTimeLimit := time.Duration(c.protoTimeLimit) * time.Second
 
 	batchSize := int64(10)
@@ -193,6 +194,7 @@ func (c *Crawler) Start(threads int) {
 
 	// Variables to accumulate packs before write
 	var blocksPack []proto.Message
+	var blocksPackSize uint64
 	packCrawlStartTs := time.Now()
 	var blocksIndexPack []indexer.BlockIndex
 	var txsIndexPack []indexer.TransactionIndex
@@ -252,18 +254,19 @@ func (c *Crawler) Start(threads int) {
 			log.Printf("Operates with batch of blocks: %d-%d", c.startBlock, tempEndBlock)
 
 			// Fetch blocks with transactions
-			blocks, blocksIndex, txsIndex, eventsIndex, crawlErr := seer_blockchain.CrawlEntireBlocks(c.Client, big.NewInt(c.startBlock), big.NewInt(tempEndBlock), SEER_CRAWLER_DEBUG, threads)
+			blocks, blocksIndex, txsIndex, eventsIndex, blocksSize, crawlErr := seer_blockchain.CrawlEntireBlocks(c.Client, big.NewInt(c.startBlock), big.NewInt(tempEndBlock), SEER_CRAWLER_DEBUG, threads)
 			if crawlErr != nil {
 				return fmt.Errorf("failed to crawl blocks, txs and events: %w", err)
 			}
 
+			blocksPackSize += blocksSize
 			blocksPack = append(blocksPack, blocks...)
 
 			blocksIndexPack = append(blocksIndexPack, blocksIndex...)
 			txsIndexPack = append(txsIndexPack, txsIndex...)
 			eventsIndexPack = append(eventsIndexPack, eventsIndex...)
 
-			if packCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) || len(blocksPack) >= c.protoSizeLimit {
+			if packCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) || blocksPackSize >= protoBufferSizeLimit {
 				blocksBatch, batchErr := c.Client.ProcessBlocksToBatch(blocksPack)
 				if batchErr != nil {
 					return fmt.Errorf("unable to process blocks to batch: %w", batchErr)
@@ -278,6 +281,7 @@ func (c *Crawler) Start(threads int) {
 					return fmt.Errorf("unable to push data correctly: %w", pushEr)
 				}
 
+				blocksPackSize = 0
 				blocksPack = []proto.Message{}
 
 				packStartBlock = tempEndBlock + 1
@@ -312,6 +316,7 @@ func (c *Crawler) Start(threads int) {
 			log.Printf("Unable to push last pack of data correctly, err: %v", pushEr)
 		}
 
+		blocksPackSize = 0
 		packStartBlock = tempEndBlock + 1
 		packCrawlStartTs = time.Now()
 	}

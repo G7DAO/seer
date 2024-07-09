@@ -343,11 +343,13 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 	return parsedEvents, eventsIndex, nil
 }
 
-func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, []indexer.LogIndex, error) {
+func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, []indexer.LogIndex, uint64, error) {
 	blocks, err := c.ParseBlocksWithTransactions(from, to, debug, maxRequests)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, 0, err
 	}
+
+	var blocksSize uint64
 
 	blocksCache := make(map[uint64]indexer.BlockCache)
 
@@ -361,7 +363,7 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 
 	events, eventsIndex, err := c.ParseEvents(from, to, blocksCache, debug)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, 0, err
 	}
 
 	var blocksProto []proto.Message
@@ -409,10 +411,11 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 			0,
 		))
 
+		blocksSize += uint64(proto.Size(block))
 		blocksProto = append(blocksProto, block) // Assuming block is already a proto.Message
 	}
 
-	return blocksProto, blocksIndex, txsIndex, eventsIndex, nil
+	return blocksProto, blocksIndex, txsIndex, eventsIndex, blocksSize, nil
 }
 
 func (c *Client) ProcessBlocksToBatch(msgs []proto.Message) (proto.Message, error) {
