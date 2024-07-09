@@ -283,6 +283,9 @@ func (c *Crawler) Start(threads int) {
 
 				blocksPackSize = 0
 				blocksPack = []proto.Message{}
+				blocksIndexPack = []indexer.BlockIndex{}
+				txsIndexPack = []indexer.TransactionIndex{}
+				eventsIndexPack = []indexer.LogIndex{}
 
 				packStartBlock = tempEndBlock + 1
 				packCrawlStartTs = time.Now()
@@ -317,6 +320,11 @@ func (c *Crawler) Start(threads int) {
 		}
 
 		blocksPackSize = 0
+		blocksPack = []proto.Message{}
+		blocksIndexPack = []indexer.BlockIndex{}
+		txsIndexPack = []indexer.TransactionIndex{}
+		eventsIndexPack = []indexer.LogIndex{}
+
 		packStartBlock = tempEndBlock + 1
 		packCrawlStartTs = time.Now()
 	}
