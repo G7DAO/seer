@@ -278,7 +278,7 @@ func CreateCrawlerCommand() *cobra.Command {
 	crawlerCmd.Flags().Int64Var(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
 	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
 	crawlerCmd.Flags().BoolVar(&force, "force", false, "Set this flag to force the crawler start from the specified block, otherwise it checks database latest indexed block number (default: false)")
-	crawlerCmd.Flags().Uint64Var(&protoSizeLimit, "proto-size-limit", 100, "Proto file size limit in Mb (default: 100Mb)")
+	crawlerCmd.Flags().Uint64Var(&protoSizeLimit, "proto-size-limit", 25, "Proto file size limit in Mb (default: 25Mb)")
 	crawlerCmd.Flags().IntVar(&protoTimeLimit, "proto-time-limit", 300, "Proto time limit in seconds (default: 300sec)")
 
 	return crawlerCmd
