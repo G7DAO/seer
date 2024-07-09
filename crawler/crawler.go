@@ -162,7 +162,6 @@ func (c *Crawler) PushPackOfData(blocksBufferPack *bytes.Buffer, blocksIndexPack
 
 // Start initiates the crawling process for the configured blockchain.
 func (c *Crawler) Start(threads int) {
-	// protoBufferSizeLimit := c.protoSizeLimit * 1024 * 1024 // In Mb
 	protoDurationTimeLimit := time.Duration(c.protoTimeLimit) * time.Second
 
 	batchSize := int64(10)
@@ -264,7 +263,7 @@ func (c *Crawler) Start(threads int) {
 			txsIndexPack = append(txsIndexPack, txsIndex...)
 			eventsIndexPack = append(eventsIndexPack, eventsIndex...)
 
-			if packCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) {
+			if packCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) || len(blocksPack) >= c.protoSizeLimit {
 				blocksBatch, batchErr := c.Client.ProcessBlocksToBatch(blocksPack)
 				if batchErr != nil {
 					return fmt.Errorf("unable to process blocks to batch: %w", batchErr)
