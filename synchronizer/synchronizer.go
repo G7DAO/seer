@@ -233,6 +233,7 @@ func (d *Synchronizer) Start(customerDbUriFlag string) {
 func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	var isEnd bool
 
+	fmt.Println(customerDbUriFlag)
 	customerDBConnections, customerIds, customersErr := d.getCustomers(customerDbUriFlag)
 	if customersErr != nil {
 		return isEnd, customersErr
@@ -241,6 +242,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	if d.startBlock == 0 {
 		var latestCustomerBlocks []uint64
 		for id, customer := range customerDBConnections {
+
 			pool := customer.Pgx.GetPool()
 			conn, err := pool.Acquire(context.Background())
 			if err != nil {
@@ -280,8 +282,6 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	if idxLatestErr != nil {
 		return isEnd, idxLatestErr
 	}
-
-	fmt.Println("Indexed latest block:", indexedLatestBlock)
 
 	if d.endBlock != 0 && indexedLatestBlock > d.endBlock {
 		indexedLatestBlock = d.endBlock
