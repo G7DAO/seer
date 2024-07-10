@@ -13,10 +13,12 @@ import (
 func NewStorage(storageType, basePath string) (Storer, error) {
 	switch storageType {
 	case "filesystem":
+		log.Println("Using filesystem storage")
 		return NewFileStorage(basePath), nil
 	case "gcp-storage":
 		// Google Cloud Storage
 		ctx := context.Background()
+		log.Println("Creating GCS client")
 
 		var client *gcp_storage.Client
 		var clientErr error

@@ -47,6 +47,10 @@ func (g *GCS) Save(batchDir, filename string, bf bytes.Buffer) error {
 		return fmt.Errorf("failed to write object to bucket: %v", err)
 	}
 
+	if err := wc.Close(); err != nil {
+		return fmt.Errorf("failed to close writer: %v", err)
+	}
+
 	return nil
 }
 
