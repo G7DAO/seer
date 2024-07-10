@@ -13,6 +13,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+type BlocksBatchJson struct {
+	Blocks []BlockJson `json:"blocks"`
+}
+
 type BlockJson struct {
 	Difficulty       string `json:"difficulty"`
 	ExtraData        string `json:"extraData"`
@@ -66,6 +70,8 @@ type TransactionJson struct {
 
 	AccessList []AccessList `json:"accessList,omitempty"`
 	YParity    string       `json:"yParity,omitempty"`
+
+	Events []EventJson `json:"events,omitempty"`
 }
 
 type AccessList struct {

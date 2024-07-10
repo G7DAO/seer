@@ -1,7 +1,7 @@
 package crawler
 
 import (
-	"encoding/base64"
+	"bytes"
 	"fmt"
 	"log"
 	"math/big"
@@ -41,18 +41,19 @@ type Crawler struct {
 	Client          seer_blockchain.BlockchainClient
 	StorageInstance storage.Storer
 
-	blockchain    string
-	startBlock    int64
-	endBlock      int64
-	batchSize     int64
-	confirmations int64
-	force         bool
-	baseDir       string
-	basePath      string
+	blockchain     string
+	startBlock     int64
+	endBlock       int64
+	confirmations  int64
+	force          bool
+	baseDir        string
+	basePath       string
+	protoSizeLimit uint64
+	protoTimeLimit int
 }
 
 // NewCrawler creates a new crawler instance with the given blockchain handler.
-func NewCrawler(blockchain string, startBlock, endBlock, batchSize, confirmations int64, timeout int, baseDir string, force bool) (*Crawler, error) {
+func NewCrawler(blockchain string, startBlock, endBlock, confirmations int64, timeout int, baseDir string, force bool, protoSizeLimit uint64, protoTimeLimit int) (*Crawler, error) {
 	var crawler Crawler
 
 	basePath := filepath.Join(baseDir, SeerCrawlerStoragePrefix, "data", blockchain)
@@ -72,14 +73,15 @@ func NewCrawler(blockchain string, startBlock, endBlock, batchSize, confirmation
 		Client:          client,
 		StorageInstance: storageInstance,
 
-		blockchain:    blockchain,
-		startBlock:    startBlock,
-		endBlock:      endBlock,
-		batchSize:     batchSize,
-		confirmations: confirmations,
-		force:         force,
-		baseDir:       baseDir,
-		basePath:      basePath,
+		blockchain:     blockchain,
+		startBlock:     startBlock,
+		endBlock:       endBlock,
+		confirmations:  confirmations,
+		force:          force,
+		baseDir:        baseDir,
+		basePath:       basePath,
+		protoSizeLimit: protoSizeLimit,
+		protoTimeLimit: protoTimeLimit,
 	}
 
 	return &crawler, nil
@@ -101,32 +103,70 @@ func retryOperation(attempts int, sleep time.Duration, fn func() error) error {
 	return fmt.Errorf("failed after %d attempts", attempts)
 }
 
-func updateBlockIndexFilepaths(indices []indexer.BlockIndex, basePath, batchDir string) {
-	for i := range indices {
-		indices[i].Path = filepath.Join(basePath, batchDir, "blocks.proto")
-	}
-}
-
-func updateTransactionIndexFilepaths(indices []indexer.TransactionIndex, basePath, batchDir string) {
-	for i := range indices {
-		indices[i].Path = filepath.Join(basePath, batchDir, "transactions.proto")
-	}
-}
-
-func UpdateEventIndexFilepaths(indices []indexer.LogIndex, basePath, batchDir string) {
-	for i := range indices {
-		indices[i].Path = filepath.Join(basePath, batchDir, "logs.proto")
-	}
-}
-
 func SetDefaultStartBlock(confirmations int64, latestBlockNumber *big.Int) int64 {
 	startBlock := latestBlockNumber.Int64() - confirmations - 100
 	log.Printf("Start block set with shift: %d\n", startBlock)
 	return startBlock
 }
 
+type BlocksBufferBatch struct {
+	StartBlock int64
+	EndBlock   int64
+
+	Buffer bytes.Buffer
+}
+
+func (c *Crawler) PushPackOfData(blocksBufferPack *bytes.Buffer, blocksIndexPack []indexer.BlockIndex, txsIndexPack []indexer.TransactionIndex, eventsIndexPack []indexer.LogIndex, packStartBlock, packEndBlock int64) error {
+	packRange := fmt.Sprintf("%d-%d", packStartBlock, packEndBlock)
+
+	// Save proto data
+	if err := c.StorageInstance.Save(packRange, "data.proto", *blocksBufferPack); err != nil {
+		return fmt.Errorf("failed to save data.proto: %w", err)
+	}
+	log.Printf("Saved .proto blocks with transactions and events to %s", packRange)
+
+	// Save indexes data
+	var interfaceBlocksIndexPack []interface{}
+	for _, v := range blocksIndexPack {
+		v.Path = filepath.Join(c.basePath, packRange, "data.proto")
+		interfaceBlocksIndexPack = append(interfaceBlocksIndexPack, v)
+	}
+
+	var interfaceTxsIndexPack []interface{}
+	for _, v := range txsIndexPack {
+		v.Path = filepath.Join(c.basePath, packRange, "data.proto")
+		interfaceTxsIndexPack = append(interfaceTxsIndexPack, v)
+	}
+
+	var interfaceEventsIndexPack []interface{}
+	for _, v := range eventsIndexPack {
+		v.Path = filepath.Join(c.basePath, packRange, "data.proto")
+		interfaceEventsIndexPack = append(interfaceEventsIndexPack, v)
+	}
+
+	// TODO: Unite in one commit
+	if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceBlocksIndexPack, "block"); err != nil {
+		return fmt.Errorf("failed to write block index to database: %w", err)
+	}
+
+	if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceTxsIndexPack, "transaction"); err != nil {
+		return fmt.Errorf("failed to write transaction index to database: %w", err)
+	}
+
+	if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceEventsIndexPack, "log"); err != nil {
+		return fmt.Errorf("failed to write event index to database: %w", err)
+	}
+
+	return nil
+}
+
 // Start initiates the crawling process for the configured blockchain.
 func (c *Crawler) Start(threads int) {
+	protoBufferSizeLimit := c.protoSizeLimit * 1024 * 1024 // In Mb
+	protoDurationTimeLimit := time.Duration(c.protoTimeLimit) * time.Second
+
+	batchSize := int64(10)
+
 	latestBlockNumber := CurrentBlockchainState.GetLatestBlockNumber()
 	if c.force {
 		if c.startBlock == 0 {
@@ -152,7 +192,16 @@ func (c *Crawler) Start(threads int) {
 		}
 	}
 
-	tempEndBlock := c.startBlock + c.batchSize
+	// Variables to accumulate packs before write
+	var blocksPack []proto.Message
+	var blocksPackSize uint64
+	packCrawlStartTs := time.Now()
+	var blocksIndexPack []indexer.BlockIndex
+	var txsIndexPack []indexer.TransactionIndex
+	var eventsIndexPack []indexer.LogIndex
+	packStartBlock := c.startBlock
+
+	tempEndBlock := c.startBlock + batchSize
 	var safeBlock int64
 
 	retryWaitTime := 10 * time.Second
@@ -180,7 +229,7 @@ func (c *Crawler) Start(threads int) {
 
 		safeBlock = latestBlockNumber.Int64() - c.confirmations
 
-		tempEndBlock = c.startBlock + c.batchSize
+		tempEndBlock = c.startBlock + batchSize
 		if c.endBlock != 0 {
 			if c.endBlock <= tempEndBlock {
 				tempEndBlock = c.endBlock
@@ -202,97 +251,45 @@ func (c *Crawler) Start(threads int) {
 
 		// Retry the operation in case of failure with cumulative attempts
 		err = retryOperation(retryAttempts, retryWaitTime, func() error {
-			batchDir := fmt.Sprintf("%d-%d", c.startBlock, tempEndBlock)
-			log.Printf("Operates with batch of blocks: %s", batchDir)
+			log.Printf("Operates with batch of blocks: %d-%d", c.startBlock, tempEndBlock)
 
 			// Fetch blocks with transactions
-			blocks, transactions, blockIndex, transactionIndex, blocksCache, err := seer_blockchain.CrawlBlocks(c.Client, big.NewInt(c.startBlock), big.NewInt(tempEndBlock), SEER_CRAWLER_DEBUG, threads)
-			if err != nil {
-				return fmt.Errorf("failed to crawl blocks: %w", err)
+			blocks, blocksIndex, txsIndex, eventsIndex, blocksSize, crawlErr := seer_blockchain.CrawlEntireBlocks(c.Client, big.NewInt(c.startBlock), big.NewInt(tempEndBlock), SEER_CRAWLER_DEBUG, threads)
+			if crawlErr != nil {
+				return fmt.Errorf("failed to crawl blocks, txs and events: %w", err)
 			}
 
-			var encodedBytesBlocks []string
-			for _, block := range blocks {
-				bytesBlocks, err := proto.Marshal(block)
-				if err != nil {
-					return fmt.Errorf("failed to marshal proto message for blocks: %w", err)
+			blocksPackSize += blocksSize
+			blocksPack = append(blocksPack, blocks...)
+
+			blocksIndexPack = append(blocksIndexPack, blocksIndex...)
+			txsIndexPack = append(txsIndexPack, txsIndex...)
+			eventsIndexPack = append(eventsIndexPack, eventsIndex...)
+
+			if packCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) || blocksPackSize >= protoBufferSizeLimit {
+				blocksBatch, batchErr := c.Client.ProcessBlocksToBatch(blocksPack)
+				if batchErr != nil {
+					return fmt.Errorf("unable to process blocks to batch: %w", batchErr)
 				}
-				// Encode the bytes to base64 for newline delimited storage
-				base64Block := base64.StdEncoding.EncodeToString(bytesBlocks)
-				encodedBytesBlocks = append(encodedBytesBlocks, base64Block)
-			}
 
-			if err := c.StorageInstance.Save(batchDir, "blocks.proto", encodedBytesBlocks); err != nil {
-				return fmt.Errorf("failed to save blocks.proto: %w", err)
-			}
-			log.Printf("Saved blocks.proto to %s", batchDir)
-
-			var encodedBytesTransactions []string
-			for _, transaction := range transactions {
-				bytesTransaction, err := proto.Marshal(transaction)
+				dataBytes, err := proto.Marshal(blocksBatch)
 				if err != nil {
-					return fmt.Errorf("failed to marshal proto message for transactions: %w", err)
+					log.Fatalf("Failed to marshal blocks: %v", err)
 				}
-				// Encode the bytes to base64 for newline delimited storage
-				base64Transaction := base64.StdEncoding.EncodeToString(bytesTransaction)
-				encodedBytesTransactions = append(encodedBytesTransactions, base64Transaction)
-			}
 
-			if err := c.StorageInstance.Save(batchDir, "transactions.proto", encodedBytesTransactions); err != nil {
-				return fmt.Errorf("failed to save transactions.proto: %w", err)
-			}
-			log.Printf("Saved transactions.proto to %s", batchDir)
-
-			updateBlockIndexFilepaths(blockIndex, c.basePath, batchDir)
-			interfaceBlockIndex := make([]interface{}, len(blockIndex))
-			for i, v := range blockIndex {
-				interfaceBlockIndex[i] = v
-			}
-
-			if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceBlockIndex, "block"); err != nil {
-				return fmt.Errorf("failed to write block index to database: %w", err)
-			}
-
-			updateTransactionIndexFilepaths(transactionIndex, c.basePath, batchDir)
-			interfaceTransactionIndex := make([]interface{}, len(transactionIndex))
-			for i, v := range transactionIndex {
-				interfaceTransactionIndex[i] = v
-			}
-
-			if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceTransactionIndex, "transaction"); err != nil {
-				return fmt.Errorf("failed to write transaction index to database: %w", err)
-			}
-
-			events, eventsIndex, err := seer_blockchain.CrawlEvents(c.Client, big.NewInt(int64(c.startBlock)), big.NewInt(int64(tempEndBlock)), blocksCache, SEER_CRAWLER_DEBUG)
-			if err != nil {
-				return fmt.Errorf("failed to crawl events: %w", err)
-			}
-
-			UpdateEventIndexFilepaths(eventsIndex, c.basePath, batchDir)
-			interfaceEventsIndex := make([]interface{}, len(eventsIndex))
-			for i, v := range eventsIndex {
-				interfaceEventsIndex[i] = v
-			}
-
-			if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceEventsIndex, "log"); err != nil {
-				return fmt.Errorf("failed to write event index to database: %w", err)
-			}
-
-			var encodedBytesEvents []string
-			for _, event := range events {
-				bytesEvent, err := proto.Marshal(event)
-				if err != nil {
-					return fmt.Errorf("failed to marshal proto message: %w", err)
+				if pushEr := c.PushPackOfData(bytes.NewBuffer(dataBytes), blocksIndexPack, txsIndexPack, eventsIndexPack, packStartBlock, tempEndBlock); err != nil {
+					return fmt.Errorf("unable to push data correctly: %w", pushEr)
 				}
-				// Encode the bytes to base64 for newline delimited storage
-				base64Event := base64.StdEncoding.EncodeToString(bytesEvent)
-				encodedBytesEvents = append(encodedBytesEvents, base64Event)
-			}
 
-			if err := c.StorageInstance.Save(batchDir, "logs.proto", encodedBytesEvents); err != nil {
-				return fmt.Errorf("failed to save logs.proto: %w", err)
+				blocksPackSize = 0
+				blocksPack = []proto.Message{}
+				blocksIndexPack = []indexer.BlockIndex{}
+				txsIndexPack = []indexer.TransactionIndex{}
+				eventsIndexPack = []indexer.LogIndex{}
+
+				packStartBlock = tempEndBlock + 1
+				packCrawlStartTs = time.Now()
 			}
-			log.Printf("Saved logs.proto to %s", batchDir)
 
 			return nil
 		})
@@ -305,6 +302,31 @@ func (c *Crawler) Start(threads int) {
 		}
 
 		c.startBlock = tempEndBlock + 1
+	}
+
+	if len(blocksPack) > 0 {
+		blocksBatch, batchErr := c.Client.ProcessBlocksToBatch(blocksPack)
+		if batchErr != nil {
+			log.Printf("Unable to process blocks to batch, err: %v", batchErr)
+		}
+
+		dataBytes, err := proto.Marshal(blocksBatch)
+		if err != nil {
+			log.Fatalf("Failed to marshal blocks: %v", err)
+		}
+
+		if pushEr := c.PushPackOfData(bytes.NewBuffer(dataBytes), blocksIndexPack, txsIndexPack, eventsIndexPack, packStartBlock, tempEndBlock); err != nil {
+			log.Printf("Unable to push last pack of data correctly, err: %v", pushEr)
+		}
+
+		blocksPackSize = 0
+		blocksPack = []proto.Message{}
+		blocksIndexPack = []indexer.BlockIndex{}
+		txsIndexPack = []indexer.TransactionIndex{}
+		eventsIndexPack = []indexer.LogIndex{}
+
+		packStartBlock = tempEndBlock + 1
+		packCrawlStartTs = time.Now()
 	}
 }
 
