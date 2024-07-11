@@ -77,4 +77,6 @@ message XaiEventLog {
 
 message XaiBlocksBatch {
   repeated XaiBlock blocks = 1;
+    
+  string seer_version = 2;
 }

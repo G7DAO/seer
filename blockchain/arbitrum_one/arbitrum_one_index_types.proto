@@ -77,4 +77,6 @@ message ArbitrumOneEventLog {
 
 message ArbitrumOneBlocksBatch {
   repeated ArbitrumOneBlock blocks = 1;
+    
+  string seer_version = 2;
 }

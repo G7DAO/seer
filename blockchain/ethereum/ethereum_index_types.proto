@@ -73,4 +73,6 @@ message EthereumEventLog {
 
 message EthereumBlocksBatch {
   repeated EthereumBlock blocks = 1;
+    
+  string seer_version = 2;
 }
