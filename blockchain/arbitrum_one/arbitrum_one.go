@@ -309,7 +309,7 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 		parsedEvents = append(parsedEvents, parsedEvent)
 
 		// Prepare events to index
-		var topic0, topic1, topic2 *string
+		var topic0, topic1, topic2, topic3 *string
 
 		if len(parsedEvent.Topics) == 0 {
 			fmt.Println("No topics found for event: ", parsedEvent)
@@ -325,6 +325,10 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 			topic2 = &parsedEvent.Topics[2] // Third topic, if present
 		}
 
+		if len(parsedEvent.Topics) > 3 {
+			topic3 = &parsedEvent.Topics[3] // Fourth topic, if present
+		}
+
 		eventsIndex = append(eventsIndex, indexer.LogIndex{
 			Address:         parsedEvent.Address,
 			BlockNumber:     parsedEvent.BlockNumber,
@@ -334,6 +338,7 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 			Selector:        topic0, // First topic
 			Topic1:          topic1,
 			Topic2:          topic2,
+			Topic3:          topic3,
 			RowID:           uint64(i), // TODO: Remove
 			LogIndex:        parsedEvent.LogIndex,
 			Path:            "",

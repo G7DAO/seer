@@ -79,15 +79,16 @@ type LogIndex struct {
 	BlockTimestamp  uint64
 	Address         string
 	TransactionHash string
-	Selector        *string // TODO: 1) Add Topic1, Topic2. 2) Rename Topic0 to selector
+	Selector        *string
 	Topic1          *string
 	Topic2          *string
+	Topic3          *string
 	RowID           uint64
 	LogIndex        uint64
 	Path            string
 }
 
-func NewLogIndex(chain string, address string, blockNumber uint64, blockHash string, transactionHash string, BlockTimestamp uint64, topic0 *string, topic1 *string, topic2 *string, row_id uint64, logIndex uint64, path string) LogIndex {
+func NewLogIndex(chain string, address string, blockNumber uint64, blockHash string, transactionHash string, BlockTimestamp uint64, topic0 *string, topic1 *string, topic2 *string, topic3 *string, row_id uint64, logIndex uint64, path string) LogIndex {
 	return LogIndex{
 		chain:           chain,
 		Address:         address,
@@ -98,6 +99,7 @@ func NewLogIndex(chain string, address string, blockNumber uint64, blockHash str
 		Selector:        topic0,
 		Topic1:          topic1,
 		Topic2:          topic2,
+		Topic3:          topic3,
 		RowID:           row_id,
 		LogIndex:        logIndex,
 		Path:            path,

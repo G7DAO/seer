@@ -508,7 +508,7 @@ func (p *PostgreSQLpgx) writeTransactionIndexToDB(tableName string, indexes []Tr
 
 func (p *PostgreSQLpgx) writeLogIndexToDB(tableName string, indexes []LogIndex) error {
 
-	columns := []string{"transaction_hash", "block_hash", "address", "selector", "topic1", "topic2", "row_id", "log_index", "path"}
+	columns := []string{"transaction_hash", "block_hash", "address", "selector", "topic1", "topic2", "topic3", "row_id", "log_index", "path"}
 
 	var valuesMap = make(map[string]UnnestInsertValueStruct)
 
@@ -542,6 +542,11 @@ func (p *PostgreSQLpgx) writeLogIndexToDB(tableName string, indexes []LogIndex) 
 		Values: make([]interface{}, 0),
 	}
 
+	valuesMap["topic3"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
 	valuesMap["row_id"] = UnnestInsertValueStruct{
 		Type:   "BIGINT",
 		Values: make([]interface{}, 0),
@@ -571,6 +576,7 @@ func (p *PostgreSQLpgx) writeLogIndexToDB(tableName string, indexes []LogIndex) 
 		updateValues(valuesMap, "selector", index.Selector)
 		updateValues(valuesMap, "topic1", index.Topic1)
 		updateValues(valuesMap, "topic2", index.Topic2)
+		updateValues(valuesMap, "topic3", index.Topic3)
 		updateValues(valuesMap, "row_id", index.RowID)
 		updateValues(valuesMap, "log_index", index.LogIndex)
 		updateValues(valuesMap, "path", index.Path)
