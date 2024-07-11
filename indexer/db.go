@@ -650,7 +650,8 @@ func (p *PostgreSQLpgx) GetLatestDBBlockNumber(blockchain string) (uint64, error
 
 	err = conn.QueryRow(context.Background(), query).Scan(&blockNumber)
 	if err != nil {
-		return 0, fmt.Errorf("no data in %s, err: %w", blocksTableName, err)
+		log.Printf("No data found in %s table", blocksTableName)
+		return 0, err
 	}
 
 	return blockNumber, nil
