@@ -735,7 +735,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 					Label:           indexer.SeerCrawlerLabel,
 					TransactionHash: tx.Hash,
 					LabelData:       string(txLabelDataBytes), // Convert JSON byte slice to string
-					BlockTimestamp:  blocksCache[tx.BlockNumber],
+					BlockTimestamp:  b.Timestamp,
 				}
 
 				txLabels = append(txLabels, transactionLabel)
@@ -788,7 +788,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 					Address:         e.Address,
 					TransactionHash: e.TransactionHash,
 					LabelData:       string(labelDataBytes), // Convert JSON byte slice to string
-					BlockTimestamp:  blocksCache[e.BlockNumber],
+					BlockTimestamp:  b.Timestamp,
 					LogIndex:        e.LogIndex,
 				}
 
