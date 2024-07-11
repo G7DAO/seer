@@ -435,14 +435,14 @@ func (c *Client) ProcessBlocksToBatch(msgs []proto.Message) (proto.Message, erro
 	}
 
 	return &EthereumBlocksBatch{
-		Blocks: blocks,
+		Blocks:      blocks,
 		SeerVersion: version.SeerVersion,
 	}, nil
 }
 
 func ToEntireBlocksBatchFromLogProto(obj *EthereumBlocksBatch) *seer_common.BlocksBatchJson {
 	blocksBatchJson := seer_common.BlocksBatchJson{
-		Blocks: []seer_common.BlockJson{},
+		Blocks:      []seer_common.BlockJson{},
 		SeerVersion: obj.SeerVersion,
 	}
 
@@ -519,11 +519,6 @@ func ToEntireBlocksBatchFromLogProto(obj *EthereumBlocksBatch) *seer_common.Bloc
 			BaseFeePerGas:    b.BaseFeePerGas,
 			IndexedAt:        fmt.Sprintf("%d", b.IndexedAt),
 
-			
-			
-			
-			
-
 			Transactions: txs,
 		})
 	}
@@ -552,11 +547,6 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *EthereumBlock {
 		TotalDifficulty:  obj.TotalDifficulty,
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        fromHex(obj.IndexedAt).Uint64(),
-
-		
-		
-		
-		
 	}
 }
 
@@ -674,12 +664,12 @@ func (c *Client) DecodeProtoBlocks(data []string) ([]*EthereumBlock, error) {
 func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) (*seer_common.BlocksBatchJson, error) {
 	var protoBlocksBatch EthereumBlocksBatch
 
-    dataBytes := rawData.Bytes()
+	dataBytes := rawData.Bytes()
 
-    err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
-    if err != nil {
-        return nil, fmt.Errorf("failed to unmarshal data: %v", err)
-    }
+	err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal data: %v", err)
+	}
 
 	blocksBatchJson := ToEntireBlocksBatchFromLogProto(&protoBlocksBatch)
 
@@ -691,10 +681,10 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 
 	dataBytes := rawData.Bytes()
 
-    err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
-    if err != nil {
-        return nil, nil, fmt.Errorf("failed to unmarshal data: %v", err)
-    }
+	err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal data: %v", err)
+	}
 
 	var labels []indexer.EventLabel
 	var txLabels []indexer.TransactionLabel

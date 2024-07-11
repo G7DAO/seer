@@ -435,14 +435,14 @@ func (c *Client) ProcessBlocksToBatch(msgs []proto.Message) (proto.Message, erro
 	}
 
 	return &XaiSepoliaBlocksBatch{
-		Blocks: blocks,
+		Blocks:      blocks,
 		SeerVersion: version.SeerVersion,
 	}, nil
 }
 
 func ToEntireBlocksBatchFromLogProto(obj *XaiSepoliaBlocksBatch) *seer_common.BlocksBatchJson {
 	blocksBatchJson := seer_common.BlocksBatchJson{
-		Blocks: []seer_common.BlockJson{},
+		Blocks:      []seer_common.BlockJson{},
 		SeerVersion: obj.SeerVersion,
 	}
 
@@ -519,10 +519,10 @@ func ToEntireBlocksBatchFromLogProto(obj *XaiSepoliaBlocksBatch) *seer_common.Bl
 			BaseFeePerGas:    b.BaseFeePerGas,
 			IndexedAt:        fmt.Sprintf("%d", b.IndexedAt),
 
-			MixHash:       b.MixHash, 
-			SendCount:     b.SendCount, 
-			SendRoot:      b.SendRoot, 
-			L1BlockNumber: fmt.Sprintf("%d", b.L1BlockNumber), 
+			MixHash:       b.MixHash,
+			SendCount:     b.SendCount,
+			SendRoot:      b.SendRoot,
+			L1BlockNumber: fmt.Sprintf("%d", b.L1BlockNumber),
 
 			Transactions: txs,
 		})
@@ -553,10 +553,10 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *XaiSepoliaBlock {
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        fromHex(obj.IndexedAt).Uint64(),
 
-		MixHash:       obj.MixHash, 
-		SendCount:     obj.SendCount, 
-		SendRoot:      obj.SendRoot, 
-		L1BlockNumber: fromHex(obj.L1BlockNumber).Uint64(), 
+		MixHash:       obj.MixHash,
+		SendCount:     obj.SendCount,
+		SendRoot:      obj.SendRoot,
+		L1BlockNumber: fromHex(obj.L1BlockNumber).Uint64(),
 	}
 }
 
@@ -674,12 +674,12 @@ func (c *Client) DecodeProtoBlocks(data []string) ([]*XaiSepoliaBlock, error) {
 func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) (*seer_common.BlocksBatchJson, error) {
 	var protoBlocksBatch XaiSepoliaBlocksBatch
 
-    dataBytes := rawData.Bytes()
+	dataBytes := rawData.Bytes()
 
-    err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
-    if err != nil {
-        return nil, fmt.Errorf("failed to unmarshal data: %v", err)
-    }
+	err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal data: %v", err)
+	}
 
 	blocksBatchJson := ToEntireBlocksBatchFromLogProto(&protoBlocksBatch)
 
@@ -691,10 +691,10 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 
 	dataBytes := rawData.Bytes()
 
-    err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
-    if err != nil {
-        return nil, nil, fmt.Errorf("failed to unmarshal data: %v", err)
-    }
+	err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal data: %v", err)
+	}
 
 	var labels []indexer.EventLabel
 	var txLabels []indexer.TransactionLabel
