@@ -239,6 +239,32 @@ func (c *Crawler) Start(threads int) {
 		}
 
 		if tempEndBlock > safeBlock {
+			// Before wait check if there is something to push
+			if packCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) && len(blocksPack) > 0 {
+				blocksBatch, batchErr := c.Client.ProcessBlocksToBatch(blocksPack)
+				if batchErr != nil {
+					log.Printf("Unable to process blocks to batch, err: %v", batchErr)
+				}
+
+				dataBytes, err := proto.Marshal(blocksBatch)
+				if err != nil {
+					log.Fatalf("Failed to marshal blocks: %v", err)
+				}
+
+				if pushEr := c.PushPackOfData(bytes.NewBuffer(dataBytes), blocksIndexPack, txsIndexPack, eventsIndexPack, packStartBlock, tempEndBlock); err != nil {
+					log.Printf("Unable to push data correctly, err: %v", pushEr)
+				}
+
+				blocksPackSize = 0
+				blocksPack = []proto.Message{}
+				blocksIndexPack = []indexer.BlockIndex{}
+				txsIndexPack = []indexer.TransactionIndex{}
+				eventsIndexPack = []indexer.LogIndex{}
+
+				packStartBlock = tempEndBlock + 1
+				packCrawlStartTs = time.Now()
+			}
+
 			// Auto adjust time
 			log.Printf("Waiting for new blocks to be mined. Current latestBlockNumber: %d, safeBlock: %d", latestBlockNumber, safeBlock)
 			time.Sleep(waitForBlocksTime)
