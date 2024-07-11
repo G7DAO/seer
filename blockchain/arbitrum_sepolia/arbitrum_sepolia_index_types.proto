@@ -78,4 +78,6 @@ message ArbitrumSepoliaEventLog {
 
 message ArbitrumSepoliaBlocksBatch {
   repeated ArbitrumSepoliaBlock blocks = 1;
+    
+  string seer_version = 2;
 }

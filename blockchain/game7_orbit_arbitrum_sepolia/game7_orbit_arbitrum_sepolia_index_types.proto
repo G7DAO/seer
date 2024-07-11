@@ -78,4 +78,6 @@ message Game7OrbitArbitrumSepoliaEventLog {
 
 message Game7OrbitArbitrumSepoliaBlocksBatch {
   repeated Game7OrbitArbitrumSepoliaBlock blocks = 1;
+  
+  string seer_version = 2;
 }

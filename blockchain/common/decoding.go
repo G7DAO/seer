@@ -14,7 +14,8 @@ import (
 )
 
 type BlocksBatchJson struct {
-	Blocks []BlockJson `json:"blocks"`
+	Blocks      []BlockJson `json:"blocks"`
+	SeerVersion string      `json:"seer_version"`
 }
 
 type BlockJson struct {

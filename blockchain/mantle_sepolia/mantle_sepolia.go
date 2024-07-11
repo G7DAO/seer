@@ -22,6 +22,7 @@ import (
 
 	seer_common "github.com/moonstream-to/seer/blockchain/common"
 	"github.com/moonstream-to/seer/indexer"
+	"github.com/moonstream-to/seer/version"
 )
 
 func NewClient(url string, timeout int) (*Client, error) {
@@ -434,13 +435,15 @@ func (c *Client) ProcessBlocksToBatch(msgs []proto.Message) (proto.Message, erro
 	}
 
 	return &MantleSepoliaBlocksBatch{
-		Blocks: blocks,
+		Blocks:      blocks,
+		SeerVersion: version.SeerVersion,
 	}, nil
 }
 
 func ToEntireBlocksBatchFromLogProto(obj *MantleSepoliaBlocksBatch) *seer_common.BlocksBatchJson {
 	blocksBatchJson := seer_common.BlocksBatchJson{
-		Blocks: []seer_common.BlockJson{},
+		Blocks:      []seer_common.BlockJson{},
+		SeerVersion: obj.SeerVersion,
 	}
 
 	for _, b := range obj.Blocks {

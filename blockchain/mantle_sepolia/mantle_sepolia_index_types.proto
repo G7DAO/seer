@@ -73,4 +73,6 @@ message MantleSepoliaEventLog {
 
 message MantleSepoliaBlocksBatch {
   repeated MantleSepoliaBlock blocks = 1;
+    
+  string seer_version = 2;
 }
