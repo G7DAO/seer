@@ -636,9 +636,7 @@ func (p *PostgreSQLpgx) GetLatestDBBlockNumber(blockchain string) (uint64, error
 	pool := p.GetPool()
 
 	conn, err := pool.Acquire(context.Background())
-
 	if err != nil {
-
 		return 0, err
 
 	}
@@ -647,14 +645,12 @@ func (p *PostgreSQLpgx) GetLatestDBBlockNumber(blockchain string) (uint64, error
 
 	var blockNumber uint64
 
-	query := fmt.Sprintf("SELECT block_number FROM %s ORDER BY block_number DESC LIMIT 1", BlocksTableName(blockchain))
+	blocksTableName := BlocksTableName(blockchain)
+	query := fmt.Sprintf("SELECT block_number FROM %s ORDER BY block_number DESC LIMIT 1", blocksTableName)
 
 	err = conn.QueryRow(context.Background(), query).Scan(&blockNumber)
-
 	if err != nil {
-
-		return 0, err
-
+		return 0, fmt.Errorf("no data in %s, err: %w", blocksTableName, err)
 	}
 
 	return blockNumber, nil

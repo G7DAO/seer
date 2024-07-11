@@ -73,4 +73,6 @@ message PolygonEventLog {
 
 message PolygonBlocksBatch {
   repeated PolygonBlock blocks = 1;
+    
+  string seer_version = 2;
 }

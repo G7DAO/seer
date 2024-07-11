@@ -73,4 +73,6 @@ message MantleEventLog {
 
 message MantleBlocksBatch {
   repeated MantleBlock blocks = 1;
+    
+  string seer_version = 2;
 }

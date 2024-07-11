@@ -233,7 +233,6 @@ func (d *Synchronizer) Start(customerDbUriFlag string) {
 func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	var isEnd bool
 
-	fmt.Println(customerDbUriFlag)
 	customerDBConnections, customerIds, customersErr := d.getCustomers(customerDbUriFlag)
 	if customersErr != nil {
 		return isEnd, customersErr
