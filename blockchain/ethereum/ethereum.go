@@ -786,6 +786,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 					BlockNumber:     e.BlockNumber,
 					BlockHash:       e.BlockHash,
 					Address:         e.Address,
+					OriginAddress:   tx.FromAddress,
 					TransactionHash: e.TransactionHash,
 					LabelData:       string(labelDataBytes), // Convert JSON byte slice to string
 					BlockTimestamp:  b.Timestamp,
