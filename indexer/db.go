@@ -1028,6 +1028,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, toBlock
 }
 
 func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) error {
+
 	tableName := LabelsTableName(blockchain)
 	columns := []string{"id", "label", "transaction_hash", "log_index", "block_number", "block_hash", "block_timestamp", "caller_address", "origin_address", "address", "label_name", "label_type", "label_data"}
 	var valuesMap = make(map[string]UnnestInsertValueStruct)
@@ -1068,17 +1069,17 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 	}
 
 	valuesMap["caller_address"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
+		Type:   "BYTEA",
 		Values: make([]interface{}, 0),
 	}
 
 	valuesMap["origin_address"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
+		Type:   "BYTEA",
 		Values: make([]interface{}, 0),
 	}
 
 	valuesMap["address"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
+		Type:   "BYTEA",
 		Values: make([]interface{}, 0),
 	}
 
@@ -1101,6 +1102,24 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 
 		id := uuid.New()
 
+		callerAddressBytes, err := decodeAddress(event.CallerAddress)
+		if err != nil {
+			fmt.Println("Error decoding caller address:", err, event)
+			continue
+		}
+
+		originAddressBytes, err := decodeAddress(event.OriginAddress)
+		if err != nil {
+			fmt.Println("Error decoding origin address:", err, event)
+			continue
+		}
+
+		addressBytes, err := decodeAddress(event.Address)
+		if err != nil {
+			fmt.Println("Error decoding address:", err, event)
+			continue
+		}
+
 		updateValues(valuesMap, "id", id)
 		updateValues(valuesMap, "label", event.Label)
 		updateValues(valuesMap, "transaction_hash", event.TransactionHash)
@@ -1108,9 +1127,9 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 		updateValues(valuesMap, "block_number", event.BlockNumber)
 		updateValues(valuesMap, "block_hash", event.BlockHash)
 		updateValues(valuesMap, "block_timestamp", event.BlockTimestamp)
-		updateValues(valuesMap, "caller_address", event.CallerAddress)
-		updateValues(valuesMap, "origin_address", event.OriginAddress)
-		updateValues(valuesMap, "address", event.Address)
+		updateValues(valuesMap, "caller_address", callerAddressBytes)
+		updateValues(valuesMap, "origin_address", originAddressBytes)
+		updateValues(valuesMap, "address", addressBytes)
 		updateValues(valuesMap, "label_name", event.LabelName)
 		updateValues(valuesMap, "label_type", event.LabelType)
 		updateValues(valuesMap, "label_data", event.LabelData)
@@ -1142,7 +1161,7 @@ func (p *PostgreSQLpgx) WriteTransactions(blockchain string, transactions []Tran
 	}
 
 	valuesMap["address"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
+		Type:   "BYTEA",
 		Values: make([]interface{}, 0),
 	}
 
@@ -1157,7 +1176,7 @@ func (p *PostgreSQLpgx) WriteTransactions(blockchain string, transactions []Tran
 	}
 
 	valuesMap["caller_address"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
+		Type:   "BYTEA",
 		Values: make([]interface{}, 0),
 	}
 
@@ -1172,7 +1191,7 @@ func (p *PostgreSQLpgx) WriteTransactions(blockchain string, transactions []Tran
 	}
 
 	valuesMap["origin_address"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
+		Type:   "BYTEA",
 		Values: make([]interface{}, 0),
 	}
 
@@ -1200,14 +1219,32 @@ func (p *PostgreSQLpgx) WriteTransactions(blockchain string, transactions []Tran
 
 		id := uuid.New()
 
+		addressBytes, err := decodeAddress(transaction.Address)
+		if err != nil {
+			fmt.Println("Error decoding address:", err, transaction)
+			continue
+		}
+
+		callerAddressBytes, err := decodeAddress(transaction.CallerAddress)
+		if err != nil {
+			fmt.Println("Error decoding caller address:", err, transaction)
+			continue
+		}
+
+		originAddressBytes, err := decodeAddress(transaction.OriginAddress)
+		if err != nil {
+			fmt.Println("Error decoding origin address:", err, transaction)
+			continue
+		}
+
 		updateValues(valuesMap, "id", id)
-		updateValues(valuesMap, "address", transaction.Address)
+		updateValues(valuesMap, "address", addressBytes)
 		updateValues(valuesMap, "block_number", transaction.BlockNumber)
 		updateValues(valuesMap, "block_hash", transaction.BlockHash)
-		updateValues(valuesMap, "caller_address", transaction.CallerAddress)
+		updateValues(valuesMap, "caller_address", callerAddressBytes)
 		updateValues(valuesMap, "label_name", transaction.LabelName)
 		updateValues(valuesMap, "label_type", transaction.LabelType)
-		updateValues(valuesMap, "origin_address", transaction.OriginAddress)
+		updateValues(valuesMap, "origin_address", originAddressBytes)
 		updateValues(valuesMap, "label", transaction.Label)
 		updateValues(valuesMap, "transaction_hash", transaction.TransactionHash)
 		updateValues(valuesMap, "label_data", transaction.LabelData)
