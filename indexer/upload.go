@@ -2,7 +2,6 @@ package indexer
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -146,51 +145,9 @@ func filterDuplicates(indexType string, existingIndices, newIndices []interface{
 	return nil
 }
 
-func WriteIndexesToDatabase(blockchain string, indexes []interface{}, indexType string) error {
-	// Implement logic to write indexes to the database
+// WriteIndicesToDatabase writes the given indices to the database
+func WriteIndicesToDatabase(blockchain string, blocks []BlockIndex, transactions []TransactionIndex, logs []LogIndex) error {
+	// Write block indices
 
-	if len(indexes) == 0 {
-		return nil
-	}
-
-	switch indexType {
-	case "block":
-		var blockIndexes []BlockIndex
-		for _, i := range indexes {
-			index, ok := i.(BlockIndex)
-			if !ok {
-				return errors.New("invalid type for block index")
-			}
-			index.chain = blockchain
-			blockIndexes = append(blockIndexes, index)
-		}
-		return DBConnection.writeBlockIndexToDB(blockchain, blockIndexes)
-
-	case "transaction":
-		var transactionIndexes []TransactionIndex
-		for _, i := range indexes {
-			index, ok := i.(TransactionIndex)
-			if !ok {
-				return errors.New("invalid type for transaction index")
-			}
-			index.chain = blockchain
-			transactionIndexes = append(transactionIndexes, index)
-		}
-		return DBConnection.writeTransactionIndexToDB(blockchain+"_transactions", transactionIndexes)
-
-	case "log":
-		var logIndexes []LogIndex
-		for _, i := range indexes {
-			index, ok := i.(LogIndex)
-			if !ok {
-				return errors.New("invalid type for log index")
-			}
-			index.chain = blockchain
-			logIndexes = append(logIndexes, index)
-		}
-		return DBConnection.writeLogIndexToDB(blockchain+"_logs", logIndexes)
-
-	default:
-		return errors.New("unsupported index type")
-	}
+	return DBConnection.WriteIndexes(blockchain, blocks, transactions, logs)
 }

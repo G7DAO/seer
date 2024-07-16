@@ -126,35 +126,29 @@ func (c *Crawler) PushPackOfData(blocksBufferPack *bytes.Buffer, blocksIndexPack
 	log.Printf("Saved .proto blocks with transactions and events to %s", packRange)
 
 	// Save indexes data
-	var interfaceBlocksIndexPack []interface{}
+	var interfaceBlocksIndexPack []indexer.BlockIndex
 	for _, v := range blocksIndexPack {
 		v.Path = filepath.Join(c.basePath, packRange, "data.proto")
 		interfaceBlocksIndexPack = append(interfaceBlocksIndexPack, v)
 	}
 
-	var interfaceTxsIndexPack []interface{}
+	var interfaceTxsIndexPack []indexer.TransactionIndex
 	for _, v := range txsIndexPack {
 		v.Path = filepath.Join(c.basePath, packRange, "data.proto")
 		interfaceTxsIndexPack = append(interfaceTxsIndexPack, v)
 	}
 
-	var interfaceEventsIndexPack []interface{}
+	var interfaceEventsIndexPack []indexer.LogIndex
 	for _, v := range eventsIndexPack {
 		v.Path = filepath.Join(c.basePath, packRange, "data.proto")
 		interfaceEventsIndexPack = append(interfaceEventsIndexPack, v)
 	}
 
-	// TODO: Unite in one commit
-	if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceBlocksIndexPack, "block"); err != nil {
-		return fmt.Errorf("failed to write block index to database: %w", err)
-	}
+	// Write indexes to database
+	err := indexer.WriteIndicesToDatabase(c.blockchain, interfaceBlocksIndexPack, interfaceTxsIndexPack, interfaceEventsIndexPack)
 
-	if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceTxsIndexPack, "transaction"); err != nil {
-		return fmt.Errorf("failed to write transaction index to database: %w", err)
-	}
-
-	if err := indexer.WriteIndexesToDatabase(c.blockchain, interfaceEventsIndexPack, "log"); err != nil {
-		return fmt.Errorf("failed to write event index to database: %w", err)
+	if err != nil {
+		return fmt.Errorf("failed to write indices to database: %w", err)
 	}
 
 	return nil
