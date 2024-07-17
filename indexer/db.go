@@ -362,6 +362,8 @@ func (p *PostgreSQLpgx) executeBatchInsert(tx pgx.Tx, ctx context.Context, table
 		valuesSlice = append(valuesSlice, values[column].Values)
 	}
 
+	// track execution time
+
 	if _, err := tx.Exec(ctx, query, valuesSlice...); err != nil {
 		fmt.Println("Error executing bulk insert", err)
 		return fmt.Errorf("error executing bulk insert for batch: %w", err)
@@ -371,7 +373,7 @@ func (p *PostgreSQLpgx) executeBatchInsert(tx pgx.Tx, ctx context.Context, table
 }
 
 func (p *PostgreSQLpgx) writeBlockIndexToDB(tx pgx.Tx, blockchain string, indexes []BlockIndex) error {
-	tableName := blockchain + "_blocks"
+	tableName := BlocksTableName(blockchain)
 	isBlockchainWithL1Chain := IsBlockchainWithL1Chain(blockchain)
 	columns := []string{"block_number", "block_hash", "block_timestamp", "parent_hash", "row_id", "path"}
 
@@ -441,7 +443,9 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(tx pgx.Tx, blockchain string, indexe
 	return nil
 }
 
-func (p *PostgreSQLpgx) writeTransactionIndexToDB(tx pgx.Tx, tableName string, indexes []TransactionIndex) error {
+func (p *PostgreSQLpgx) writeTransactionIndexToDB(tx pgx.Tx, blockchain string, indexes []TransactionIndex) error {
+
+	tableName := TransactionsTableName(blockchain)
 
 	columns := []string{"block_number", "block_hash", "hash", "index", "type", "from_address", "to_address", "selector", "row_id", "path"}
 	var valuesMap = make(map[string]UnnestInsertValueStruct)
@@ -537,7 +541,9 @@ func (p *PostgreSQLpgx) writeTransactionIndexToDB(tx pgx.Tx, tableName string, i
 	return nil
 }
 
-func (p *PostgreSQLpgx) writeLogIndexToDB(tx pgx.Tx, tableName string, indexes []LogIndex) error {
+func (p *PostgreSQLpgx) writeLogIndexToDB(tx pgx.Tx, blockchain string, indexes []LogIndex) error {
+
+	tableName := LogsTableName(blockchain)
 
 	columns := []string{"transaction_hash", "block_hash", "address", "selector", "topic1", "topic2", "topic3", "row_id", "log_index", "path"}
 
@@ -615,6 +621,7 @@ func (p *PostgreSQLpgx) writeLogIndexToDB(tx pgx.Tx, tableName string, indexes [
 	}
 
 	ctx := context.Background()
+
 	err = p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT (transaction_hash, log_index) DO NOTHING")
 
 	if err != nil {
