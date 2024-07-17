@@ -438,7 +438,7 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(tx pgx.Tx, blockchain string, indexe
 		return err
 	}
 
-	log.Printf("Add %d records to transaction into %s table", len(indexes), tableName)
+	log.Printf("Add %d records into %s table", len(indexes), tableName)
 
 	return nil
 }
@@ -536,7 +536,7 @@ func (p *PostgreSQLpgx) writeTransactionIndexToDB(tx pgx.Tx, blockchain string, 
 		return err
 	}
 
-	log.Printf("Add %d records to transaction into %s table", len(indexes), tableName)
+	log.Printf("Add %d records into %s table", len(indexes), tableName)
 
 	return nil
 }
@@ -628,7 +628,7 @@ func (p *PostgreSQLpgx) writeLogIndexToDB(tx pgx.Tx, blockchain string, indexes 
 		return err
 	}
 
-	log.Printf("Add %d records to transaction into %s table", len(indexes), tableName)
+	log.Printf("Add %d records into %s table", len(indexes), tableName)
 
 	return nil
 }
