@@ -324,7 +324,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 			return isEnd, fmt.Errorf("error reading updates: %w", err)
 		}
 
-		log.Printf("Read %d users updates from the indexer db\n", len(updates))
+		log.Printf("Read %d users updates from the indexer db in range of blocks %d-%d\n", len(updates), d.startBlock, tempEndBlock)
 
 		var wg sync.WaitGroup
 
