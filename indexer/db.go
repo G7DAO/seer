@@ -289,8 +289,9 @@ func updateValues(valuesMap map[string]UnnestInsertValueStruct, key string, valu
 	valuesMap[key] = tmp
 }
 
-// Batch insert
-func (p *PostgreSQLpgx) executeBatchInsert(ctx context.Context, tableName string, columns []string, values map[string]UnnestInsertValueStruct, conflictClause string) error {
+func (p *PostgreSQLpgx) WriteIndexes(blockchain string, blocksIndexPack []BlockIndex, transactionsIndexPack []TransactionIndex, logsIndexPack []LogIndex) error {
+
+	ctx := context.Background()
 	pool := p.GetPool()
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
@@ -314,6 +315,36 @@ func (p *PostgreSQLpgx) executeBatchInsert(ctx context.Context, tableName string
 		}
 	}()
 
+	// Write blocks index
+	if len(blocksIndexPack) > 0 {
+		err = p.writeBlockIndexToDB(tx, blockchain, blocksIndexPack)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Write transactions index
+	if len(transactionsIndexPack) > 0 {
+		err = p.writeTransactionIndexToDB(tx, blockchain, transactionsIndexPack)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Write logs index
+	if len(logsIndexPack) > 0 {
+		err = p.writeLogIndexToDB(tx, blockchain, logsIndexPack)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Batch insert
+func (p *PostgreSQLpgx) executeBatchInsert(tx pgx.Tx, ctx context.Context, tableName string, columns []string, values map[string]UnnestInsertValueStruct, conflictClause string) error {
+
 	types := make([]string, 0)
 
 	for index, column := range columns {
@@ -331,6 +362,8 @@ func (p *PostgreSQLpgx) executeBatchInsert(ctx context.Context, tableName string
 		valuesSlice = append(valuesSlice, values[column].Values)
 	}
 
+	// track execution time
+
 	if _, err := tx.Exec(ctx, query, valuesSlice...); err != nil {
 		fmt.Println("Error executing bulk insert", err)
 		return fmt.Errorf("error executing bulk insert for batch: %w", err)
@@ -339,8 +372,8 @@ func (p *PostgreSQLpgx) executeBatchInsert(ctx context.Context, tableName string
 	return nil
 }
 
-func (p *PostgreSQLpgx) writeBlockIndexToDB(blockchain string, indexes []BlockIndex) error {
-	tableName := blockchain + "_blocks"
+func (p *PostgreSQLpgx) writeBlockIndexToDB(tx pgx.Tx, blockchain string, indexes []BlockIndex) error {
+	tableName := BlocksTableName(blockchain)
 	isBlockchainWithL1Chain := IsBlockchainWithL1Chain(blockchain)
 	columns := []string{"block_number", "block_hash", "block_timestamp", "parent_hash", "row_id", "path"}
 
@@ -399,18 +432,20 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(blockchain string, indexes []BlockIn
 	}
 
 	ctx := context.Background()
-	err = p.executeBatchInsert(ctx, tableName, columns, valuesMap, "ON CONFLICT (block_number) DO NOTHING")
+	err = p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT (block_number) DO NOTHING")
 
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Saved %d records into %s table", len(indexes), tableName)
+	log.Printf("Add %d records to transaction into %s table", len(indexes), tableName)
 
 	return nil
 }
 
-func (p *PostgreSQLpgx) writeTransactionIndexToDB(tableName string, indexes []TransactionIndex) error {
+func (p *PostgreSQLpgx) writeTransactionIndexToDB(tx pgx.Tx, blockchain string, indexes []TransactionIndex) error {
+
+	tableName := TransactionsTableName(blockchain)
 
 	columns := []string{"block_number", "block_hash", "hash", "index", "type", "from_address", "to_address", "selector", "row_id", "path"}
 	var valuesMap = make(map[string]UnnestInsertValueStruct)
@@ -495,18 +530,20 @@ func (p *PostgreSQLpgx) writeTransactionIndexToDB(tableName string, indexes []Tr
 
 	ctx := context.Background()
 
-	err = p.executeBatchInsert(ctx, tableName, columns, valuesMap, "ON CONFLICT (hash) DO NOTHING")
+	err = p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT (hash) DO NOTHING")
 
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Saved %d records into %s table", len(indexes), tableName)
+	log.Printf("Add %d records to transaction into %s table", len(indexes), tableName)
 
 	return nil
 }
 
-func (p *PostgreSQLpgx) writeLogIndexToDB(tableName string, indexes []LogIndex) error {
+func (p *PostgreSQLpgx) writeLogIndexToDB(tx pgx.Tx, blockchain string, indexes []LogIndex) error {
+
+	tableName := LogsTableName(blockchain)
 
 	columns := []string{"transaction_hash", "block_hash", "address", "selector", "topic1", "topic2", "topic3", "row_id", "log_index", "path"}
 
@@ -584,13 +621,14 @@ func (p *PostgreSQLpgx) writeLogIndexToDB(tableName string, indexes []LogIndex) 
 	}
 
 	ctx := context.Background()
-	err = p.executeBatchInsert(ctx, tableName, columns, valuesMap, "ON CONFLICT (transaction_hash, log_index) DO NOTHING")
+
+	err = p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT (transaction_hash, log_index) DO NOTHING")
 
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Saved %d records into %s table", len(indexes), tableName)
+	log.Printf("Add %d records to transaction into %s table", len(indexes), tableName)
 
 	return nil
 }
@@ -1027,7 +1065,57 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, toBlock
 
 }
 
-func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) error {
+func (p *PostgreSQLpgx) WriteLabes(
+	blockchain string,
+	transactions []TransactionLabel,
+	events []EventLabel,
+) error {
+
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
+	if err != nil {
+		return err
+	}
+
+	defer conn.Release()
+
+	tx, err := conn.Begin(context.Background())
+
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if err := recover(); err != nil {
+			tx.Rollback(context.Background())
+			panic(err)
+		} else if err != nil {
+			tx.Rollback(context.Background())
+		} else {
+			err = tx.Commit(context.Background())
+		}
+	}()
+
+	if len(transactions) > 0 {
+		err := p.WriteTransactions(tx, blockchain, transactions)
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(events) > 0 {
+		err := p.WriteEvents(tx, blockchain, events)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *PostgreSQLpgx) WriteEvents(tx pgx.Tx, blockchain string, events []EventLabel) error {
 
 	tableName := LabelsTableName(blockchain)
 	columns := []string{"id", "label", "transaction_hash", "log_index", "block_number", "block_hash", "block_timestamp", "caller_address", "origin_address", "address", "label_name", "label_type", "label_data"}
@@ -1138,7 +1226,7 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 
 	ctx := context.Background()
 
-	err := p.executeBatchInsert(ctx, tableName, columns, valuesMap, "ON CONFLICT (transaction_hash, log_index) where label='seer' and label_type = 'event' DO NOTHING")
+	err := p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT (transaction_hash, log_index) where label='seer' and label_type = 'event' DO NOTHING")
 
 	if err != nil {
 		return err
@@ -1149,7 +1237,7 @@ func (p *PostgreSQLpgx) WriteEvents(blockchain string, events []EventLabel) erro
 	return nil
 }
 
-func (p *PostgreSQLpgx) WriteTransactions(blockchain string, transactions []TransactionLabel) error {
+func (p *PostgreSQLpgx) WriteTransactions(tx pgx.Tx, blockchain string, transactions []TransactionLabel) error {
 	tableName := LabelsTableName(blockchain)
 	columns := []string{"id", "address", "block_number", "block_hash", "caller_address", "label_name", "label_type", "origin_address", "label", "transaction_hash", "label_data", "block_timestamp"}
 
@@ -1254,7 +1342,7 @@ func (p *PostgreSQLpgx) WriteTransactions(blockchain string, transactions []Tran
 
 	ctx := context.Background()
 
-	err := p.executeBatchInsert(ctx, tableName, columns, valuesMap, "ON CONFLICT (transaction_hash) WHERE label='seer' AND label_type='tx_call' DO NOTHING")
+	err := p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT (transaction_hash) WHERE label='seer' AND label_type='tx_call' DO NOTHING")
 
 	if err != nil {
 		return err

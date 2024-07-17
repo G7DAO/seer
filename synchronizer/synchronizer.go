@@ -399,23 +399,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 					decodedTransactionsPack = append(decodedTransactionsPack, decodedTransactions...)
 				}
 
-				if len(decodedEventsPack) > 0 {
-					// Write events to user RDS
-					customer.Pgx.WriteEvents(
-						d.blockchain,
-						decodedEventsPack,
-					)
-				}
-
-				// // Transactions
-
-				// Write transactions to user RDS
-				if len(decodedTransactionsPack) > 0 {
-					customer.Pgx.WriteTransactions(
-						d.blockchain,
-						decodedTransactionsPack,
-					)
-				}
+				customer.Pgx.WriteLabes(d.blockchain, decodedTransactionsPack, decodedEventsPack)
 
 				<-sem
 			}(update)
