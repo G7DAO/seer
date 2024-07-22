@@ -16,6 +16,7 @@ import (
 	"github.com/moonstream-to/seer/blockchain/mantle"
 	"github.com/moonstream-to/seer/blockchain/mantle_sepolia"
 	"github.com/moonstream-to/seer/blockchain/polygon"
+	"github.com/moonstream-to/seer/blockchain/sepolia"
 	"github.com/moonstream-to/seer/blockchain/xai"
 	"github.com/moonstream-to/seer/blockchain/xai_sepolia"
 	"github.com/moonstream-to/seer/indexer"
@@ -25,6 +26,9 @@ import (
 func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 	if chain == "ethereum" {
 		client, err := ethereum.NewClient(url, timeout)
+		return client, err
+	} else if chain == "sepolia" {
+		client, err := sepolia.NewClient(url, timeout)
 		return client, err
 	} else if chain == "polygon" {
 		client, err := polygon.NewClient(url, timeout)

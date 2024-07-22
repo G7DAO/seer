@@ -414,7 +414,7 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 			block.ParentHash,
 			uint64(bI),
 			"",
-			block.L1BlockNumber,
+			0,
 		))
 
 		blocksSize += uint64(proto.Size(block))
@@ -519,11 +519,6 @@ func ToEntireBlocksBatchFromLogProto(obj *SepoliaBlocksBatch) *seer_common.Block
 			BaseFeePerGas:    b.BaseFeePerGas,
 			IndexedAt:        fmt.Sprintf("%d", b.IndexedAt),
 
-			MixHash:       b.MixHash,
-			SendCount:     b.SendCount,
-			SendRoot:      b.SendRoot,
-			L1BlockNumber: fmt.Sprintf("%d", b.L1BlockNumber),
-
 			Transactions: txs,
 		})
 	}
@@ -552,11 +547,6 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *SepoliaBlock {
 		TotalDifficulty:  obj.TotalDifficulty,
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        fromHex(obj.IndexedAt).Uint64(),
-
-		MixHash:       obj.MixHash,
-		SendCount:     obj.SendCount,
-		SendRoot:      obj.SendRoot,
-		L1BlockNumber: fromHex(obj.L1BlockNumber).Uint64(),
 	}
 }
 
