@@ -29,6 +29,10 @@ func CheckVariablesForCrawler() error {
 	if MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI == "" {
 		return fmt.Errorf("MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI environment variable is required")
 	}
+	MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI")
+	if MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI == "" {
+		return fmt.Errorf("MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI environment variable is required")
+	}
 	MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI")
 	if MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI == "" {
 		return fmt.Errorf("MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI environment variable is required")
@@ -67,6 +71,7 @@ func CheckVariablesForCrawler() error {
 
 	BlockchainURLs = map[string]string{
 		"ethereum":                     MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI,
+		"sepolia":                      MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI,
 		"polygon":                      MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI,
 		"arbitrum_one":                 MOONSTREAM_NODE_ARBITRUM_ONE_A_EXTERNAL_URI,
 		"arbitrum_sepolia":             MOONSTREAM_NODE_ARBITRUM_SEPOLIA_A_EXTERNAL_URI,
