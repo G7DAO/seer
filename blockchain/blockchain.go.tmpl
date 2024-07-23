@@ -724,8 +724,8 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 
 				decodedArgs, err := seer_common.DecodeTransactionInputDataToInterface(&txContractAbi, inputData)
 				if err != nil {
-					fmt.Println("Error decoding transaction input data: ", err)
-					return nil, nil, err
+					fmt.Println("Error decoding transaction not decoded data: ", tx.Hash, err)
+					continue
 				}
 
 				txLabelDataBytes, err := json.Marshal(decodedArgs)
@@ -777,8 +777,8 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 				decodedArgs, err := seer_common.DecodeLogArgsToLabelData(&contractAbi, e.Topics, e.Data)
 
 				if err != nil {
-					fmt.Println("Error decoding event data: ", err)
-					return nil, nil, err
+					fmt.Println("Error decoding event not decoded data: ", e.TransactionHash,"Event: ", abiMap[e.Address][topicSelector]["abi_name"], err)
+					continue
 				}
 
 				// Convert decodedArgs map to JSON
@@ -840,8 +840,8 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 		decodedArgs, err := seer_common.DecodeTransactionInputDataToInterface(&contractAbi, inputData)
 
 		if err != nil {
-			fmt.Println("Error decoding transaction input data: ", err)
-			return nil, err
+			fmt.Println("Error decoding transaction not decoded data: ", transaction.Hash, err)
+			continue
 		}
 
 		labelDataBytes, err := json.Marshal(decodedArgs)
