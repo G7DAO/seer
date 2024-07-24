@@ -729,10 +729,12 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 				decodedArgs, decodeErr := seer_common.DecodeTransactionInputDataToInterface(&txContractAbi, inputData)
 				if decodeErr != nil {
 					fmt.Println("Error decoding transaction not decoded data: ", tx.Hash, decodeErr)
-					decodedArgs["input_raw"] = tx
-					decodedArgs["abi"] = abiMap[tx.ToAddress][selector]["abi"]
-					decodedArgs["selector"] = selector
-					decodedArgs["error"] = decodeErr
+					decodedArgs = map[string]interface{}{
+						"input_raw": tx,
+						"abi": abiMap[tx.ToAddress][selector]["abi"],
+						"selector": selector,
+						"error": decodeErr,
+					}
 					label = indexer.SeerCrawlerRawLabel
 				}
 
@@ -789,10 +791,12 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 				decodedArgs, decodeErr = seer_common.DecodeLogArgsToLabelData(&contractAbi, e.Topics, e.Data)
 				if decodeErr != nil {
 					fmt.Println("Error decoding event not decoded data: ", e.TransactionHash, decodeErr)
-					decodedArgs["input_raw"] = e
-					decodedArgs["abi"] = abiMap[e.Address][topicSelector]["abi"]
-					decodedArgs["selector"] = topicSelector
-					decodedArgs["error"] = decodeErr
+					decodedArgs = map[string]interface{}{
+						"input_raw": e,
+						"abi": abiMap[e.Address][topicSelector]["abi"],
+						"selector": topicSelector,
+						"error": decodeErr,
+					}
 					label = indexer.SeerCrawlerRawLabel
 				}
 
@@ -861,10 +865,12 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 
 		if decodeErr != nil {
 			fmt.Println("Error decoding transaction not decoded data: ", transaction.Hash, decodeErr)
-			decodedArgs["input_raw"] = transaction
-			decodedArgs["abi"] = abiMap[transaction.ToAddress][selector]["abi"]
-			decodedArgs["selector"] = selector
-			decodedArgs["error"] = decodeErr
+			decodedArgs = map[string]interface{}{
+				"input_raw": transaction,
+				"abi": abiMap[transaction.ToAddress][selector]["abi"],
+				"selector": selector,
+				"error": decodeErr,
+			}
 			label = indexer.SeerCrawlerRawLabel
 		}
 
