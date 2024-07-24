@@ -211,7 +211,8 @@ func CreateStarknetCommand() *cobra.Command {
 
 	starknetABIParseCmd := CreateStarknetParseCommand()
 	starknetABIGenGoCmd := CreateStarknetGenerateCommand()
-	starknetCmd.AddCommand(starknetABIParseCmd, starknetABIGenGoCmd)
+	starknetDeployment := CreateStarknetFindDeploymentCommand()
+	starknetCmd.AddCommand(starknetABIParseCmd, starknetABIGenGoCmd, starknetDeployment)
 
 	return starknetCmd
 }
@@ -699,6 +700,54 @@ func CreateStarknetGenerateCommand() *cobra.Command {
 	starknetGenerateCommand.Flags().StringVarP(&infile, "abi", "a", "", "Path to contract ABI (default stdin)")
 
 	return starknetGenerateCommand
+}
+
+func CreateStarknetFindDeploymentCommand() *cobra.Command {
+	var web3ProviderUri, contractAddress string
+
+	starknetFindDeploymentCommand := &cobra.Command{
+		Use:   "find-deployment-block",
+		Short: "Discover the block number in which a contract was deployed",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if web3ProviderUri == "" {
+				web3ProviderUriFromEnv := os.Getenv("WEB3_PROVIDER_URI")
+				if web3ProviderUriFromEnv == "" {
+					return errors.New("provider of JSON RPC url is required via -p/--provider or set the WEB3_PROVIDER_URI environment variable")
+				}
+				web3ProviderUri = web3ProviderUriFromEnv
+
+				if contractAddress == "" {
+					return errors.New("contract address is required via -c/--contract")
+				}
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			provider, providerErr := starknet.NewProvider(web3ProviderUri)
+			if providerErr != nil {
+				return providerErr
+			}
+
+			address, parseErr := starknet.ParseAddress(contractAddress)
+			if parseErr != nil {
+				return parseErr
+			}
+
+			ctx := context.Background()
+			deploymentBlock, err := starknet.DeploymentBlock(ctx, provider, address)
+			if err != nil {
+				return err
+			}
+
+			cmd.Println(deploymentBlock)
+			return nil
+		},
+	}
+
+	starknetFindDeploymentCommand.Flags().StringVarP(&web3ProviderUri, "provider", "p", "", "The URL of your Starknet JSON RPC provider (defaults to value of WEB3_PROVIDER_URI environment variable)")
+	starknetFindDeploymentCommand.Flags().StringVarP(&contractAddress, "contract", "c", "", "The address of the smart contract to find the deployment block for")
+
+	return starknetFindDeploymentCommand
 }
 
 func CreateEVMCommand() *cobra.Command {
