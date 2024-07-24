@@ -10,6 +10,7 @@ var (
 	InsertMaxParametersPerBatch  = 65535
 	SeerCrawlerLabel             string
 	MOONSTREAM_DB_V3_INDEXES_URI string
+	SeerCrawlerRawLabel          string
 )
 
 func CheckVariablesForIndexer() error {
@@ -17,6 +18,8 @@ func CheckVariablesForIndexer() error {
 	if SeerCrawlerLabel == "" {
 		return fmt.Errorf("SEER_CRAWLER_INDEXER_LABEL environment variable is required")
 	}
+
+	SeerCrawlerRawLabel = SeerCrawlerLabel + "-raw"
 
 	MOONSTREAM_DB_V3_INDEXES_URI = os.Getenv("MOONSTREAM_DB_V3_INDEXES_URI")
 	if MOONSTREAM_DB_V3_INDEXES_URI == "" {
