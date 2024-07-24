@@ -698,6 +698,8 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 
 	var labels []indexer.EventLabel
 	var txLabels []indexer.TransactionLabel
+	var decodedArgs map[string]interface{}
+	var decodeErr error
 
 	for _, b := range protoBlocksBatch.Blocks {
 		for _, tx := range b.Transactions {
@@ -724,14 +726,13 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 					return nil, nil, err
 				}
 
-				decodedArgs, err := seer_common.DecodeTransactionInputDataToInterface(&txContractAbi, inputData)
-				if err != nil {
-					decodedArgs = map[string]interface{}{}
-					fmt.Println("Error decoding transaction not decoded data: ", tx.Hash, err)
+				decodedArgs, decodeErr := seer_common.DecodeTransactionInputDataToInterface(&txContractAbi, inputData)
+				if decodeErr != nil {
+					fmt.Println("Error decoding transaction not decoded data: ", tx.Hash, decodeErr)
 					decodedArgs["input_raw"] = tx
 					decodedArgs["abi"] = abiMap[tx.ToAddress][selector]["abi"]
 					decodedArgs["selector"] = selector
-					decodedArgs["error"] = err
+					decodedArgs["error"] = decodeErr
 					label = indexer.SeerCrawlerRawLabel
 				}
 
@@ -784,15 +785,13 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCac
 				}
 
 				// Decode the event data
-				decodedArgs, err := seer_common.DecodeLogArgsToLabelData(&contractAbi, e.Topics, e.Data)
-
-				if err != nil {
-					decodedArgs = map[string]interface{}{}
-					fmt.Println("Error decoding event not decoded data: ", e.TransactionHash, err)
+				decodedArgs, decodeErr = seer_common.DecodeLogArgsToLabelData(&contractAbi, e.Topics, e.Data)
+				if decodeErr != nil {
+					fmt.Println("Error decoding event not decoded data: ", e.TransactionHash, decodeErr)
 					decodedArgs["input_raw"] = e
 					decodedArgs["abi"] = abiMap[e.Address][topicSelector]["abi"]
 					decodedArgs["selector"] = topicSelector
-					decodedArgs["error"] = err
+					decodedArgs["error"] = decodeErr
 					label = indexer.SeerCrawlerRawLabel
 				}
 
@@ -835,6 +834,8 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 	}
 
 	var labels []indexer.TransactionLabel
+	var decodedArgs map[string]interface{}
+	var decodeErr error
 
 	for _, transaction := range decodedTransactions {
 
@@ -854,15 +855,14 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 			return nil, err
 		}
 
-		decodedArgs, err := seer_common.DecodeTransactionInputDataToInterface(&contractAbi, inputData)
+		decodedArgs, decodeErr = seer_common.DecodeTransactionInputDataToInterface(&contractAbi, inputData)
 
-		if err != nil {
-			decodedArgs = map[string]interface{}{}
-			fmt.Println("Error decoding transaction not decoded data: ", transaction.Hash, err)
+		if decodeErr != nil {
+			fmt.Println("Error decoding transaction not decoded data: ", transaction.Hash, decodeErr)
 			decodedArgs["input_raw"] = transaction
 			decodedArgs["abi"] = abiMap[transaction.ToAddress][selector]["abi"]
 			decodedArgs["selector"] = selector
-			decodedArgs["error"] = err
+			decodedArgs["error"] = decodeErr
 			label = indexer.SeerCrawlerRawLabel
 		}
 
