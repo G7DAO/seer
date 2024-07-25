@@ -1,4 +1,4 @@
-package arbitrum_one
+package imx_zkevm
 
 import (
 	"bytes"
@@ -46,7 +46,7 @@ type Client struct {
 
 // ChainType returns the chain type.
 func (c *Client) ChainType() string {
-	return "arbitrum_one"
+	return "imx_zkevm"
 }
 
 // Close closes the underlying RPC client.
@@ -261,7 +261,7 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 
 // ParseBlocksWithTransactions parses blocks and their transactions into custom data structure.
 // This method showcases how to handle and transform detailed block and transaction data.
-func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxRequests int) ([]*ArbitrumOneBlock, error) {
+func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxRequests int) ([]*ImxZkevmBlock, error) {
 	var blocksWithTxsJson []*seer_common.BlockJson
 	var fetchErr error
 	if maxRequests > 1 {
@@ -273,7 +273,7 @@ func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxR
 		return nil, fetchErr
 	}
 
-	var parsedBlocks []*ArbitrumOneBlock
+	var parsedBlocks []*ImxZkevmBlock
 	for _, blockAndTxsJson := range blocksWithTxsJson {
 		// Convert BlockJson to Block and Transactions as required.
 		parsedBlock := ToProtoSingleBlock(blockAndTxsJson)
@@ -291,7 +291,7 @@ func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxR
 	return parsedBlocks, nil
 }
 
-func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*ArbitrumOneEventLog, []indexer.LogIndex, error) {
+func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*ImxZkevmEventLog, []indexer.LogIndex, error) {
 	logs, err := c.ClientFilterLogs(context.Background(), ethereum.FilterQuery{
 		FromBlock: from,
 		ToBlock:   to,
@@ -302,7 +302,7 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 		return nil, nil, err
 	}
 
-	var parsedEvents []*ArbitrumOneEventLog
+	var parsedEvents []*ImxZkevmEventLog
 	var eventsIndex []indexer.LogIndex
 
 	for i, log := range logs {
@@ -408,14 +408,14 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 		}
 
 		// Prepare blocks to index
-		blocksIndex = append(blocksIndex, indexer.NewBlockIndex("arbitrum_one",
+		blocksIndex = append(blocksIndex, indexer.NewBlockIndex("imx_zkevm",
 			block.BlockNumber,
 			block.Hash,
 			block.Timestamp,
 			block.ParentHash,
 			uint64(bI),
 			"",
-			block.L1BlockNumber,
+			0,
 		))
 
 		blocksSize += uint64(proto.Size(block))
@@ -426,22 +426,22 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 }
 
 func (c *Client) ProcessBlocksToBatch(msgs []proto.Message) (proto.Message, error) {
-	var blocks []*ArbitrumOneBlock
+	var blocks []*ImxZkevmBlock
 	for _, msg := range msgs {
-		block, ok := msg.(*ArbitrumOneBlock)
+		block, ok := msg.(*ImxZkevmBlock)
 		if !ok {
-			return nil, fmt.Errorf("failed to type assert proto.Message to *ArbitrumOneBlock")
+			return nil, fmt.Errorf("failed to type assert proto.Message to *ImxZkevmBlock")
 		}
 		blocks = append(blocks, block)
 	}
 
-	return &ArbitrumOneBlocksBatch{
+	return &ImxZkevmBlocksBatch{
 		Blocks:      blocks,
 		SeerVersion: version.SeerVersion,
 	}, nil
 }
 
-func ToEntireBlocksBatchFromLogProto(obj *ArbitrumOneBlocksBatch) *seer_common.BlocksBatchJson {
+func ToEntireBlocksBatchFromLogProto(obj *ImxZkevmBlocksBatch) *seer_common.BlocksBatchJson {
 	blocksBatchJson := seer_common.BlocksBatchJson{
 		Blocks:      []seer_common.BlockJson{},
 		SeerVersion: obj.SeerVersion,
@@ -520,11 +520,6 @@ func ToEntireBlocksBatchFromLogProto(obj *ArbitrumOneBlocksBatch) *seer_common.B
 			BaseFeePerGas:    b.BaseFeePerGas,
 			IndexedAt:        fmt.Sprintf("%d", b.IndexedAt),
 
-			MixHash:       b.MixHash,
-			SendCount:     b.SendCount,
-			SendRoot:      b.SendRoot,
-			L1BlockNumber: fmt.Sprintf("%d", b.L1BlockNumber),
-
 			Transactions: txs,
 		})
 	}
@@ -532,8 +527,8 @@ func ToEntireBlocksBatchFromLogProto(obj *ArbitrumOneBlocksBatch) *seer_common.B
 	return &blocksBatchJson
 }
 
-func ToProtoSingleBlock(obj *seer_common.BlockJson) *ArbitrumOneBlock {
-	return &ArbitrumOneBlock{
+func ToProtoSingleBlock(obj *seer_common.BlockJson) *ImxZkevmBlock {
+	return &ImxZkevmBlock{
 		BlockNumber:      fromHex(obj.BlockNumber).Uint64(),
 		Difficulty:       fromHex(obj.Difficulty).Uint64(),
 		ExtraData:        obj.ExtraData,
@@ -553,24 +548,19 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *ArbitrumOneBlock {
 		TotalDifficulty:  obj.TotalDifficulty,
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        fromHex(obj.IndexedAt).Uint64(),
-
-		MixHash:       obj.MixHash,
-		SendCount:     obj.SendCount,
-		SendRoot:      obj.SendRoot,
-		L1BlockNumber: fromHex(obj.L1BlockNumber).Uint64(),
 	}
 }
 
-func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *ArbitrumOneTransaction {
-	var accessList []*ArbitrumOneTransactionAccessList
+func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *ImxZkevmTransaction {
+	var accessList []*ImxZkevmTransactionAccessList
 	for _, al := range obj.AccessList {
-		accessList = append(accessList, &ArbitrumOneTransactionAccessList{
+		accessList = append(accessList, &ImxZkevmTransactionAccessList{
 			Address:     al.Address,
 			StorageKeys: al.StorageKeys,
 		})
 	}
 
-	return &ArbitrumOneTransaction{
+	return &ImxZkevmTransaction{
 		Hash:                 obj.Hash,
 		BlockNumber:          fromHex(obj.BlockNumber).Uint64(),
 		BlockHash:            obj.BlockHash,
@@ -598,7 +588,7 @@ func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *ArbitrumOneTran
 	}
 }
 
-func ToEvenFromLogProto(obj *ArbitrumOneEventLog) *seer_common.EventJson {
+func ToEvenFromLogProto(obj *ImxZkevmEventLog) *seer_common.EventJson {
 	return &seer_common.EventJson{
 		Address:         obj.Address,
 		Topics:          obj.Topics,
@@ -611,8 +601,8 @@ func ToEvenFromLogProto(obj *ArbitrumOneEventLog) *seer_common.EventJson {
 	}
 }
 
-func ToProtoSingleEventLog(obj *seer_common.EventJson) *ArbitrumOneEventLog {
-	return &ArbitrumOneEventLog{
+func ToProtoSingleEventLog(obj *seer_common.EventJson) *ImxZkevmEventLog {
+	return &ImxZkevmEventLog{
 		Address:         obj.Address,
 		Topics:          obj.Topics,
 		Data:            obj.Data,
@@ -624,10 +614,10 @@ func ToProtoSingleEventLog(obj *seer_common.EventJson) *ArbitrumOneEventLog {
 	}
 }
 
-func (c *Client) DecodeProtoEventLogs(data []string) ([]*ArbitrumOneEventLog, error) {
-	var events []*ArbitrumOneEventLog
+func (c *Client) DecodeProtoEventLogs(data []string) ([]*ImxZkevmEventLog, error) {
+	var events []*ImxZkevmEventLog
 	for _, d := range data {
-		var event ArbitrumOneEventLog
+		var event ImxZkevmEventLog
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -640,10 +630,10 @@ func (c *Client) DecodeProtoEventLogs(data []string) ([]*ArbitrumOneEventLog, er
 	return events, nil
 }
 
-func (c *Client) DecodeProtoTransactions(data []string) ([]*ArbitrumOneTransaction, error) {
-	var transactions []*ArbitrumOneTransaction
+func (c *Client) DecodeProtoTransactions(data []string) ([]*ImxZkevmTransaction, error) {
+	var transactions []*ImxZkevmTransaction
 	for _, d := range data {
-		var transaction ArbitrumOneTransaction
+		var transaction ImxZkevmTransaction
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -656,10 +646,10 @@ func (c *Client) DecodeProtoTransactions(data []string) ([]*ArbitrumOneTransacti
 	return transactions, nil
 }
 
-func (c *Client) DecodeProtoBlocks(data []string) ([]*ArbitrumOneBlock, error) {
-	var blocks []*ArbitrumOneBlock
+func (c *Client) DecodeProtoBlocks(data []string) ([]*ImxZkevmBlock, error) {
+	var blocks []*ImxZkevmBlock
 	for _, d := range data {
-		var block ArbitrumOneBlock
+		var block ImxZkevmBlock
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -673,7 +663,7 @@ func (c *Client) DecodeProtoBlocks(data []string) ([]*ArbitrumOneBlock, error) {
 }
 
 func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) (*seer_common.BlocksBatchJson, error) {
-	var protoBlocksBatch ArbitrumOneBlocksBatch
+	var protoBlocksBatch ImxZkevmBlocksBatch
 
 	dataBytes := rawData.Bytes()
 
@@ -688,7 +678,7 @@ func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) (*seer_comm
 }
 
 func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, blocksCache map[uint64]uint64, abiMap map[string]map[string]map[string]string) ([]indexer.EventLabel, []indexer.TransactionLabel, error) {
-	var protoBlocksBatch ArbitrumOneBlocksBatch
+	var protoBlocksBatch ImxZkevmBlocksBatch
 
 	dataBytes := rawData.Bytes()
 

@@ -29,6 +29,10 @@ func CheckVariablesForCrawler() error {
 	if MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI == "" {
 		return fmt.Errorf("MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI environment variable is required")
 	}
+	MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI")
+	if MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI == "" {
+		return fmt.Errorf("MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI environment variable is required")
+	}
 	MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI")
 	if MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI == "" {
 		return fmt.Errorf("MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI environment variable is required")
@@ -61,12 +65,21 @@ func CheckVariablesForCrawler() error {
 	if MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI == "" {
 		return fmt.Errorf("MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI environment variable is required")
 	}
+	MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI")
+	if MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI == "" {
+		return fmt.Errorf("MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI environment variable is required")
+	}
+	MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI")
+	if MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI == "" {
+		return fmt.Errorf("MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI environment variable is required")
+	}
 
 	SEER_CRAWLER_DEBUG_RAW := os.Getenv("SEER_CRAWLER_DEBUG")
 	SEER_CRAWLER_DEBUG, _ = strconv.ParseBool(SEER_CRAWLER_DEBUG_RAW)
 
 	BlockchainURLs = map[string]string{
 		"ethereum":                     MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI,
+		"sepolia":                      MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI,
 		"polygon":                      MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI,
 		"arbitrum_one":                 MOONSTREAM_NODE_ARBITRUM_ONE_A_EXTERNAL_URI,
 		"arbitrum_sepolia":             MOONSTREAM_NODE_ARBITRUM_SEPOLIA_A_EXTERNAL_URI,
@@ -75,6 +88,8 @@ func CheckVariablesForCrawler() error {
 		"xai_sepolia":                  MOONSTREAM_NODE_XAI_SEPOLIA_A_EXTERNAL_URI,
 		"mantle":                       MOONSTREAM_NODE_MANTLE_A_EXTERNAL_URI,
 		"mantle_sepolia":               MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI,
+		"imx_zkevm":                    MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI,
+		"imx_zkevm_sepolia":            MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI,
 	}
 
 	return nil

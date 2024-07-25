@@ -313,7 +313,8 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 		var topic0, topic1, topic2, topic3 *string
 
 		if len(parsedEvent.Topics) == 0 {
-			fmt.Println("No topics found for event: ", parsedEvent)
+			// Anonymous events
+			fmt.Printf("No topics found for event with tx hash: %s and log index: %d\n", parsedEvent.TransactionHash, parsedEvent.LogIndex)
 		} else {
 			topic0 = &parsedEvent.Topics[0] // First topic
 		}
