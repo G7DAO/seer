@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer crawler --chain game7_orbit_arbitrum_sepolia --threads 2
+ExecStart=/home/ubuntu/seer/seer crawler --chain game7_orbit_arbitrum_sepolia --confirmations 1 --threads 2
 SyslogIdentifier=seer-crawler-game7-orbit-arbitrum-sepolia
 
 [Install]
