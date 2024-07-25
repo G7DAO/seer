@@ -172,7 +172,8 @@ func DecodeTransactionInputDataToInterface(contractABI *abi.ABI, data []byte) (m
 	}
 	inputsMap := make(map[string]interface{})
 	if err := method.Inputs.UnpackIntoMap(inputsMap, inputsSigData); err != nil {
-		return nil, err
+		fmt.Println("Cannot unpack data: ", inputsSigData, " for method: ", method)
+		return nil, fmt.Errorf("cannot unpack data: %v for method: %v", inputsSigData, method)
 	}
 
 	// Prepare the extended map
@@ -184,7 +185,6 @@ func DecodeTransactionInputDataToInterface(contractABI *abi.ABI, data []byte) (m
 	// check if labeData is valid json
 	_, err = json.Marshal(labelData)
 	if err != nil {
-		fmt.Println("Error marshalling labelData: ", labelData)
 		return nil, err
 	}
 

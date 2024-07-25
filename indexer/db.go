@@ -1226,7 +1226,7 @@ func (p *PostgreSQLpgx) WriteEvents(tx pgx.Tx, blockchain string, events []Event
 
 	ctx := context.Background()
 
-	err := p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT (transaction_hash, log_index) where label='seer' and label_type = 'event' DO NOTHING")
+	err := p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT DO NOTHING")
 
 	if err != nil {
 		return err
@@ -1342,7 +1342,7 @@ func (p *PostgreSQLpgx) WriteTransactions(tx pgx.Tx, blockchain string, transact
 
 	ctx := context.Background()
 
-	err := p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT (transaction_hash) WHERE label='seer' AND label_type='tx_call' DO NOTHING")
+	err := p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT DO NOTHING")
 
 	if err != nil {
 		return err
