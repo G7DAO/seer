@@ -323,8 +323,8 @@ XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_I
 
 echo
 echo
-echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Immutable zkEvm Sepolia blockchain service definition with ${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
-chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
-cp "${SCRIPT_DIR}/${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Immutable zkEvm Sepolia blockchain service definition with ${SEER_SYNCHRONIZER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
-XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
