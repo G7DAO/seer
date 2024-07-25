@@ -32,6 +32,9 @@ SEER_CRAWLER_MANTLE_SERVICE_FILE="seer-crawler-mantle.service"
 SEER_CRAWLER_POLYGON_SERVICE_FILE="seer-crawler-polygon.service"
 SEER_CRAWLER_XAI_SEPOLIA_SERVICE_FILE="seer-crawler-xai-sepolia.service"
 SEER_CRAWLER_XAI_SERVICE_FILE="seer-crawler-xai.service"
+SEER_CRAWLER_SEPOLIA_SERVICE_FILE="seer-crawler-sepolia.service"
+SEER_CRAWLER_IMX_ZKEVM_SERVICE_FILE="seer-crawler-imx-zkevm.service"
+SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE="seer-crawler-imx-zkevm-sepolia.service"
 
 # Synchronizer
 SEER_SYNCHRONIZER_ETHEREUM_SERVICE_FILE="seer-synchronizer-ethereum.service"
@@ -43,6 +46,9 @@ SEER_SYNCHRONIZER_MANTLE_SEPOLIA_SERVICE_FILE="seer-synchronizer-mantle-sepolia.
 SEER_SYNCHRONIZER_MANTLE_SERVICE_FILE="seer-synchronizer-mantle.service"
 SEER_SYNCHRONIZER_XAI_SEPOLIA_SERVICE_FILE="seer-synchronizer-xai-sepolia.service"
 SEER_SYNCHRONIZER_XAI_SERVICE_FILE="seer-synchronizer-xai.service"
+SEER_SYNCHRONIZER_SEPOLIA_SERVICE_FILE="seer-synchronizer-sepolia.service"
+SEER_SYNCHRONIZER_IMX_ZKEVM_SERVICE_FILE="seer-synchronizer-imx-zkevm.service"
+SEER_SYNCHRONIZER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE="seer-synchronizer-imx-zkevm-sepolia.service"
 
 set -eu
 
@@ -91,6 +97,12 @@ echo "MOONSTREAM_NODE_MANTLE_A_EXTERNAL_URI=${MOONSTREAM_NODE_MANTLE_A_EXTERNAL_
 
 MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI=$(gcloud secrets versions access latest --secret=MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI)
 echo "MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI=${MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI}" >> "${PARAMETERS_ENV_PATH}"
+
+MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI=$(gcloud secrets versions access latest --secret=MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI)
+echo "MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI=${MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI}" >> "${PARAMETERS_ENV_PATH}"
+
+MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI=$(gcloud secrets versions access latest --secret=MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI)
+echo "MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI=${MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI}" >> "${PARAMETERS_ENV_PATH}"
 
 echo "SEER_CRAWLER_INDEXER_LABEL=seer" >> "${PARAMETERS_ENV_PATH}"
 
@@ -193,6 +205,30 @@ cp "${SCRIPT_DIR}/${SEER_CRAWLER_XAI_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_XAI_SERVICE_FILE}"
 
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer crawler for Sepolia blockchain service definition with ${SEER_CRAWLER_SEPOLIA_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_SEPOLIA_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_CRAWLER_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_SEPOLIA_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_SEPOLIA_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer crawler for Immutable zkEvm blockchain service definition with ${SEER_CRAWLER_IMX_ZKEVM_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_IMX_ZKEVM_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_CRAWLER_IMX_ZKEVM_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_IMX_ZKEVM_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_IMX_ZKEVM_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer crawler for Immutable zkEvm Sepolia blockchain service definition with ${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
+
 # Synchronizers
 
 echo
@@ -268,3 +304,27 @@ chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_XAI_SERVICE_FILE}"
 cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_XAI_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_XAI_SERVICE_FILE}"
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_XAI_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Sepolia blockchain service definition with ${SEER_SYNCHRONIZER_SEPOLIA_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_SEPOLIA_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_SEPOLIA_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_SEPOLIA_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Immutable zkEvm blockchain service definition with ${SEER_SYNCHRONIZER_IMX_ZKEVM_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_IMX_ZKEVM_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_IMX_ZKEVM_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_IMX_ZKEVM_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_IMX_ZKEVM_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Immutable zkEvm Sepolia blockchain service definition with ${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE}"

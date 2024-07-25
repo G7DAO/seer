@@ -1,0 +1,16 @@
+[Unit]
+Description=Seer crawler service for Immutable zkEvm Sepolia blockchain
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+WorkingDirectory=/home/ubuntu/seer
+EnvironmentFile=/home/ubuntu/seer-secrets/app.env
+Restart=on-failure
+RestartSec=15s
+ExecStart=/home/ubuntu/seer/seer crawler --chain imx_zkevm_sepolia --confirmations 10 --threads 2
+SyslogIdentifier=seer-crawler-imx-zkevm-sepolia
+
+[Install]
+WantedBy=multi-user.target
