@@ -2,39 +2,28 @@ syntax = "proto3";
 
 option go_package = "github.com/moonstream-to/seer/blockchain/starknet";
 
-message StarknetTransactionResourceBoundsGas {
-    uint64 max_amount = 1; // The maximum amount of the resource allowed for usage during the execution
-    uint64 max_price_per_unit = 2; // The maximum price the user is willing to pay for the resource
-}
-
-// Used for enabling the fee market.
-// A dictionary that maps resource type to resource bounds. The resource is the amount of L1 or L2 gas used to pay for the transaction.
-message StarknetTransactionResourceBounds {
-    StarknetTransactionResourceBoundsGas l1_gas = 1;
-    StarknetTransactionResourceBoundsGas l2_gas = 2;
+message StarknetEvent {
+    repeated string data = 1;
+    string from_address = 2;
+    repeated string keys = 3;
 }
 
 // Represents a single V3 transaction within a block.
 // Docs: https://docs.starknet.io/architecture-and-concepts/network-architecture/transactions/
-message StarknetInvokeTransaction {
+message StarknetTransaction {
     string hash = 1; // The hash of the transaction (transaction_hash)
     uint64 block_number = 2; // The block number the transaction is in
     string type = 3; // One of transaction type: INVOKE, DECLARE, DEPLOY_ACCOUNT
     uint64 version = 4;
-    repeated string calldata = 5; // The arguments that are passed to the validate and execute functions
+    uint64 nonce = 5; // The transaction nonce
+    repeated string signature = 6; // Additional information given by the sender, used to validate the transaction
+    uint64 max_fee = 7; // The maximum fee that the sender is willing to pay for the transaction
 
-    uint64 nonce = 6; // The transaction nonce
-    string sender_address = 7; // The address of the account initiating the transaction signature
-    repeated string signature = 8; // Additional information given by the sender, used to validate the transaction
-    uint64 max_fee = 9; // The maximum fee that the sender is willing to pay for the transaction
+    string sender_address = 8; // [INVOKE, DECLARE] The address of the account initiating the transaction signature
+    repeated string calldata = 9; // [INVOKE] The arguments that are passed to the validate and execute functions
+    repeated string constructor_calldata = 10; // [DEPLOY_ACCOUNT] The arguments to the account constructor
 
-    StarknetTransactionResourceBounds resource_bounds = 10;
-
-    repeated string account_deployment_data = 11; // Placeholder. For future use.
-    string fee_data_availability_mode = 12; // Placeholder. For future use.
-    string nonce_data_availability_mode = 13; // Placeholder. For future use.
-    repeated string paymaster_data = 14; // Placeholder. For future use.
-    string tip = 15; // Placeholder. For future use.
+    repeated StarknetEvent events = 16;
 }
 
 // The price of L1 gas that was used while constructing the block. L1 gas prices apply to storage updates and L1→L2 messages. As of March 2023, computation is also priced in terms of L1 gas, but this will change in the future. The first Integer value is the price in wei. The second is the price in fri.
@@ -61,11 +50,11 @@ message StarknetBlock {
     string status = 10;
     uint64 timestamp = 11; // The time at which the sequencer began building the block, in seconds since the Unix epoch
 
-    repeated StarknetInvokeTransaction invoke_transactions = 12;  // INVOKE type transactions included in this block
+    repeated StarknetTransaction transactions = 12;  // Transactions included in this block
 }
 
 message StarknetBlocksBatch {
     repeated StarknetBlock blocks = 1;
-        
+
     string seer_version = 2;
 }
