@@ -141,7 +141,7 @@ type BlockchainTemplateData struct {
 }
 
 func CreateBlockchainGenerateCommand() *cobra.Command {
-	var blockchainNameLower string
+	var blockchainNameLower, blockchainType string
 	var sideChain bool
 
 	blockchainGenerateCmd := &cobra.Command{
@@ -157,8 +157,18 @@ func CreateBlockchainGenerateCommand() *cobra.Command {
 				blockchainName += strings.Title(w)
 			}
 
+			var blockchainFileTmpl string
+			switch blockchainType {
+			case "EVM":
+				blockchainFileTmpl = "blockchain/blockchain_evm.go.tmpl"
+			case "STARK":
+				blockchainFileTmpl = "blockchain/blockchain_stark.go.tmpl"
+			default:
+				return fmt.Errorf("Unsupported type of blockchain: %s, please choose one of [EVM, STARK]\n", blockchainType)
+			}
+
 			// Read and parse the template file
-			tmpl, parseErr := template.ParseFiles("blockchain/blockchain.go.tmpl")
+			tmpl, parseErr := template.ParseFiles(blockchainFileTmpl)
 			if parseErr != nil {
 				return parseErr
 			}
@@ -195,6 +205,7 @@ func CreateBlockchainGenerateCommand() *cobra.Command {
 	}
 
 	blockchainGenerateCmd.Flags().StringVarP(&blockchainNameLower, "name", "n", "", "The name of the blockchain to generate lowercase (example: 'arbitrum_one')")
+	blockchainGenerateCmd.Flags().StringVarP(&blockchainType, "type", "t", "EVM", "The type of the blockchain (default: 'EVM')")
 	blockchainGenerateCmd.Flags().BoolVar(&sideChain, "side-chain", false, "Set this flag to extend Blocks and Transactions with additional fields for side chains (default: false)")
 
 	return blockchainGenerateCmd

@@ -12,12 +12,19 @@ done
 BLOCKCHAIN_NAMES_RAW=$(find blockchain/ -maxdepth 1 -type d | cut -f2 -d '/')
 for BLOCKCHAIN in $BLOCKCHAIN_NAMES_RAW; do
   if [ "$BLOCKCHAIN" != "" ] && [ "$BLOCKCHAIN" != "common" ]; then
-    if [ "$BLOCKCHAIN" != "ethereum" ] && [ "$BLOCKCHAIN" != "polygon" ] && [ "$BLOCKCHAIN" != "mantle" ] && [ "$BLOCKCHAIN" != "mantle_sepolia" ] && [ "$BLOCKCHAIN" != "sepolia" ] && [ "$BLOCKCHAIN" != "imx_zkevm" ] && [ "$BLOCKCHAIN" != "imx_zkevm_sepolia" ]; then
-      ./seer blockchain generate -n $BLOCKCHAIN --side-chain
-      echo "Generated interface for side-chain blockchain $BLOCKCHAIN"
-    else
-      ./seer blockchain generate -n $BLOCKCHAIN
-      echo "Generated interface for blockchain $BLOCKCHAIN"
-    fi
+    case "$BLOCKCHAIN" in
+      "starknet")
+        ./seer blockchain generate -n $BLOCKCHAIN -t STARK
+        echo "Generated interface for STARK blockchain $BLOCKCHAIN"
+        ;;
+      "ethereum" | "polygon" | "mantle" | "mantle_sepolia" | "sepolia" | "imx_zkevm" | "imx_zkevm_sepolia")
+        ./seer blockchain generate -n $BLOCKCHAIN -t EVM
+        echo "Generated interface for EVM blockchain $BLOCKCHAIN"
+        ;;
+      *)
+        ./seer blockchain generate -n $BLOCKCHAIN -t EVM --side-chain
+        echo "Generated interface for EVM side-chain blockchain $BLOCKCHAIN"
+        ;;
+    esac
   fi
 done
