@@ -23,7 +23,7 @@ message StarknetTransaction {
     repeated string calldata = 9; // [INVOKE] The arguments that are passed to the validate and execute functions
     repeated string constructor_calldata = 10; // [DEPLOY_ACCOUNT] The arguments to the account constructor
 
-    repeated StarknetEvent events = 16;
+    repeated StarknetEvent events = 11;
 }
 
 // The price of L1 gas that was used while constructing the block. L1 gas prices apply to storage updates and L1→L2 messages. As of March 2023, computation is also priced in terms of L1 gas, but this will change in the future. The first Integer value is the price in wei. The second is the price in fri.
