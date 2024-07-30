@@ -1,4 +1,4 @@
-package {{.BlockchainNameLower}}
+package starknet
 
 import (
 	"bytes"

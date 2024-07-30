@@ -19,6 +19,7 @@ import (
 	"github.com/moonstream-to/seer/blockchain/mantle_sepolia"
 	"github.com/moonstream-to/seer/blockchain/polygon"
 	"github.com/moonstream-to/seer/blockchain/sepolia"
+	"github.com/moonstream-to/seer/blockchain/starknet"
 	"github.com/moonstream-to/seer/blockchain/xai"
 	"github.com/moonstream-to/seer/blockchain/xai_sepolia"
 	"github.com/moonstream-to/seer/indexer"
@@ -61,6 +62,9 @@ func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 		return client, err
 	} else if chain == "imx_zkevm_sepolia" {
 		client, err := imx_zkevm_sepolia.NewClient(url, timeout)
+		return client, err
+	} else if chain == "starknet" {
+		client, err := starknet.NewClient(url, timeout)
 		return client, err
 	} else {
 		return nil, errors.New("unsupported chain type")
