@@ -2,18 +2,28 @@ package {{.BlockchainNameLower}}
 
 import (
 	"bytes"
+	"context"
 	"math/big"
+	"net/http"
+	"net/http/cookiejar"
 
-	"github.com/NethermindEth/starknet.go/rpc"
+	// "github.com/NethermindEth/starknet.go/rpc"
 	ethrpc "github.com/ethereum/go-ethereum/rpc"
+	"golang.org/x/net/publicsuffix"
 	"google.golang.org/protobuf/proto"
 
 	seer_common "github.com/moonstream-to/seer/blockchain/common"
 	"github.com/moonstream-to/seer/indexer"
 )
 
+// Based on starknet rpc Provider
 func NewClient(url string, timeout int) (*Client, error) {
-	rpcClient, clientErr := rpc.NewClient(url)
+	jar, err := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{Jar: jar}
+	rpcClient, clientErr := ethrpc.DialHTTPWithClient(url, client)
 	if clientErr != nil {
 		return nil, clientErr
 	}
@@ -50,8 +60,18 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 	return nil, nil, nil, nil, 0, nil
 }
 
+// GetLatestBlockNumber returns the latest block number.
 func (c *Client) GetLatestBlockNumber() (*big.Int, error) {
-	return nil, nil
+	ctx := context.Background()
+	var bn uint64
+	if err := c.rpcClient.CallContext(ctx, &bn, "starknet_blockNumber"); err != nil {
+		return nil, err
+	}
+
+	// Convert the uint64 to a big.Int
+	blockNumber := new(big.Int).SetUint64(bn)
+
+	return blockNumber, nil
 }
 
 func (c *Client) ProcessBlocksToBatch(msgs []proto.Message) (proto.Message, error) {
