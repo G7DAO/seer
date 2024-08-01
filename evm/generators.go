@@ -226,12 +226,15 @@ type byteArrayLevel struct {
 }
 
 type byteArraySpec struct {
-	TargetVar     string
-	RawVar        string
-	Levels        []byteArrayLevel
-	FinalType     string
-	FinalLength   int
-	FinalAccessor string
+	TargetVar        string
+	RawVar           string
+	IntermediateVar  string
+	IntermediateType string
+	Levels           []byteArrayLevel
+	FinalType        string
+	FinalLength      int
+	FinalAccessor    string
+	Depth            int
 }
 
 func minusOne(i int) int {
@@ -239,31 +242,40 @@ func minusOne(i int) int {
 }
 
 // Should be applied to a byteArraySpec
-var byteArrayDecoderTemplateDefinition string = `var hexDecode{{.TargetVar}}Err error
+var byteArrayDecoderTemplateDefinition string = `var {{.IntermediateVar}} {{.IntermediateType}}
+
+{{if (eq .Depth 0)}}
+var {{.IntermediateVar}}HexDecodeErr error
+{{.IntermediateVar}}, {{.IntermediateVar}}HexDecodeErr = hex.DecodeString({{.RawVar}})
+if {{.IntermediateVar}}HexDecodeErr != nil {
+	return {{.IntermediateVar}}HexDecodeErr
+}
+{{else}}
+unmarshalErr := json.Unmarshal([]byte({{.RawVar}}), &{{.IntermediateVar}})
+if unmarshalErr != nil {
+	return unmarshalErr
+}
+{{end}}
 
 {{range .Levels}}
 {{if (eq .Index 0)}}
-{{.TargetVar}} = make({{.TargetType}}, len({{.RawVar}}))
-for i{{.Index}}, v{{.Index}} := range {{.RawVar}} {{ "{" }}
+{{$.TargetVar}} = make({{.TargetType}}, len({{$.IntermediateVar}}))
+{{if (eq .Index $.Depth)}}
+for i{{.Index}}, v{{.Index}} := range {{$.IntermediateVar}} {{ "{" }}
 {{else}}
-{{if eq .Length 0}}{{.TargetVar}}{{.Accessor}}, includemain = make({{.TargetType}}, len({{.RawVar}}{{.Accessor}})){{end}}
+for i{{.Index}}, _ := range {{$.IntermediateVar}} {{ "{" }}
+{{end}}
+{{else}}
+{{$.TargetVar}}{{.Accessor}} = make({{.TargetType}}, len({{$.IntermediateVar}}{{.Accessor}}))
+{{if (eq .Index $.Depth)}}
+for i{{.Index}}, _ := range v{{(minusOne .Index)}} {{ "{" }}
+{{else}}
 for i{{.Index}}, v{{.Index}} := range v{{(minusOne .Index)}} {{ "{" }}
 {{end}}
 {{end}}
+{{end}}
 
-{{if eq .FinalLength 0}}
-{{.TargetVar}}{{.FinalAccessor}}, hexDecode{{.TargetVar}}Err = hex.DecodeString({{.RawVar}}{{.FinalAccessor}})
-if hexDecode{{.TargetVar}}Err != nil {
-	return hexDecode{{.TargetVar}}Err
-}
-{{else}}
-var intermediate{{.TargetVar}}Leaf []byte
-intermediate{{.TargetVar}}Leaf, hexDecode{{.TargetVar}}Err = hex.DecodeString({{.RawVar}}{{.FinalAccessor}})
-if hexDecode{{.TargetVar}}Err != nil {
-	return hexDecode{{.TargetVar}}Err
-}
-{{.TargetVar}}{{.FinalAccessor}} = {{.FinalType}}(intermediate{{.TargetVar}}Leaf[:{{.FinalLength}}])
-{{- end}}
+copy({{.TargetVar}}{{.FinalAccessor}}[:], {{.IntermediateVar}}{{.FinalAccessor}})
 
 {{range .Levels}}
 {{ "}" }}
@@ -420,7 +432,7 @@ if %s == "" {
 		case "common.Address":
 			result[i].CLIRawVar = fmt.Sprintf("%sRaw", result[i].CLIVar)
 			result[i].CLIRawType = "string"
-			result[i].Flag = fmt.Sprintf("StringVar(&%s, \"%s\", \"\", \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+			result[i].Flag = fmt.Sprintf("StringVar(&%s, \"%s\", \"\", \"%s argument (%s)\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName, result[i].CLIType)
 			preRunEFormat := `
 if %s == "" {
 	return fmt.Errorf("--%s argument not specified")
@@ -448,16 +460,9 @@ if %s == "" {
 		default:
 			// In any case, we will need a raw variable.
 			result[i].CLIRawVar = fmt.Sprintf("%sRaw", result[i].CLIVar)
+			result[i].CLIRawType = "string"
 
-			if strings.HasSuffix(parameter.GoType, "byte") {
-				// Switch the last []byte or [n]byte to string
-				result[i].CLIRawType = byteArrayRegexp.ReplaceAllString(result[i].CLIType, "string")
-			} else {
-				// In this case, we parse as JSON either directly from the command line or through a file if the argument as an "@" prefix (like curl)
-				result[i].CLIRawType = "string"
-			}
-
-			result[i].Flag = fmt.Sprintf("StringVar(&%s, \"%s\", \"\", \"%s argument\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName)
+			result[i].Flag = fmt.Sprintf("StringVar(&%s, \"%s\", \"\", \"%s argument (%s)\")", result[i].CLIRawVar, result[i].CLIName, result[i].CLIName, result[i].CLIType)
 			preRunEFormat := `
 if %s == "" {
 	return fmt.Errorf("--%s argument not specified")
@@ -491,7 +496,10 @@ if %s == "" {
 			)
 
 			if strings.HasSuffix(parameter.GoType, "byte") {
-				depth := strings.Count(result[i].CLIRawType, "[")
+				depth := strings.Count(result[i].CLIType, "[")
+				if depth > 0 {
+					depth--
+				}
 
 				matchesWithGroups := byteArrayRegexp.FindStringSubmatch(result[i].CLIType)
 				lenIndex := byteArrayRegexp.SubexpIndex("len")
@@ -510,12 +518,19 @@ if %s == "" {
 					finalType = fmt.Sprintf("[%d]byte", finalLength)
 				}
 
+				intermediateType := result[i].CLIType
+				if finalLength > 0 {
+					intermediateType = strings.ReplaceAll(result[i].CLIType, fmt.Sprintf("[%d]byte", finalLength), "[]byte")
+				}
 				spec := byteArraySpec{
-					TargetVar:   result[i].CLIVar,
-					RawVar:      result[i].CLIRawVar,
-					Levels:      make([]byteArrayLevel, depth),
-					FinalLength: finalLength,
-					FinalType:   finalType,
+					TargetVar:        result[i].CLIVar,
+					RawVar:           result[i].CLIRawVar,
+					IntermediateVar:  fmt.Sprintf("%sIntermediate", result[i].CLIVar),
+					IntermediateType: intermediateType,
+					Levels:           make([]byteArrayLevel, depth),
+					FinalLength:      finalLength,
+					FinalType:        finalType,
+					Depth:            depth,
 				}
 
 				currentType := result[i].CLIType
@@ -527,9 +542,9 @@ if %s == "" {
 						Accessor:   currentAccessor,
 					}
 
-					unwrapMachesWithGroups := byteArrayUnwrapRegexp.FindStringSubmatch(currentType)
+					unwrapMatchesWithGroups := byteArrayUnwrapRegexp.FindStringSubmatch(currentType)
 					unwrapLenIndex := byteArrayUnwrapRegexp.SubexpIndex("len")
-					unwrapLenRaw := unwrapMachesWithGroups[unwrapLenIndex]
+					unwrapLenRaw := unwrapMatchesWithGroups[unwrapLenIndex]
 					unwrapLength := 0
 					if unwrapLenRaw != "" {
 						var convErr error
@@ -541,7 +556,9 @@ if %s == "" {
 
 					levelSpec.Length = unwrapLength
 
+					spec.Levels[i] = levelSpec
 					currentAccessor = fmt.Sprintf("%s[i%d]", currentAccessor, i)
+					currentType = byteArrayUnwrapRegexp.ReplaceAllString(currentType, "")
 				}
 
 				spec.FinalAccessor = currentAccessor
