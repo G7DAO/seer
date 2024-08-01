@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+option go_package = "github.com/moonstream-to/seer/blockchain/starknet";
+
+message StarknetEvent {
+    repeated string data = 1;
+    string from_address = 2;
+    repeated string keys = 3;
+}
+
+// Represents a single V3 transaction within a block.
+// Docs: https://docs.starknet.io/architecture-and-concepts/network-architecture/transactions/
+message StarknetTransaction {
+    string hash = 1; // The hash of the transaction (transaction_hash)
+    uint64 block_number = 2; // The block number the transaction is in
+    string type = 3; // One of transaction type: INVOKE, DECLARE, DEPLOY_ACCOUNT
+    uint64 version = 4;
+    uint64 nonce = 5; // The transaction nonce
+    repeated string signature = 6; // Additional information given by the sender, used to validate the transaction
+    uint64 max_fee = 7; // The maximum fee that the sender is willing to pay for the transaction
+
+    string sender_address = 8; // [INVOKE, DECLARE] The address of the account initiating the transaction signature
+    repeated string calldata = 9; // [INVOKE] The arguments that are passed to the validate and execute functions
+    repeated string constructor_calldata = 10; // [DEPLOY_ACCOUNT] The arguments to the account constructor
+
+    string execution_status = 11; // Proceed only ACCEPTED_ON_L2 status
+    string finality_status = 12; // Proceed only SUCCEEDED status
+
+    repeated StarknetEvent events = 13;
+}
+
+// The price of L1 gas that was used while constructing the block. L1 gas prices apply to storage updates and L1→L2 messages. As of March 2023, computation is also priced in terms of L1 gas, but this will change in the future. The first Integer value is the price in wei. The second is the price in fri.
+message StarknetBlockL1GasPrice {
+    uint64 price_in_fri = 1;
+    uint64 price_in_wei = 2;
+}
+
+// The price of L1 blob gas that was used while constructing the block. If the l1_DA_MODE of the block is set to BLOB, L1 blob gas prices determines the storage update cost. The first Integer value is the price in wei. The second is the price in fri.
+// message StarknetBlockL1DataGasPrice {} similar to StarknetBlockL1GasPrice
+
+// Represents a block in the blockchain.
+// Docs: https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/
+message StarknetBlock {
+    uint64 block_number = 1; // The block number
+    string hash = 2; // The hash of this block (block_hash)
+    string l1_da_mode = 3; // CALLDATA or BLOB, depending on how Starknet state diffs are sent to L1
+    StarknetBlockL1GasPrice l1_data_gas_price = 4;
+    StarknetBlockL1GasPrice l1_gas_price = 5;
+    string new_root = 6;
+    string parent_hash = 7; // The hash of the block’s parent
+    string starknet_version = 8;
+    string sequencer_address = 9; // The Starknet address of the sequencer that created the block
+    string status = 10;
+    uint64 timestamp = 11; // The time at which the sequencer began building the block, in seconds since the Unix epoch
+
+    repeated StarknetTransaction transactions = 12;  // Transactions included in this block
+}
+
+message StarknetBlocksBatch {
+    repeated StarknetBlock blocks = 1;
+
+    string seer_version = 2;
+}

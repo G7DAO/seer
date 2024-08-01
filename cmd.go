@@ -141,7 +141,7 @@ type BlockchainTemplateData struct {
 }
 
 func CreateBlockchainGenerateCommand() *cobra.Command {
-	var blockchainNameLower string
+	var blockchainNameLower, blockchainType string
 	var sideChain bool
 
 	blockchainGenerateCmd := &cobra.Command{
@@ -157,8 +157,18 @@ func CreateBlockchainGenerateCommand() *cobra.Command {
 				blockchainName += strings.Title(w)
 			}
 
+			var blockchainFileTmpl string
+			switch blockchainType {
+			case "EVM":
+				blockchainFileTmpl = "blockchain/blockchain_evm.go.tmpl"
+			case "STARK":
+				blockchainFileTmpl = "blockchain/blockchain_stark.go.tmpl"
+			default:
+				return fmt.Errorf("Unsupported type of blockchain: %s, please choose one of [EVM, STARK]\n", blockchainType)
+			}
+
 			// Read and parse the template file
-			tmpl, parseErr := template.ParseFiles("blockchain/blockchain.go.tmpl")
+			tmpl, parseErr := template.ParseFiles(blockchainFileTmpl)
 			if parseErr != nil {
 				return parseErr
 			}
@@ -195,6 +205,7 @@ func CreateBlockchainGenerateCommand() *cobra.Command {
 	}
 
 	blockchainGenerateCmd.Flags().StringVarP(&blockchainNameLower, "name", "n", "", "The name of the blockchain to generate lowercase (example: 'arbitrum_one')")
+	blockchainGenerateCmd.Flags().StringVarP(&blockchainType, "type", "t", "EVM", "The type of the blockchain (default: 'EVM')")
 	blockchainGenerateCmd.Flags().BoolVar(&sideChain, "side-chain", false, "Set this flag to extend Blocks and Transactions with additional fields for side chains (default: false)")
 
 	return blockchainGenerateCmd
@@ -211,7 +222,8 @@ func CreateStarknetCommand() *cobra.Command {
 
 	starknetABIParseCmd := CreateStarknetParseCommand()
 	starknetABIGenGoCmd := CreateStarknetGenerateCommand()
-	starknetCmd.AddCommand(starknetABIParseCmd, starknetABIGenGoCmd)
+	starknetDeployment := CreateStarknetFindDeploymentCommand()
+	starknetCmd.AddCommand(starknetABIParseCmd, starknetABIGenGoCmd, starknetDeployment)
 
 	return starknetCmd
 }
@@ -699,6 +711,54 @@ func CreateStarknetGenerateCommand() *cobra.Command {
 	starknetGenerateCommand.Flags().StringVarP(&infile, "abi", "a", "", "Path to contract ABI (default stdin)")
 
 	return starknetGenerateCommand
+}
+
+func CreateStarknetFindDeploymentCommand() *cobra.Command {
+	var web3ProviderUri, contractAddress string
+
+	starknetFindDeploymentCommand := &cobra.Command{
+		Use:   "find-deployment-block",
+		Short: "Discover the block number in which a contract was deployed",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if web3ProviderUri == "" {
+				web3ProviderUriFromEnv := os.Getenv("WEB3_PROVIDER_URI")
+				if web3ProviderUriFromEnv == "" {
+					return errors.New("provider of JSON RPC url is required via -p/--provider or set the WEB3_PROVIDER_URI environment variable")
+				}
+				web3ProviderUri = web3ProviderUriFromEnv
+
+				if contractAddress == "" {
+					return errors.New("contract address is required via -c/--contract")
+				}
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			provider, providerErr := starknet.NewProvider(web3ProviderUri)
+			if providerErr != nil {
+				return providerErr
+			}
+
+			address, parseErr := starknet.ParseAddress(contractAddress)
+			if parseErr != nil {
+				return parseErr
+			}
+
+			ctx := context.Background()
+			deploymentBlock, err := starknet.DeploymentBlock(ctx, provider, address)
+			if err != nil {
+				return err
+			}
+
+			cmd.Println(deploymentBlock)
+			return nil
+		},
+	}
+
+	starknetFindDeploymentCommand.Flags().StringVarP(&web3ProviderUri, "provider", "p", "", "The URL of your Starknet JSON RPC provider (defaults to value of WEB3_PROVIDER_URI environment variable)")
+	starknetFindDeploymentCommand.Flags().StringVarP(&contractAddress, "contract", "c", "", "The address of the smart contract to find the deployment block for")
+
+	return starknetFindDeploymentCommand
 }
 
 func CreateEVMCommand() *cobra.Command {
