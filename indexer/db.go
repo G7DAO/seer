@@ -64,6 +64,8 @@ func IsBlockchainWithL1Chain(blockchain string) bool {
 		return true
 	case "game7_orbit_arbitrum_sepolia":
 		return true
+	case "game7_testnet":
+		return true
 	case "xai":
 		return true
 	case "xai_sepolia":
