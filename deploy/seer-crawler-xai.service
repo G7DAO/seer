@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer crawler --chain xai --confirmations 10 --threads 2
+ExecStart=/home/ubuntu/seer/seer crawler --chain xai --confirmations 10 --threads 30
 SyslogIdentifier=seer-crawler-xai
 
 [Install]
