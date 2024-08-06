@@ -13,6 +13,7 @@ import (
 	seer_common "github.com/moonstream-to/seer/blockchain/common"
 	"github.com/moonstream-to/seer/blockchain/ethereum"
 	"github.com/moonstream-to/seer/blockchain/game7_orbit_arbitrum_sepolia"
+	"github.com/moonstream-to/seer/blockchain/game7_testnet"
 	"github.com/moonstream-to/seer/blockchain/imx_zkevm"
 	"github.com/moonstream-to/seer/blockchain/imx_zkevm_sepolia"
 	"github.com/moonstream-to/seer/blockchain/mantle"
@@ -43,6 +44,9 @@ func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 		return client, err
 	} else if chain == "game7_orbit_arbitrum_sepolia" {
 		client, err := game7_orbit_arbitrum_sepolia.NewClient(url, timeout)
+		return client, err
+	} else if chain == "game7_testnet" {
+		client, err := game7_testnet.NewClient(url, timeout)
 		return client, err
 	} else if chain == "mantle" {
 		client, err := mantle.NewClient(url, timeout)
