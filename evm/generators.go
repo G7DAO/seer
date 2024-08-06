@@ -99,6 +99,32 @@ type MethodReturnValue struct {
 	PrintCode      string
 }
 
+// Specification for parsing compound data types from the command line
+// TODO(zomglings): Currently, these are only used to represent parsing of structs with no array members.
+// This needs to be extended to recursively support arrays, as well (similar to how we handle byte arrays
+// from the CLI). At that point, it will be useful to add another field which denotes whether teh compound
+// type is an array or a struct.
+type CompoundTypeParseSpecification struct {
+	OriginalType               string
+	OriginalTypeNode           *ast.TypeSpec
+	IntermediateType           string
+	IntermediateTypeDefinition string
+	ParseFuncName              string
+	ParseFuncImplementation    string
+	Dependencies               []string // Names of compound types that this requires parsers for
+}
+
+type intermediateTypeStructField struct {
+	Name           string
+	GoType         string
+	OriginalGoType string
+}
+
+type intermediateTypeStructSpecification struct {
+	Name   string
+	Fields []intermediateTypeStructField
+}
+
 // HandlerDefinition specifies a (sub)command handler that needs to be generated as part of the CLI.
 type HandlerDefinition struct {
 	MethodName    string
@@ -156,6 +182,112 @@ func GenerateHeader(packageName string, cli bool, includeMain bool, foundry stri
 	}
 
 	return b.String(), nil
+}
+
+// Generates a parse specification for a compound type
+func GenerateCompoundTypeSpecification(typeSpec *ast.TypeSpec) (CompoundTypeParseSpecification, error) {
+	typeName := typeSpec.Name.Name
+	spec := CompoundTypeParseSpecification{
+		OriginalType:     typeName,
+		OriginalTypeNode: typeSpec,
+		IntermediateType: fmt.Sprintf("%sIntermediate", typeSpec.Name.Name),
+		ParseFuncName:    fmt.Sprintf("Parse%sFunction", typeName),
+		Dependencies:     []string{},
+	}
+
+	switch t := typeSpec.Type.(type) {
+	case *ast.StructType:
+		intermediateTypeFields := make([]intermediateTypeStructField, len(t.Fields.List))
+		intermediateTypeSpec := intermediateTypeStructSpecification{
+			Name:   spec.IntermediateType,
+			Fields: intermediateTypeFields,
+		}
+		for i, field := range t.Fields.List {
+			if len(field.Names) != 1 {
+				return spec, errors.New("compound type fields must be named")
+			}
+			intermediateTypeFields[i].Name = field.Names[0].Name
+			var b bytes.Buffer
+			printer.Fprint(&b, token.NewFileSet(), field.Type)
+			intermediateTypeFields[i].OriginalGoType = b.String()
+			switch intermediateTypeFields[i].OriginalGoType {
+			case "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "string", "bool":
+				intermediateTypeFields[i].GoType = intermediateTypeFields[i].OriginalGoType
+			case "common.Address":
+				intermediateTypeFields[i].GoType = "string"
+			case "*big.Int":
+				intermediateTypeFields[i].GoType = "string"
+			default:
+				if strings.HasPrefix(intermediateTypeFields[i].OriginalGoType, "[") {
+					return spec, errors.New("arrays are not currently supported for compound types")
+				} else if strings.Contains(intermediateTypeFields[i].OriginalGoType, ".") {
+					return spec, errors.New("compound types with fields that are imported types are not supported")
+				}
+				intermediateTypeFields[i].GoType = fmt.Sprintf("%sIntermediate", intermediateTypeFields[i].OriginalGoType)
+			}
+			var intermediateTypeImplementationBytes bytes.Buffer
+			intermediateTypeErr := intermediateTypeTemplate.Execute(&intermediateTypeImplementationBytes, intermediateTypeSpec)
+			if intermediateTypeErr != nil {
+				return spec, intermediateTypeErr
+			}
+			spec.IntermediateTypeDefinition = intermediateTypeImplementationBytes.String()
+		}
+
+		parseFunctionStartFormat := `func %s(raw %s) (%s, error) {
+	var result %s
+`
+		parseAddressFormat := `
+	if !common.IsHexAddress(raw.%s) {
+		return result, fmt.Errorf("%%s is not a valid Ethereum address", raw.%s)
+	}
+	result.%s = common.HexToAddress(raw.%s)
+`
+		parseBigIntFormat := `
+	result.%s = new(big.Int)
+	_, ok%s := result.%s.SetString(raw.%s, 0)
+	if !ok%s {
+		return result, fmt.Errorf("could not parse as a bigint: %%s", raw.%s)
+	}
+`
+
+		parseStructFormat := `
+	result.%s, parseErr = Parse%sFunction(raw.%s)
+	if parseErr != nil {
+		return result, parseErr
+	}
+`
+
+		includeParseErr := false
+
+		parseFunctionStart := fmt.Sprintf(parseFunctionStartFormat, spec.ParseFuncName, spec.IntermediateType, spec.OriginalType, spec.OriginalType)
+		parseFunctionComponents := make([]string, len(intermediateTypeFields))
+		for i, field := range intermediateTypeFields {
+			switch field.OriginalGoType {
+			case "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "string", "bool":
+				parseFunctionComponents[i] = fmt.Sprintf("result.%s = raw.%s", field.Name, field.Name)
+			case "common.Address":
+				parseFunctionComponents[i] = fmt.Sprintf(parseAddressFormat, field.Name, field.Name, field.Name, field.Name)
+			case "*big.Int":
+				parseFunctionComponents[i] = fmt.Sprintf(parseBigIntFormat, field.Name, field.Name, field.Name, field.Name, field.Name, field.Name)
+			default:
+				includeParseErr = true
+				parseFunctionComponents[i] = fmt.Sprintf(parseStructFormat, field.Name, field.OriginalGoType, field.Name)
+				spec.Dependencies = append(spec.Dependencies, field.OriginalGoType)
+			}
+		}
+		parseFunctionEnd := `
+	return result, nil
+}
+`
+
+		spec.ParseFuncImplementation = parseFunctionStart
+		if includeParseErr {
+			spec.ParseFuncImplementation += "var parseErr error\n\n"
+		}
+		spec.ParseFuncImplementation += strings.Join(parseFunctionComponents, "\n\n")
+		spec.ParseFuncImplementation += parseFunctionEnd
+	}
+	return spec, nil
 }
 
 // ParseBoundParameter parses an ast.Node representing a method parameter (or return value). It inspects
@@ -236,53 +368,6 @@ type byteArraySpec struct {
 	FinalAccessor    string
 	Depth            int
 }
-
-func minusOne(i int) int {
-	return i - 1
-}
-
-// Should be applied to a byteArraySpec
-var byteArrayDecoderTemplateDefinition string = `var {{.IntermediateVar}} {{.IntermediateType}}
-
-{{if (eq .Depth 0)}}
-var {{.IntermediateVar}}HexDecodeErr error
-{{.IntermediateVar}}, {{.IntermediateVar}}HexDecodeErr = hex.DecodeString({{.RawVar}})
-if {{.IntermediateVar}}HexDecodeErr != nil {
-	return {{.IntermediateVar}}HexDecodeErr
-}
-{{else}}
-unmarshalErr := json.Unmarshal([]byte({{.RawVar}}), &{{.IntermediateVar}})
-if unmarshalErr != nil {
-	return unmarshalErr
-}
-{{end}}
-
-{{range .Levels}}
-{{if (eq .Index 0)}}
-{{$.TargetVar}} = make({{.TargetType}}, len({{$.IntermediateVar}}))
-{{if (eq .Index $.Depth)}}
-for i{{.Index}}, v{{.Index}} := range {{$.IntermediateVar}} {{ "{" }}
-{{else}}
-for i{{.Index}}, _ := range {{$.IntermediateVar}} {{ "{" }}
-{{end}}
-{{else}}
-{{$.TargetVar}}{{.Accessor}} = make({{.TargetType}}, len({{$.IntermediateVar}}{{.Accessor}}))
-{{if (eq .Index $.Depth)}}
-for i{{.Index}}, _ := range v{{(minusOne .Index)}} {{ "{" }}
-{{else}}
-for i{{.Index}}, v{{.Index}} := range v{{(minusOne .Index)}} {{ "{" }}
-{{end}}
-{{end}}
-{{end}}
-
-copy({{.TargetVar}}{{.FinalAccessor}}[:], {{.IntermediateVar}}{{.FinalAccessor}})
-
-{{range .Levels}}
-{{ "}" }}
-{{end}}
-`
-
-var byteArrayDecoderTemplate *template.Template = template.Must(template.New("byteArrayDecoder").Funcs(map[string]any{"minusOne": minusOne}).Parse(byteArrayDecoderTemplateDefinition))
 
 // Fills in the information required to represent the given parameters as command-line argument. Takes
 // an array of ABIBoundParameter structs because it deduplicates flags.
@@ -553,7 +638,6 @@ if %s == "" {
 							return result, convErr
 						}
 					}
-
 					levelSpec.Length = unwrapLength
 
 					spec.Levels[i] = levelSpec
@@ -749,6 +833,8 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 	structViewMethods := map[string]*ast.FuncDecl{}
 	structTransactionMethods := map[string]*ast.FuncDecl{}
 
+	structTypes := map[string]*ast.TypeSpec{}
+
 	ast.Inspect(sourceAST, func(node ast.Node) bool {
 		switch t := node.(type) {
 		case *ast.GenDecl:
@@ -793,10 +879,44 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 				}
 			}
 			return false
+		case *ast.TypeSpec:
+			switch t.Type.(type) {
+			case *ast.StructType:
+				structTypes[t.Name.Name] = t
+			}
+			return false
 		default:
 			return true
 		}
 	})
+
+	validCompoundTypes := map[string]CompoundTypeParseSpecification{}
+	for typeName, typeSpec := range structTypes {
+		compoundTypeSpec, compoundTypeSpecErr := GenerateCompoundTypeSpecification(typeSpec)
+		if compoundTypeSpecErr == nil {
+			validCompoundTypes[typeName] = compoundTypeSpec
+		}
+	}
+
+	// Compound types must be transitively valid
+	invalidCompoundTypes := []string{}
+	for typeName, compoundTypeSpec := range validCompoundTypes {
+		for _, dependency := range compoundTypeSpec.Dependencies {
+			if _, ok := validCompoundTypes[dependency]; !ok {
+				invalidCompoundTypes = append(invalidCompoundTypes, typeName)
+			}
+		}
+	}
+	for _, invalidType := range invalidCompoundTypes {
+		delete(validCompoundTypes, invalidType)
+	}
+
+	compoundTypeSpecs := make([]CompoundTypeParseSpecification, len(validCompoundTypes))
+	idx := 0
+	for _, spec := range validCompoundTypes {
+		compoundTypeSpecs[idx] = spec
+		idx++
+	}
 
 	var codeBytes bytes.Buffer
 	printer.Fprint(&codeBytes, fileset, sourceAST)
@@ -874,6 +994,13 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 		mainCode := fmt.Sprintf(mainFormatString, fmt.Sprintf("Create%sCommand", structName))
 		code = code + "\n\n" + mainCode
 	}
+
+	b.Reset()
+	compoundTypesTemplateErr := CompoundTypesTemplate.Execute(&b, compoundTypeSpecs)
+	if compoundTypesTemplateErr != nil {
+		return code, compoundTypesTemplateErr
+	}
+	code = code + "\n\n" + b.String()
 
 	if !noformat {
 		// We use golang.org/x/tools/imports instead of go/format.
@@ -1400,3 +1527,74 @@ var HeaderTemplate string = `// This file was generated by seer: https://github.
 // seer version: {{.Version}}
 // seer command: seer evm generate{{if .PackageName}} --package {{.PackageName}}{{end}}{{if .CLI}} --cli{{end}}{{if .IncludeMain}} --includemain{{end}}{{if (ne .Foundry "")}} --foundry {{.Foundry}}{{end}}{{if (ne .ABI "")}} --abi {{.ABI}}{{end}}{{if (ne .Bytecode "")}} --bytecode {{.Bytecode}}{{end}} --struct {{.StructName}}{{if (ne .OutputFile "")}} --output {{.OutputFile}}{{end}}{{if .NoFormat}} --noformat{{end}}
 `
+
+// Should be applied to a byteArraySpec
+var byteArrayDecoderTemplateDefinition string = `var {{.IntermediateVar}} {{.IntermediateType}}
+
+{{if (eq .Depth 0)}}
+var {{.IntermediateVar}}HexDecodeErr error
+{{.IntermediateVar}}, {{.IntermediateVar}}HexDecodeErr = hex.DecodeString({{.RawVar}})
+if {{.IntermediateVar}}HexDecodeErr != nil {
+	return {{.IntermediateVar}}HexDecodeErr
+}
+{{else}}
+unmarshalErr := json.Unmarshal([]byte({{.RawVar}}), &{{.IntermediateVar}})
+if unmarshalErr != nil {
+	return unmarshalErr
+}
+{{end}}
+
+{{range .Levels}}
+{{if (eq .Index 0)}}
+{{$.TargetVar}} = make({{.TargetType}}, len({{$.IntermediateVar}}))
+{{if (eq .Index $.Depth)}}
+for i{{.Index}}, v{{.Index}} := range {{$.IntermediateVar}} {{ "{" }}
+{{else}}
+for i{{.Index}}, _ := range {{$.IntermediateVar}} {{ "{" }}
+{{end}}
+{{else}}
+{{$.TargetVar}}{{.Accessor}} = make({{.TargetType}}, len({{$.IntermediateVar}}{{.Accessor}}))
+{{if (eq .Index $.Depth)}}
+for i{{.Index}}, _ := range v{{(minusOne .Index)}} {{ "{" }}
+{{else}}
+for i{{.Index}}, v{{.Index}} := range v{{(minusOne .Index)}} {{ "{" }}
+{{end}}
+{{end}}
+{{end}}
+
+copy({{.TargetVar}}{{.FinalAccessor}}[:], {{.IntermediateVar}}{{.FinalAccessor}})
+
+{{range .Levels}}
+{{ "}" }}
+{{end}}
+`
+
+var byteArrayDecoderTemplate *template.Template = template.Must(template.New("byteArrayDecoder").Funcs(map[string]any{"minusOne": minusOne}).Parse(byteArrayDecoderTemplateDefinition))
+
+func minusOne(i int) int {
+	return i - 1
+}
+
+// Should be applied to an intermediateTypeStructSpecification
+var intermediateTypeTemplateDefinition string = `
+type {{.Name}} struct {
+	{{range .Fields}}
+	{{.Name}} {{.GoType}}
+	{{end}}
+}
+`
+
+var intermediateTypeTemplate *template.Template = template.Must(template.New("intermediateType").Parse(intermediateTypeTemplateDefinition))
+
+// Should be applied to a []CompoundTypeParseSpecification
+var CompoundTypesTemplateDefinition string = `
+{{range .}}
+
+{{.IntermediateTypeDefinition}}
+
+{{.ParseFuncImplementation}}
+
+{{end}}
+`
+
+var CompoundTypesTemplate *template.Template = template.Must(template.New("compoundTypes").Parse(CompoundTypesTemplateDefinition))
