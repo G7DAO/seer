@@ -44,7 +44,8 @@ func CreateRootCommand() *cobra.Command {
 	inspectorCmd := CreateInspectorCommand()
 	evmCmd := CreateEVMCommand()
 	synchronizerCmd := CreateSynchronizerCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd)
+	apiCmd := CreateAbiCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, apiCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -609,6 +610,95 @@ func CreateInspectorCommand() *cobra.Command {
 	inspectorCmd.AddCommand(storageCommand, readCommand, dbCommand)
 
 	return inspectorCmd
+}
+
+func CreateAbiCommand() *cobra.Command {
+	abiCmd := &cobra.Command{
+		Use:   "abi",
+		Short: "General commands for working with ABIs",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	abiParseCmd := CreateAbiParseCommand()
+	abiEnsureSelectorsCmd := CreateAbiEnsureSelectorsCommand()
+	abiCmd.AddCommand(abiParseCmd)
+	abiCmd.AddCommand(abiEnsureSelectorsCmd)
+
+	return abiCmd
+}
+
+func CreateAbiParseCommand() *cobra.Command {
+
+	var infile string
+	var rawABI []byte
+	var readErr error
+
+	abiParseCmd := &cobra.Command{
+		Use:   "parse",
+		Short: "Parse an ABI and return seer's interal representation of that ABI",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if infile != "" {
+				rawABI, readErr = os.ReadFile(infile)
+			} else {
+				rawABI, readErr = io.ReadAll(os.Stdin)
+			}
+
+			return readErr
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			parsedABI, parseErr := indexer.PrintContractSignatures(string(rawABI))
+			if parseErr != nil {
+				return parseErr
+			}
+
+			content, marshalErr := json.Marshal(parsedABI)
+			if marshalErr != nil {
+				return marshalErr
+			}
+
+			cmd.Println(len(content))
+			return nil
+		},
+	}
+
+	abiParseCmd.Flags().StringVarP(&infile, "abi", "a", "", "Path to contract ABI (default stdin)")
+
+	return abiParseCmd
+}
+
+func CreateAbiEnsureSelectorsCommand() *cobra.Command {
+
+	var chain string
+	var WriteToDB bool
+
+	abiEnsureSelectorsCmd := &cobra.Command{
+		Use:   "ensure-selectors",
+		Short: "Ensure that all ABI functions have selectors",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+
+			indexer.InitDBConnection()
+
+			updateErr := indexer.DBConnection.EnsureCorrectSelectors(chain, WriteToDB)
+			if updateErr != nil {
+				return updateErr
+			}
+			return nil
+		},
+	}
+
+	abiEnsureSelectorsCmd.Flags().StringVarP(&chain, "chain", "c", "", "The blockchain to crawl")
+	abiEnsureSelectorsCmd.Flags().BoolVar(&WriteToDB, "write-to-db", false, "Set this flag to write the correct selectors to the database (default: false)")
+	return abiEnsureSelectorsCmd
 }
 
 func CreateStarknetParseCommand() *cobra.Command {

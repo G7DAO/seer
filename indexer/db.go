@@ -1,15 +1,18 @@
 package indexer
 
 import (
+	"bufio"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -715,7 +718,7 @@ func (p *PostgreSQLpgx) ReadABIJobs(blockchain string) ([]AbiJob, error) {
 
 	defer conn.Release()
 
-	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, created_at, updated_at FROM abi_jobs where chain=$1 ", blockchain)
+	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, (abi::jsonb)->>'type' as abiType, created_at, updated_at FROM abi_jobs where chain=$1 ", blockchain)
 
 	if err != nil {
 		return nil, err
@@ -1065,6 +1068,101 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, toBlock
 
 	return result, nil
 
+}
+
+func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool) error {
+
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
+	if err != nil {
+		return err
+	}
+
+	defer conn.Release()
+
+	// Get all the ABI jobs for the blockchain
+
+	abiJobs, err := p.ReadABIJobs(blockchain)
+
+	if err != nil {
+		return err
+	}
+
+	log.Println("Found", len(abiJobs), "ABI jobs for blockchain:", blockchain)
+
+	// for each ABI job, check if the selector is correct
+
+	// TESTING open file instead of db
+
+	filePath := fmt.Sprintf("abi_jobs_%s.txt", blockchain)
+
+	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+
+	writer := bufio.NewWriter(f)
+
+	writer.WriteString(fmt.Sprintf("ABI jobs for blockchain: %s runned as WriteToDB: %s recorded at %s\n", blockchain, WriteToDB, time.Now().String()))
+
+	for _, abiJob := range abiJobs {
+
+		// Get the correct selector for the ABI
+		abiObj, err := abi.JSON(strings.NewReader("[" + abiJob.Abi + "]"))
+
+		//fmt.Println("ABI:", abiJob.Abi)
+
+		if err != nil {
+			fmt.Println("Error parsing ABI:", err)
+			return err
+		}
+
+		var selector string
+
+		if abiJob.AbiType == "event" {
+			selector = abiObj.Events[abiJob.AbiName].ID.String()
+		} else {
+			selectorRaw := abiObj.Methods[abiJob.AbiName].ID
+			selector = fmt.Sprintf("0x%x", selectorRaw)
+		}
+
+		if err != nil {
+			fmt.Println("Error getting selector:", err)
+			continue
+		}
+
+		// Check if the selector is correct
+
+		if abiJob.AbiSelector != selector {
+
+			// Update the selector in the database
+			// pass
+
+			if WriteToDB {
+
+				_, err := conn.Exec(context.Background(), "UPDATE abi_jobs SET abi_selector = $1 WHERE id = $2", selector, abiJob.ID)
+
+				if err != nil {
+					fmt.Println("Error updating selector:", err)
+					continue
+				}
+
+				fmt.Println("Updated selector for ABI job:", abiJob.ID)
+
+			}
+
+			_, err = writer.WriteString(fmt.Sprintf("ABI job ID: %s, Name: %s, Address: %x, Selector: %s, Correct Selector: %s\n", abiJob.ID, abiJob.AbiName, abiJob.Address, abiJob.AbiSelector, selector))
+			if err != nil {
+				fmt.Println("Error writing to file:", err)
+				continue
+			}
+
+		}
+
+	}
+	writer.Flush()
+
+	f.Close()
+	return nil
 }
 
 func (p *PostgreSQLpgx) WriteLabes(

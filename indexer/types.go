@@ -133,6 +133,7 @@ type AbiJob struct {
 	Progress              int
 	MoonwormTaskPickedup  bool
 	Abi                   string
+	AbiType               string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 }
