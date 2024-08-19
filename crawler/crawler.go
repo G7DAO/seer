@@ -49,13 +49,19 @@ func (bs *BlockchainState) GetLatestUpdateTs() time.Time {
 
 type DynamicBatch struct {
 	Size int64
+
+	mux sync.RWMutex
 }
 
 func (db *DynamicBatch) GetSize() int64 {
-	return db.Size
+	db.mux.RLock()
+	size := db.Size
+	db.mux.RUnlock()
+	return size
 }
 
 func (db *DynamicBatch) DynamicDecreaseSize(diff int64) {
+	db.mux.Lock()
 	size := db.Size
 
 	step := size / 2
@@ -70,6 +76,7 @@ func (db *DynamicBatch) DynamicDecreaseSize(diff int64) {
 	}
 
 	db.Size = size
+	db.mux.Unlock()
 }
 
 // Crawler defines the crawler structure.
@@ -272,11 +279,13 @@ func (c *Crawler) Start(threads int) {
 		}
 
 		// Push pack to database and storage if time comes
-		if crawlPack.PackCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) || crawlPack.PackSize >= protoBufferSizeLimit {
-			if papErr := crawlPack.ProcessAndPush(c.Client, c); papErr != nil {
-				log.Fatalf("failed to process and push: %v", papErr)
+		if len(crawlPack.BlocksPack) > 0 {
+			if crawlPack.PackCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) || crawlPack.PackSize >= protoBufferSizeLimit {
+				if papErr := crawlPack.ProcessAndPush(c.Client, c); papErr != nil {
+					log.Fatalf("failed to process and push: %v", papErr)
+				}
+				crawlPack = CrawlPack{}
 			}
-			crawlPack = CrawlPack{}
 		}
 
 		// Check if next iteration will overtake blockchain latest block minus confirmation
@@ -333,11 +342,13 @@ func (c *Crawler) Start(threads int) {
 			crawlPack.PackEndBlock = endBlock
 
 			// Push pack to database and storage if time comes
-			if crawlPack.PackCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) || crawlPack.PackSize >= protoBufferSizeLimit {
-				if papErr := crawlPack.ProcessAndPush(c.Client, c); papErr != nil {
-					return papErr
+			if len(crawlPack.BlocksPack) > 0 {
+				if crawlPack.PackCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) || crawlPack.PackSize >= protoBufferSizeLimit {
+					if papErr := crawlPack.ProcessAndPush(c.Client, c); papErr != nil {
+						return papErr
+					}
+					crawlPack = CrawlPack{}
 				}
-				crawlPack = CrawlPack{}
 			}
 
 			if SEER_CRAWLER_DEBUG {
