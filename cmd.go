@@ -44,8 +44,8 @@ func CreateRootCommand() *cobra.Command {
 	inspectorCmd := CreateInspectorCommand()
 	evmCmd := CreateEVMCommand()
 	synchronizerCmd := CreateSynchronizerCommand()
-	apiCmd := CreateAbiCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, apiCmd)
+	abiCmd := CreateAbiCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -631,7 +631,7 @@ func CreateAbiCommand() *cobra.Command {
 
 func CreateAbiParseCommand() *cobra.Command {
 
-	var infile string
+	var inFile, outFile string
 	var rawABI []byte
 	var readErr error
 
@@ -639,12 +639,11 @@ func CreateAbiParseCommand() *cobra.Command {
 		Use:   "parse",
 		Short: "Parse an ABI and return seer's interal representation of that ABI",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if infile != "" {
-				rawABI, readErr = os.ReadFile(infile)
+			if inFile != "" {
+				rawABI, readErr = os.ReadFile(inFile)
 			} else {
 				rawABI, readErr = io.ReadAll(os.Stdin)
 			}
-
 			return readErr
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -658,19 +657,28 @@ func CreateAbiParseCommand() *cobra.Command {
 				return marshalErr
 			}
 
-			cmd.Println(len(content))
+			if outFile != "" {
+				writeErr := os.WriteFile(outFile, content, 0644)
+				if writeErr != nil {
+					return writeErr
+				}
+			} else {
+				cmd.Println("ABI parsed successfully:")
+			}
+
 			return nil
 		},
 	}
 
-	abiParseCmd.Flags().StringVarP(&infile, "abi", "a", "", "Path to contract ABI (default stdin)")
+	abiParseCmd.Flags().StringVarP(&inFile, "abi", "a", "", "Path to contract ABI (default stdin)")
+	abiParseCmd.Flags().StringVarP(&outFile, "out", "o", "", "Path to write the output (default stdout)")
 
 	return abiParseCmd
 }
 
 func CreateAbiEnsureSelectorsCommand() *cobra.Command {
 
-	var chain string
+	var chain, outFilePath string
 	var WriteToDB bool
 
 	abiEnsureSelectorsCmd := &cobra.Command{
@@ -688,7 +696,7 @@ func CreateAbiEnsureSelectorsCommand() *cobra.Command {
 
 			indexer.InitDBConnection()
 
-			updateErr := indexer.DBConnection.EnsureCorrectSelectors(chain, WriteToDB)
+			updateErr := indexer.DBConnection.EnsureCorrectSelectors(chain, WriteToDB, outFilePath)
 			if updateErr != nil {
 				return updateErr
 			}
@@ -698,6 +706,7 @@ func CreateAbiEnsureSelectorsCommand() *cobra.Command {
 
 	abiEnsureSelectorsCmd.Flags().StringVarP(&chain, "chain", "c", "", "The blockchain to crawl")
 	abiEnsureSelectorsCmd.Flags().BoolVar(&WriteToDB, "write-to-db", false, "Set this flag to write the correct selectors to the database (default: false)")
+	abiEnsureSelectorsCmd.Flags().StringVarP(&outFilePath, "out-file", "o", "./missing-selectors.txt", "The file to write the output to (default: stdout)")
 	return abiEnsureSelectorsCmd
 }
 

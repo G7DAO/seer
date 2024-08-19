@@ -1070,7 +1070,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, toBlock
 
 }
 
-func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool) error {
+func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool, outputFilePath string) error {
 
 	pool := p.GetPool()
 
@@ -1094,25 +1094,24 @@ func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool
 
 	// for each ABI job, check if the selector is correct
 
-	// TESTING open file instead of db
+	f, err := os.OpenFile(outputFilePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 
-	filePath := fmt.Sprintf("abi_jobs_%s.txt", blockchain)
-
-	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		log.Println("Error opening file:", err)
+		return err
+	}
 
 	writer := bufio.NewWriter(f)
 
-	writer.WriteString(fmt.Sprintf("ABI jobs for blockchain: %s runned as WriteToDB: %s recorded at %s\n", blockchain, WriteToDB, time.Now().String()))
+	writer.WriteString(fmt.Sprintf("ABI jobs for blockchain: %s runned as WriteToDB: %v recorded at %s\n", blockchain, WriteToDB, time.Now().String()))
 
 	for _, abiJob := range abiJobs {
 
 		// Get the correct selector for the ABI
 		abiObj, err := abi.JSON(strings.NewReader("[" + abiJob.Abi + "]"))
 
-		//fmt.Println("ABI:", abiJob.Abi)
-
 		if err != nil {
-			fmt.Println("Error parsing ABI:", err)
+			log.Println("Error parsing ABI for ABI job:", abiJob.ID, err)
 			return err
 		}
 
@@ -1126,7 +1125,7 @@ func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool
 		}
 
 		if err != nil {
-			fmt.Println("Error getting selector:", err)
+			log.Println("Error getting selector for ABI job:", abiJob.ID, err)
 			continue
 		}
 
@@ -1134,25 +1133,23 @@ func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool
 
 		if abiJob.AbiSelector != selector {
 
-			// Update the selector in the database
-			// pass
-
 			if WriteToDB {
+				// Update the selector in the database
 
 				_, err := conn.Exec(context.Background(), "UPDATE abi_jobs SET abi_selector = $1 WHERE id = $2", selector, abiJob.ID)
 
 				if err != nil {
-					fmt.Println("Error updating selector:", err)
+					log.Println("Error updating selector for ABI job:", abiJob.ID, err)
 					continue
 				}
 
-				fmt.Println("Updated selector for ABI job:", abiJob.ID)
+				log.Println("Updated selector:", abiJob.AbiSelector, " for ABI job:", abiJob.ID, " to new selector:", selector)
 
 			}
 
 			_, err = writer.WriteString(fmt.Sprintf("ABI job ID: %s, Name: %s, Address: %x, Selector: %s, Correct Selector: %s\n", abiJob.ID, abiJob.AbiName, abiJob.Address, abiJob.AbiSelector, selector))
 			if err != nil {
-				fmt.Println("Error writing to file:", err)
+				log.Println("Error writing to file:", err)
 				continue
 			}
 
