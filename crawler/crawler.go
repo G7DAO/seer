@@ -262,7 +262,7 @@ func (c *Crawler) Start(threads int) {
 			// Auto adjust time
 			log.Printf("Waiting for new blocks to be mined. Current latestBlockNumber: %d, safeBlock: %d", latestBlockNumber, safeBlock)
 			time.Sleep(waitForBlocksTime)
-			if waitForBlocksTime < maxWaitForBlocksTime {
+			if waitForBlocksTime*2 < maxWaitForBlocksTime {
 				waitForBlocksTime = waitForBlocksTime * 2
 			}
 			continue
