@@ -223,3 +223,38 @@ Find first and last blocks indexed in database and verify it's batch at storage:
 ```bash
 ./seer inspector db --chain polygon --storage-verify
 ```
+
+## Abi cli
+Parse command
+`seer abi parse -a merged.json`
+
+Will parse abi and generate annotating interfaces and events definitions.
+
+```
+
+// Interface generated seer
+// Interface ID: ___
+interface IGeneratedContract {  
+        // events
+        event AcceptedOffer(address,uint256,address,uint256,address,uint256,uint256) signature 0xc3888b4f8640ff369e48089b45596f4adc2e39c73dc7fc6e609f2ad05f879540;
+        event AuctionClosed(uint256,address,address,uint256,address,address) signature 0x7003143824ad94e684efcfd33e097dd7cd0e67243daf20f345f5186a9a7ba00a;   
+        
+        // functions
+        ...
+        // Selector: 0x01ffc9a7
+        function supportsInterface(bytes4);
+        // Selector: 0x07b67758
+        function updateListing(uint256,(address,uint256,uint256,address,uint256,uint128,uint128,bool));
+
+        // errors
+}
+```
+
+go run *.go abi ensure-selectors -c game7_testnet
+Write to abi_jobs_.txt all incorrect abi jobs and selectors without db update
+
+go run *.go abi ensure-selectors -c game7_testnet --write-to-db
+
+same with update in db
+
+All update by default log to `./missing-selectors.txt`
