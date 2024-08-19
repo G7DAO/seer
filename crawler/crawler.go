@@ -255,6 +255,7 @@ func (c *Crawler) Start(threads int) {
 		log.Printf("Start block fetched from indexes database and set to: %d\n", c.startBlock)
 	}
 
+	var isFinal bool
 	var endBlock int64
 	var crawlPack CrawlPack
 
@@ -265,9 +266,10 @@ func (c *Crawler) Start(threads int) {
 			log.Printf("[DEBUG] [crawler.Start.1] latestBlock: %d, c.endBlock: %d, c.startBlock: %d, dynamicBatchSize: %d, PackStartBlock: %d", CurrentBlockchainState.GetLatestBlockNumber().Uint64(), endBlock, c.startBlock, dynamicBatch.GetSize(), crawlPack.PackStartBlock)
 		}
 
-		// Check if final block specified at start reached then stop
+		// Check if final block specified at trigger stop
 		if c.finalBlock != 0 && endBlock >= c.finalBlock {
-			break
+			endBlock = c.finalBlock
+			isFinal = true
 		}
 
 		// Push pack to database and storage if time comes
@@ -350,6 +352,10 @@ func (c *Crawler) Start(threads int) {
 			return nil
 		}); retryErr != nil {
 			log.Fatalf("Crawl retry operation failed: %v", retryErr)
+		}
+
+		if isFinal {
+			break
 		}
 
 		c.startBlock = endBlock + 1
