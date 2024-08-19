@@ -149,12 +149,6 @@ func retryOperation(attempts int, sleep time.Duration, fn func() error) error {
 	return fmt.Errorf("failed after %d attempts", attempts)
 }
 
-func SetDefaultStartBlock(confirmations int64, latestBlockNumber *big.Int) int64 {
-	blockNumber := latestBlockNumber.Int64() - confirmations - SeerDefaultBlockShift
-	log.Printf("Applied shift to block and set to: %d\n", blockNumber)
-	return blockNumber
-}
-
 type CrawlPack struct {
 	PackSize         int64
 	PackCrawlStartTs time.Time
@@ -242,17 +236,18 @@ func (c *Crawler) Start(threads int) {
 	if c.startBlock == 0 {
 		latestIndexedBlock, latestErr := indexer.DBConnection.GetLatestDBBlockNumber(c.blockchain)
 
-		// If there are no rows in result then set startBlock with SetDefaultStartBlock()
+		// If there are no rows in result then set startBlock with shift
 		if latestErr != nil {
 			if latestErr.Error() != "no rows in result set" {
 				log.Fatalf("Failed to get latest indexed block: %v", latestErr)
 			}
 
-			latestIndexedBlock = uint64(SetDefaultStartBlock(c.confirmations, CurrentBlockchainState.GetLatestBlockNumber()))
+			latestIndexedBlock = uint64(CurrentBlockchainState.GetLatestBlockNumber().Int64() - c.confirmations - SeerDefaultBlockShift)
+			log.Printf("There are no records in database, applied shift %d to latest block number", SeerDefaultBlockShift)
 		}
 
 		c.startBlock = int64(latestIndexedBlock) + 1
-		log.Printf("Start block fetched from indexes database and set to: %d\n", c.startBlock)
+		log.Printf("Start block set according with indexes database to: %d\n", c.startBlock)
 	}
 
 	var isFinal bool
