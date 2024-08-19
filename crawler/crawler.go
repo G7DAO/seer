@@ -43,9 +43,9 @@ type Crawler struct {
 
 	blockchain     string
 	startBlock     int64
-	endBlock       int64
+	finalBlock     int64
 	confirmations  int64
-	force          bool
+	batchSize      int64
 	baseDir        string
 	basePath       string
 	protoSizeLimit uint64
@@ -53,7 +53,7 @@ type Crawler struct {
 }
 
 // NewCrawler creates a new crawler instance with the given blockchain handler.
-func NewCrawler(blockchain string, startBlock, endBlock, confirmations int64, timeout int, baseDir string, force bool, protoSizeLimit uint64, protoTimeLimit int) (*Crawler, error) {
+func NewCrawler(blockchain string, startBlock, finalBlock, confirmations, batchSize int64, timeout int, baseDir string, protoSizeLimit uint64, protoTimeLimit int) (*Crawler, error) {
 	var crawler Crawler
 
 	basePath := filepath.Join(baseDir, SeerCrawlerStoragePrefix, "data", blockchain)
@@ -68,16 +68,16 @@ func NewCrawler(blockchain string, startBlock, endBlock, confirmations int64, ti
 		log.Fatal(err)
 	}
 
-	log.Printf("Initialized new crawler at blockchain: %s, startBlock: %d, endBlock: %d, force: %t", blockchain, startBlock, endBlock, force)
+	log.Printf("Initialized new crawler at blockchain: %s, startBlock: %d, finalBlock: %d, batchSize: %d", blockchain, startBlock, finalBlock, batchSize)
 	crawler = Crawler{
 		Client:          client,
 		StorageInstance: storageInstance,
 
 		blockchain:     blockchain,
 		startBlock:     startBlock,
-		endBlock:       endBlock,
+		finalBlock:     finalBlock,
 		confirmations:  confirmations,
-		force:          force,
+		batchSize:      batchSize,
 		baseDir:        baseDir,
 		basePath:       basePath,
 		protoSizeLimit: protoSizeLimit,
@@ -154,199 +154,164 @@ func (c *Crawler) PushPackOfData(blocksBufferPack *bytes.Buffer, blocksIndexPack
 	return nil
 }
 
-// Start initiates the crawling process for the configured blockchain.
+type CrawlPack struct {
+	PackSize         uint64
+	PackCrawlStartTs time.Time
+
+	BlocksPack      []proto.Message
+	BlocksIndexPack []indexer.BlockIndex
+	TxsIndexPack    []indexer.TransactionIndex
+	EventsIndexPack []indexer.LogIndex
+
+	PackStartBlock int64
+	PackEndBlock   int64
+
+	isInitialized bool
+}
+
+func (cp *CrawlPack) Initialize(startBlock int64) {
+	cp.PackStartBlock = startBlock
+	cp.PackCrawlStartTs = time.Now()
+}
+
+func (cp *CrawlPack) ProcessAndPush(client seer_blockchain.BlockchainClient, crawler *Crawler) error {
+	blocksBatch, batchErr := client.ProcessBlocksToBatch(cp.BlocksPack)
+	if batchErr != nil {
+		return fmt.Errorf("unable to process blocks to batch: %w", batchErr)
+	}
+	dataBytes, marshalErr := proto.Marshal(blocksBatch)
+	if marshalErr != nil {
+		return fmt.Errorf("failed to marshal blocks: %v", marshalErr)
+	}
+	if pushEr := crawler.PushPackOfData(bytes.NewBuffer(dataBytes), cp.BlocksIndexPack, cp.TxsIndexPack, cp.EventsIndexPack, cp.PackStartBlock, cp.PackEndBlock); pushEr != nil {
+		return fmt.Errorf("unable to push data correctly: %w", pushEr)
+	}
+	return nil
+}
+
 func (c *Crawler) Start(threads int) {
 	protoBufferSizeLimit := c.protoSizeLimit * 1024 * 1024 // In Mb
-	protoDurationTimeLimit := time.Duration(c.protoTimeLimit) * time.Second
+	// protoDurationTimeLimit := time.Duration(c.protoTimeLimit) * time.Second
 
-	batchSize := int64(10)
-
-	latestBlockNumber := CurrentBlockchainState.GetLatestBlockNumber()
-	if c.force {
-		if c.startBlock == 0 {
-			c.startBlock = SetDefaultStartBlock(c.confirmations, latestBlockNumber)
-		}
-	} else {
-		latestIndexedBlock, err := indexer.DBConnection.GetLatestDBBlockNumber(c.blockchain)
-
-		// If there are no rows in result then set startBlock with SetDefaultStartBlock()
-
-		if err != nil {
-			if err.Error() == "no rows in result set" {
-				c.startBlock = SetDefaultStartBlock(c.confirmations, latestBlockNumber)
-			} else {
-				log.Fatalf("Failed to get latest indexed block: %v", err)
-			}
-
-		}
-
-		if latestIndexedBlock != 0 {
-			c.startBlock = int64(latestIndexedBlock) + 1
-			log.Printf("Start block fetched from indexes database and set to: %d\n", c.startBlock)
-		}
-	}
-
-	// Variables to accumulate packs before write
-	var blocksPack []proto.Message
-	var blocksPackSize uint64
-	packCrawlStartTs := time.Now()
-	var blocksIndexPack []indexer.BlockIndex
-	var txsIndexPack []indexer.TransactionIndex
-	var eventsIndexPack []indexer.LogIndex
-	packStartBlock := c.startBlock
-
-	tempEndBlock := c.startBlock + batchSize
-	var safeBlock int64
-
+	retryAttempts := 3
 	retryWaitTime := 10 * time.Second
 	waitForBlocksTime := retryWaitTime
 	maxWaitForBlocksTime := 12 * retryWaitTime
-	retryAttempts := 3
 
-	var err error
-	var isEnd bool
+	// If Start block is not set, using last crawled block from indexes database
+	if c.startBlock == 0 {
+		latestIndexedBlock, latestErr := indexer.DBConnection.GetLatestDBBlockNumber(c.blockchain)
+
+		// If there are no rows in result then set startBlock with SetDefaultStartBlock()
+		if latestErr != nil {
+			if latestErr.Error() != "no rows in result set" {
+				log.Fatalf("Failed to get latest indexed block: %v", latestErr)
+			}
+
+			latestIndexedBlock = uint64(SetDefaultStartBlock(c.confirmations, CurrentBlockchainState.GetLatestBlockNumber()))
+		}
+
+		c.startBlock = int64(latestIndexedBlock) + 1
+		log.Printf("Start block fetched from indexes database and set to: %d\n", c.startBlock)
+	}
+
+	var endBlock int64
+	var crawlPack CrawlPack
+
 	for {
-		// Using CurrentBlockchainState (in future via mutex for async) to not fetch too often if there is a big difference
-		if tempEndBlock+c.confirmations >= latestBlockNumber.Int64() {
-			latestBlockNumber, err = c.Client.GetLatestBlockNumber()
-			if err != nil {
-				log.Fatalf("Failed to get latest block number: %v", err)
-				// Retry the operation
-				time.Sleep(retryWaitTime)
-				retryAttempts--
-				if retryAttempts == 0 {
-					log.Fatalf("Failed to get latest block number after %d attempts", retryAttempts)
-				}
-				continue
-			}
+		endBlock = c.startBlock + c.batchSize
+
+		if SEER_CRAWLER_DEBUG {
+			log.Printf("[DEBUG] [crawler.Start.1] c.endBlock: %d, c.startBlock: %d", endBlock, c.startBlock)
 		}
 
-		safeBlock = latestBlockNumber.Int64() - c.confirmations
-
-		tempEndBlock = c.startBlock + batchSize
-		if c.endBlock != 0 {
-			if c.endBlock <= tempEndBlock {
-				tempEndBlock = c.endBlock
-				isEnd = true
-				log.Printf("End block %d almost reached", tempEndBlock)
-			}
+		// Check if final block specified at start reached then stop
+		if c.finalBlock != 0 && endBlock >= c.finalBlock {
+			break
 		}
 
-		if tempEndBlock > safeBlock {
-			// Before wait check if there is something to push
-			if packCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) && len(blocksPack) > 0 {
-				blocksBatch, batchErr := c.Client.ProcessBlocksToBatch(blocksPack)
-				if batchErr != nil {
-					log.Printf("Unable to process blocks to batch, err: %v", batchErr)
+		// Check if next iteration will overtake blockchain latest block minus confirmation
+		if endBlock+c.confirmations >= CurrentBlockchainState.GetLatestBlockNumber().Int64() {
+			latestBlockNumber, latestErr := seer_blockchain.GetLatestBlockNumberWithRetry(c.Client, retryAttempts, retryWaitTime)
+			if latestErr != nil {
+				return
+			}
+			CurrentBlockchainState.SetLatestBlockNumber(latestBlockNumber)
+		}
+
+		// Check if next iteration is again overtake blockchain latest block minus confirmation
+		if endBlock+c.confirmations > CurrentBlockchainState.GetLatestBlockNumber().Int64() {
+			// Push pack to database and storage if time comes
+			if crawlPack.PackSize >= protoBufferSizeLimit {
+				if papErr := crawlPack.ProcessAndPush(c.Client, c); papErr != nil {
+					log.Fatalf("failed to process and push: %v", papErr)
 				}
-
-				dataBytes, err := proto.Marshal(blocksBatch)
-				if err != nil {
-					log.Fatalf("Failed to marshal blocks: %v", err)
-				}
-
-				if pushEr := c.PushPackOfData(bytes.NewBuffer(dataBytes), blocksIndexPack, txsIndexPack, eventsIndexPack, packStartBlock, tempEndBlock); err != nil {
-					log.Printf("Unable to push data correctly, err: %v", pushEr)
-				}
-
-				blocksPackSize = 0
-				blocksPack = []proto.Message{}
-				blocksIndexPack = []indexer.BlockIndex{}
-				txsIndexPack = []indexer.TransactionIndex{}
-				eventsIndexPack = []indexer.LogIndex{}
-
-				packStartBlock = tempEndBlock + 1
-				packCrawlStartTs = time.Now()
+				crawlPack = CrawlPack{}
 			}
 
-			// Auto adjust time
-			log.Printf("Waiting for new blocks to be mined. Current latestBlockNumber: %d, safeBlock: %d", latestBlockNumber, safeBlock)
+			log.Printf("Waiting for new blocks to be mined. Current blockchain latest block number: %d and crawler end block: %d", CurrentBlockchainState.GetLatestBlockNumber().Int64(), endBlock)
+
 			time.Sleep(waitForBlocksTime)
 			if waitForBlocksTime < maxWaitForBlocksTime {
 				waitForBlocksTime = waitForBlocksTime * 2
 			}
+
+			// Do not wait too much if there are still blocks to crawl
+			// if {}
+
 			continue
 		}
 		waitForBlocksTime = retryWaitTime
 
-		// Retry the operation in case of failure with cumulative attempts
-		err = retryOperation(retryAttempts, retryWaitTime, func() error {
-			log.Printf("Operates with batch of blocks: %d-%d", c.startBlock, tempEndBlock)
+		if SEER_CRAWLER_DEBUG {
+			log.Printf("[DEBUG] [crawler.Start.2] c.endBlock: %d, c.startBlock: %d", endBlock, c.startBlock)
+		}
 
+		// Check if crawlPack not yet initialized
+		if !crawlPack.isInitialized {
+			crawlPack.Initialize(c.startBlock)
+		}
+
+		if retryErr := retryOperation(retryAttempts, retryWaitTime, func() error {
 			// Fetch blocks with transactions
-			blocks, blocksIndex, txsIndex, eventsIndex, blocksSize, crawlErr := seer_blockchain.CrawlEntireBlocks(c.Client, big.NewInt(c.startBlock), big.NewInt(tempEndBlock), SEER_CRAWLER_DEBUG, threads)
+			blocks, blocksIndex, txsIndex, eventsIndex, blocksSize, crawlErr := seer_blockchain.CrawlEntireBlocks(c.Client, big.NewInt(c.startBlock), big.NewInt(endBlock), SEER_CRAWLER_DEBUG, threads)
 			if crawlErr != nil {
-				return fmt.Errorf("failed to crawl blocks, txs and events: %w", err)
+				return fmt.Errorf("failed to crawl blocks, txs and events: %w", crawlErr)
 			}
 
-			blocksPackSize += blocksSize
-			blocksPack = append(blocksPack, blocks...)
+			crawlPack.PackSize += blocksSize
+			crawlPack.BlocksPack = append(crawlPack.BlocksPack, blocks...)
+			crawlPack.BlocksIndexPack = append(crawlPack.BlocksIndexPack, blocksIndex...)
+			crawlPack.TxsIndexPack = append(crawlPack.TxsIndexPack, txsIndex...)
+			crawlPack.EventsIndexPack = append(crawlPack.EventsIndexPack, eventsIndex...)
+			crawlPack.PackEndBlock = endBlock
 
-			blocksIndexPack = append(blocksIndexPack, blocksIndex...)
-			txsIndexPack = append(txsIndexPack, txsIndex...)
-			eventsIndexPack = append(eventsIndexPack, eventsIndex...)
-
-			if packCrawlStartTs.Add(protoDurationTimeLimit).Before(time.Now()) || blocksPackSize >= protoBufferSizeLimit {
-				blocksBatch, batchErr := c.Client.ProcessBlocksToBatch(blocksPack)
-				if batchErr != nil {
-					return fmt.Errorf("unable to process blocks to batch: %w", batchErr)
+			// Push pack to database and storage if time comes
+			if crawlPack.PackSize >= protoBufferSizeLimit {
+				if papErr := crawlPack.ProcessAndPush(c.Client, c); papErr != nil {
+					return papErr
 				}
+				crawlPack = CrawlPack{}
+			}
 
-				dataBytes, err := proto.Marshal(blocksBatch)
-				if err != nil {
-					log.Fatalf("Failed to marshal blocks: %v", err)
-				}
-
-				if pushEr := c.PushPackOfData(bytes.NewBuffer(dataBytes), blocksIndexPack, txsIndexPack, eventsIndexPack, packStartBlock, tempEndBlock); err != nil {
-					return fmt.Errorf("unable to push data correctly: %w", pushEr)
-				}
-
-				blocksPackSize = 0
-				blocksPack = []proto.Message{}
-				blocksIndexPack = []indexer.BlockIndex{}
-				txsIndexPack = []indexer.TransactionIndex{}
-				eventsIndexPack = []indexer.LogIndex{}
-
-				packStartBlock = tempEndBlock + 1
-				packCrawlStartTs = time.Now()
+			if SEER_CRAWLER_DEBUG {
+				log.Printf("[DEBUG] [crawler.Start.3] c.endBlock: %d, c.startBlock: %d", endBlock, c.startBlock)
 			}
 
 			return nil
-		})
-		if err != nil {
-			log.Fatalf("Operation failed: %v", err)
+		}); retryErr != nil {
+			log.Fatalf("Crawl retry operation failed: %v", retryErr)
 		}
 
-		if isEnd {
-			break
-		}
-
-		c.startBlock = tempEndBlock + 1
+		c.startBlock = endBlock + 1
 	}
 
-	if len(blocksPack) > 0 {
-		blocksBatch, batchErr := c.Client.ProcessBlocksToBatch(blocksPack)
-		if batchErr != nil {
-			log.Printf("Unable to process blocks to batch, err: %v", batchErr)
+	// If after stop there are some blocks, do not leave it
+	if len(crawlPack.BlocksPack) > 0 {
+		if papErr := crawlPack.ProcessAndPush(c.Client, c); papErr != nil {
+			log.Fatalf("failed to process and push: %v", papErr)
 		}
-
-		dataBytes, err := proto.Marshal(blocksBatch)
-		if err != nil {
-			log.Fatalf("Failed to marshal blocks: %v", err)
-		}
-
-		if pushEr := c.PushPackOfData(bytes.NewBuffer(dataBytes), blocksIndexPack, txsIndexPack, eventsIndexPack, packStartBlock, tempEndBlock); err != nil {
-			log.Printf("Unable to push last pack of data correctly, err: %v", pushEr)
-		}
-
-		blocksPackSize = 0
-		blocksPack = []proto.Message{}
-		blocksIndexPack = []indexer.BlockIndex{}
-		txsIndexPack = []indexer.TransactionIndex{}
-		eventsIndexPack = []indexer.LogIndex{}
-
-		packStartBlock = tempEndBlock + 1
-		packCrawlStartTs = time.Now()
+		crawlPack = CrawlPack{}
 	}
 }
 

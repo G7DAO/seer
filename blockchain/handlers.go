@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/moonstream-to/seer/blockchain/arbitrum_one"
@@ -89,7 +90,28 @@ type BlockchainClient interface {
 	ChainType() string
 }
 
+func GetLatestBlockNumberWithRetry(client BlockchainClient, retryAttempts int, retryWaitTime time.Duration) (*big.Int, error) {
+	for {
+		latestBlockNumber, latestErr := client.GetLatestBlockNumber()
+		if latestErr != nil {
+			log.Printf("Failed to get latest block number: %v", latestErr)
+
+			// Retry the operation
+			retryAttempts--
+			if retryAttempts == 0 {
+				return nil, fmt.Errorf("failed to get latest block number after several attempts")
+			}
+
+			time.Sleep(retryWaitTime)
+			continue
+		}
+		return latestBlockNumber, nil
+	}
+}
+
 func CrawlEntireBlocks(client BlockchainClient, startBlock *big.Int, endBlock *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, []indexer.LogIndex, uint64, error) {
+	log.Printf("Operates with batch of blocks: %d-%d", startBlock, endBlock)
+
 	blocks, blocksIndex, txsIndex, eventsIndex, blocksSize, pBlockErr := client.FetchAsProtoBlocksWithEvents(startBlock, endBlock, debug, maxRequests)
 	if pBlockErr != nil {
 		return nil, nil, nil, nil, 0, pBlockErr
