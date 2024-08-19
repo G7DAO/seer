@@ -45,6 +45,7 @@ type Crawler struct {
 	startBlock     int64
 	endBlock       int64
 	confirmations  int64
+	batchSize      int64
 	force          bool
 	baseDir        string
 	basePath       string
@@ -53,7 +54,7 @@ type Crawler struct {
 }
 
 // NewCrawler creates a new crawler instance with the given blockchain handler.
-func NewCrawler(blockchain string, startBlock, endBlock, confirmations int64, timeout int, baseDir string, force bool, protoSizeLimit uint64, protoTimeLimit int) (*Crawler, error) {
+func NewCrawler(blockchain string, startBlock, endBlock, confirmations int64, batchSize int64, timeout int, baseDir string, force bool, protoSizeLimit uint64, protoTimeLimit int) (*Crawler, error) {
 	var crawler Crawler
 
 	basePath := filepath.Join(baseDir, SeerCrawlerStoragePrefix, "data", blockchain)
@@ -77,6 +78,7 @@ func NewCrawler(blockchain string, startBlock, endBlock, confirmations int64, ti
 		startBlock:     startBlock,
 		endBlock:       endBlock,
 		confirmations:  confirmations,
+		batchSize:      batchSize,
 		force:          force,
 		baseDir:        baseDir,
 		basePath:       basePath,
@@ -159,8 +161,6 @@ func (c *Crawler) Start(threads int) {
 	protoBufferSizeLimit := c.protoSizeLimit * 1024 * 1024 // In Mb
 	protoDurationTimeLimit := time.Duration(c.protoTimeLimit) * time.Second
 
-	batchSize := int64(10)
-
 	latestBlockNumber := CurrentBlockchainState.GetLatestBlockNumber()
 	if c.force {
 		if c.startBlock == 0 {
@@ -195,7 +195,7 @@ func (c *Crawler) Start(threads int) {
 	var eventsIndexPack []indexer.LogIndex
 	packStartBlock := c.startBlock
 
-	tempEndBlock := c.startBlock + batchSize
+	tempEndBlock := c.startBlock + c.batchSize
 	var safeBlock int64
 
 	retryWaitTime := 10 * time.Second
@@ -223,7 +223,7 @@ func (c *Crawler) Start(threads int) {
 
 		safeBlock = latestBlockNumber.Int64() - c.confirmations
 
-		tempEndBlock = c.startBlock + batchSize
+		tempEndBlock = c.startBlock + c.batchSize
 		if c.endBlock != 0 {
 			if c.endBlock <= tempEndBlock {
 				tempEndBlock = c.endBlock
