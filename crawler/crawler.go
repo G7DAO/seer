@@ -250,10 +250,7 @@ func (c *Crawler) Start(threads int) {
 	retryAttempts := 3
 	retryWaitTime := 5 * time.Second
 	waitForBlocksTime := retryWaitTime
-
-	/////// TODO!!
-	///// TODO
-	maxWaitForBlocksTime := 1 * retryWaitTime
+	maxWaitForBlocksTime := 24 * retryWaitTime
 
 	// If Start block is not set, using last crawled block from indexes database
 	if c.startBlock == 0 {
