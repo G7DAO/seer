@@ -354,7 +354,6 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 				customer, customerExists := customerDBConnections[update.CustomerID]
 				if !customerExists {
 					errChan <- fmt.Errorf("no DB connection for customer %s", update.CustomerID)
-					<-sem
 					return
 				}
 
@@ -363,7 +362,6 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 				conn, err := pool.Acquire(context.Background())
 				if err != nil {
 					errChan <- fmt.Errorf("error acquiring connection for customer %s: %w", update.CustomerID, err)
-					<-sem
 					return
 				}
 				defer conn.Release()
@@ -376,7 +374,6 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 				if decErr != nil {
 					log.Println("Error decoding events: ", decErr)
 					errChan <- fmt.Errorf("error decoding events for customer %s: %w", update.CustomerID, decErr)
-					<-sem
 					return
 				}
 
