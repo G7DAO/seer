@@ -388,11 +388,8 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		close(errChan) // Close the channel to signal that all goroutines have finished
 
 		// Check for errors from goroutines
-		for err := range errChan {
-			fmt.Println("Error during synchronization cycle:", err)
-			if err != nil {
-				return isEnd, err
-			}
+		if err := <-errChan; err != nil {
+			return isEnd, err
 		}
 
 		d.startBlock = lastBlockOfChank + 1
