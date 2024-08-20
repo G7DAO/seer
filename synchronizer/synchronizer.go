@@ -211,7 +211,7 @@ func (d *Synchronizer) Start(customerDbUriFlag string) {
 
 	isEnd, err := d.SyncCycle(customerDbUriFlag)
 	if err != nil {
-		fmt.Println("Error during initial synchronization cycle:", err)
+		log.Println("Error during initial synchronization cycle:", err)
 	}
 	if isEnd {
 		return
@@ -222,7 +222,7 @@ func (d *Synchronizer) Start(customerDbUriFlag string) {
 		case <-ticker.C:
 			isEnd, err := d.SyncCycle(customerDbUriFlag)
 			if err != nil {
-				fmt.Println("Error during synchronization cycle:", err)
+				log.Println("Error during synchronization cycle:", err)
 			}
 			if isEnd {
 				return

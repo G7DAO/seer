@@ -717,7 +717,7 @@ func (p *PostgreSQLpgx) ReadABIJobs(blockchain string) ([]AbiJob, error) {
 
 	defer conn.Release()
 
-	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, (abi::jsonb)->>'type' as abiType, created_at, updated_at FROM abi_jobs where chain=$1 ", blockchain)
+	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, (abi::jsonb)->>'type' as abiType, created_at, updated_at FROM abi_jobs where chain=$1 and (abi::jsonb)->>'type' is not null", blockchain)
 
 	if err != nil {
 		return nil, err
@@ -725,6 +725,7 @@ func (p *PostgreSQLpgx) ReadABIJobs(blockchain string) ([]AbiJob, error) {
 
 	abiJobs, err := pgx.CollectRows(rows, pgx.RowToStructByName[AbiJob])
 	if err != nil {
+		log.Println("Error collecting Abi jobs rows", err)
 		return nil, err
 	}
 
