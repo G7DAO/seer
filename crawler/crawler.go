@@ -65,21 +65,18 @@ func (db *DynamicBatch) GetSize() int64 {
 // DynamicDecreaseSize by dividing it by 2 and checking if it is not below the diff argument.
 func (db *DynamicBatch) DynamicDecreaseSize(diff int64) {
 	db.mux.Lock()
-	size := db.Size
+	defer db.mux.Unlock()
 
-	step := size / 2
-	size -= step
-
-	if diff >= size {
-		size = diff
+	if db.Size == 0 {
+		return
 	}
 
-	if size <= 1 {
-		size = 1
-	}
+	// Decrease the size dynamically by half, but ensure at least a reduction of 1
+	step := max(db.Size/2, 1)
+	db.Size -= step
 
-	db.Size = size
-	db.mux.Unlock()
+	// Ensure size doesn't fall below the specified diff or go below 0
+	db.Size = max(db.Size, diff)
 }
 
 // Crawler defines the crawler structure.
@@ -172,47 +169,70 @@ func (cp *CrawlPack) Initialize(startBlock int64) {
 
 // ProcessAndPush makes preparations for blocks, txs, and logs data and pushes them to the database with storage.
 func (cp *CrawlPack) ProcessAndPush(client seer_blockchain.BlockchainClient, crawler *Crawler) error {
-	blocksBatch, batchErr := client.ProcessBlocksToBatch(cp.BlocksPack)
-	if batchErr != nil {
-		return fmt.Errorf("unable to process blocks to batch: %w", batchErr)
-	}
-	dataBytes, marshalErr := proto.Marshal(blocksBatch)
-	if marshalErr != nil {
-		return fmt.Errorf("failed to marshal blocks: %v", marshalErr)
-	}
-
 	packRange := fmt.Sprintf("%d-%d", cp.PackStartBlock, cp.PackEndBlock)
 
-	// TODO: Optimize to run in go-routine asynchronously
-	// Save proto data
-	if err := crawler.StorageInstance.Save(packRange, "data.proto", *bytes.NewBuffer(dataBytes)); err != nil {
-		return fmt.Errorf("failed to save data.proto: %w", err)
-	}
-	log.Printf("Saved .proto blocks with transactions and events to %s", packRange)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	errChan := make(chan error, 2)
 
-	// Prepare indexes data
-	var interfaceBlocksIndexPack []indexer.BlockIndex
-	for _, v := range cp.BlocksIndexPack {
-		v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
-		interfaceBlocksIndexPack = append(interfaceBlocksIndexPack, v)
-	}
+	go func() {
+		defer wg.Done()
 
-	var interfaceTxsIndexPack []indexer.TransactionIndex
-	for _, v := range cp.TxsIndexPack {
-		v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
-		interfaceTxsIndexPack = append(interfaceTxsIndexPack, v)
-	}
+		// Prepare and save proto data
+		blocksBatch, batchErr := client.ProcessBlocksToBatch(cp.BlocksPack)
+		if batchErr != nil {
+			errChan <- fmt.Errorf("unable to process blocks to batch: %w", batchErr)
+			return
+		}
+		dataBytes, marshalErr := proto.Marshal(blocksBatch)
+		if marshalErr != nil {
+			errChan <- fmt.Errorf("failed to marshal blocks: %v", marshalErr)
+			return
+		}
 
-	var interfaceEventsIndexPack []indexer.LogIndex
-	for _, v := range cp.EventsIndexPack {
-		v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
-		interfaceEventsIndexPack = append(interfaceEventsIndexPack, v)
-	}
+		if err := crawler.StorageInstance.Save(packRange, "data.proto", *bytes.NewBuffer(dataBytes)); err != nil {
+			errChan <- fmt.Errorf("failed to save data.proto: %w", err)
+			return
+		}
+		log.Printf("Saved .proto blocks with transactions and events to %s", packRange)
+	}()
 
-	// Write indexes to database
-	err := indexer.WriteIndicesToDatabase(crawler.blockchain, interfaceBlocksIndexPack, interfaceTxsIndexPack, interfaceEventsIndexPack)
-	if err != nil {
-		return fmt.Errorf("failed to write indices to database: %w", err)
+	go func() {
+		defer wg.Done()
+
+		// Prepare and save indexes data
+		var interfaceBlocksIndexPack []indexer.BlockIndex
+		for _, v := range cp.BlocksIndexPack {
+			v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
+			interfaceBlocksIndexPack = append(interfaceBlocksIndexPack, v)
+		}
+
+		var interfaceTxsIndexPack []indexer.TransactionIndex
+		for _, v := range cp.TxsIndexPack {
+			v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
+			interfaceTxsIndexPack = append(interfaceTxsIndexPack, v)
+		}
+
+		var interfaceEventsIndexPack []indexer.LogIndex
+		for _, v := range cp.EventsIndexPack {
+			v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
+			interfaceEventsIndexPack = append(interfaceEventsIndexPack, v)
+		}
+
+		err := indexer.WriteIndicesToDatabase(crawler.blockchain, interfaceBlocksIndexPack, interfaceTxsIndexPack, interfaceEventsIndexPack)
+		if err != nil {
+			errChan <- fmt.Errorf("failed to write indices to database: %w", err)
+			return
+		}
+	}()
+
+	wg.Wait()
+	close(errChan)
+
+	for err := range errChan {
+		if err != nil {
+			return fmt.Errorf("error during processing writes, err: %v", err)
+		}
 	}
 
 	return nil
@@ -230,7 +250,10 @@ func (c *Crawler) Start(threads int) {
 	retryAttempts := 3
 	retryWaitTime := 5 * time.Second
 	waitForBlocksTime := retryWaitTime
-	maxWaitForBlocksTime := 24 * retryWaitTime
+
+	/////// TODO!!
+	///// TODO
+	maxWaitForBlocksTime := 1 * retryWaitTime
 
 	// If Start block is not set, using last crawled block from indexes database
 	if c.startBlock == 0 {
@@ -289,13 +312,12 @@ func (c *Crawler) Start(threads int) {
 
 		// Check if next iteration is again overtake blockchain latest block minus confirmation
 		if endBlock > safeBlock {
-			sinceLatestUpdateTs := time.Since(CurrentBlockchainState.GetLatestUpdateTs())
 			// Identified slow blockchain, reducing batch size
-			if dynamicBatch.GetSize() != 1 && sinceLatestUpdateTs >= retryWaitTime {
+			if time.Since(CurrentBlockchainState.GetLatestUpdateTs()) >= retryWaitTime {
 				dynamicBatch.DynamicDecreaseSize(safeBlock - c.startBlock)
 			}
 
-			log.Printf("Waiting %d seconds for new blocks to be mined. Current blockchain latest block number: %d, crawler end block: %d and dynamic batch size: %d", int(waitForBlocksTime.Seconds()), CurrentBlockchainState.GetLatestBlockNumber().Int64(), endBlock, dynamicBatch.GetSize())
+			log.Printf("Waiting %d seconds for new blocks to be mined. Current blockchain latest block number: %d, calculated crawler end block: %d and dynamic batch size set to: %d", int(waitForBlocksTime.Seconds()), CurrentBlockchainState.GetLatestBlockNumber().Int64(), endBlock, dynamicBatch.GetSize())
 
 			time.Sleep(waitForBlocksTime)
 			if waitForBlocksTime < maxWaitForBlocksTime {
@@ -308,7 +330,7 @@ func (c *Crawler) Start(threads int) {
 		dynamicBatch.Size = c.batchSize
 
 		if SEER_CRAWLER_DEBUG {
-			log.Printf("[DEBUG] [crawler.Start.1] latestBlock: %d, c.endBlock: %d, c.startBlock: %d, dynamicBatchSize: %d, PackStartBlock: %d", CurrentBlockchainState.GetLatestBlockNumber().Uint64(), endBlock, c.startBlock, dynamicBatch.GetSize(), crawlPack.PackStartBlock)
+			log.Printf("[DEBUG] [crawler.Start.2] latestBlock: %d, c.endBlock: %d, c.startBlock: %d, dynamicBatchSize: %d, PackStartBlock: %d", CurrentBlockchainState.GetLatestBlockNumber().Uint64(), endBlock, c.startBlock, dynamicBatch.GetSize(), crawlPack.PackStartBlock)
 		}
 
 		// Check if crawlPack not yet initialized
@@ -341,7 +363,7 @@ func (c *Crawler) Start(threads int) {
 			}
 
 			if SEER_CRAWLER_DEBUG {
-				log.Printf("[DEBUG] [crawler.Start.1] latestBlock: %d, c.endBlock: %d, c.startBlock: %d, dynamicBatchSize: %d, PackStartBlock: %d", CurrentBlockchainState.GetLatestBlockNumber().Uint64(), endBlock, c.startBlock, dynamicBatch.GetSize(), crawlPack.PackStartBlock)
+				log.Printf("[DEBUG] [crawler.Start.3] latestBlock: %d, c.endBlock: %d, c.startBlock: %d, dynamicBatchSize: %d, PackStartBlock: %d", CurrentBlockchainState.GetLatestBlockNumber().Uint64(), endBlock, c.startBlock, dynamicBatch.GetSize(), crawlPack.PackStartBlock)
 			}
 
 			return nil
