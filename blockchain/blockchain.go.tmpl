@@ -286,7 +286,7 @@ func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxR
 	return parsedBlocks, nil
 }
 
-func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*{{.BlockchainName}}EventLog, []indexer.LogIndex, error) {
+func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*{{.BlockchainName}}EventLog, error) {
 	logs, err := c.ClientFilterLogs(context.Background(), ethereum.FilterQuery{
 		FromBlock: from,
 		ToBlock:   to,
@@ -294,61 +294,24 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 
 	if err != nil {
 		fmt.Println("Error fetching logs: ", err)
-		return nil, nil, err
+		return nil, err
 	}
 
 	var parsedEvents []*{{.BlockchainName}}EventLog
-	var eventsIndex []indexer.LogIndex
 
-	for i, log := range logs {
+	for _, log := range logs {
 		parsedEvent := ToProtoSingleEventLog(log)
 		parsedEvents = append(parsedEvents, parsedEvent)
 
-		// Prepare events to index
-		var topic0, topic1, topic2, topic3 *string
-
-		if len(parsedEvent.Topics) == 0 {
-			// Anonymous events
-			fmt.Printf("No topics found for event with tx hash: %s and log index: %d\n", parsedEvent.TransactionHash, parsedEvent.LogIndex)
-		} else {
-			topic0 = &parsedEvent.Topics[0] // First topic
-		}
-
-		// Assign topics based on availability
-		if len(parsedEvent.Topics) > 1 {
-			topic1 = &parsedEvent.Topics[1] // Second topic, if present
-		}
-		if len(parsedEvent.Topics) > 2 {
-			topic2 = &parsedEvent.Topics[2] // Third topic, if present
-		}
-
-		if len(parsedEvent.Topics) > 3 {
-			topic3 = &parsedEvent.Topics[3] // Fourth topic, if present
-		}
-
-		eventsIndex = append(eventsIndex, indexer.LogIndex{
-			Address:         parsedEvent.Address,
-			BlockNumber:     parsedEvent.BlockNumber,
-			BlockHash:       parsedEvent.BlockHash,
-			BlockTimestamp:  blocksCache[parsedEvent.BlockNumber].BlockTimestamp,
-			TransactionHash: parsedEvent.TransactionHash,
-			Selector:        topic0, // First topic
-			Topic1:          topic1,
-			Topic2:          topic2,
-			Topic3:          topic3,
-			RowID:           uint64(i), // TODO: Remove
-			LogIndex:        parsedEvent.LogIndex,
-			Path:            "",
-		})
 	}
 
-	return parsedEvents, eventsIndex, nil
+	return parsedEvents, nil
 }
 
-func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, []indexer.LogIndex, uint64, error) {
+func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, uint64, error) {
 	blocks, err := c.ParseBlocksWithTransactions(from, to, debug, maxRequests)
 	if err != nil {
-		return nil, nil, nil, nil, 0, err
+		return nil, nil, 0, err
 	}
 
 	var blocksSize uint64
@@ -363,44 +326,23 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 		} // Assuming block.BlockNumber is int64 and block.Hash is string
 	}
 
-	events, eventsIndex, err := c.ParseEvents(from, to, blocksCache, debug)
+	events, err := c.ParseEvents(from, to, blocksCache, debug)
 	if err != nil {
-		return nil, nil, nil, nil, 0, err
+		return nil, nil, 0, err
 	}
 
 	var blocksProto []proto.Message
 	var blocksIndex []indexer.BlockIndex
-	var txsIndex []indexer.TransactionIndex
 
 	for bI, block := range blocks {
-		for txI, tx := range block.Transactions {
+		for _, tx := range block.Transactions {
 			for _, event := range events {
 				if tx.Hash == event.TransactionHash {
 					tx.Logs = append(tx.Logs, event)
 				}
 			}
-
-			// Prepare transactions to index
-			txSelector := "0x"
-
-			if len(tx.Input) > 10 {
-				txSelector = tx.Input[:10]
-			}
-
-			txsIndex = append(txsIndex, indexer.TransactionIndex{
-				BlockNumber:      tx.BlockNumber,
-				BlockHash:        tx.BlockHash,
-				BlockTimestamp:   tx.BlockTimestamp,
-				FromAddress:      tx.FromAddress,
-				ToAddress:        tx.ToAddress,
-				RowID:            uint64(txI),
-				Selector:         txSelector, // First 10 characters of the input data 0x + 4 bytes of the function signature
-				TransactionHash:  tx.Hash,
-				TransactionIndex: tx.TransactionIndex,
-				Type:             tx.TransactionType,
-				Path:             "",
-			})
 		}
+		
 
 		// Prepare blocks to index
 		blocksIndex = append(blocksIndex, indexer.NewBlockIndex("{{.BlockchainNameLower}}",
@@ -417,7 +359,7 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 		blocksProto = append(blocksProto, block) // Assuming block is already a proto.Message
 	}
 
-	return blocksProto, blocksIndex, txsIndex, eventsIndex, blocksSize, nil
+	return blocksProto, blocksIndex, blocksSize, nil
 }
 
 func (c *Client) ProcessBlocksToBatch(msgs []proto.Message) (proto.Message, error) {

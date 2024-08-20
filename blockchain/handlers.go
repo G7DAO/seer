@@ -82,7 +82,7 @@ type BlockData struct {
 
 type BlockchainClient interface {
 	GetLatestBlockNumber() (*big.Int, error)
-	FetchAsProtoBlocksWithEvents(*big.Int, *big.Int, bool, int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, []indexer.LogIndex, uint64, error)
+	FetchAsProtoBlocksWithEvents(*big.Int, *big.Int, bool, int) ([]proto.Message, []indexer.BlockIndex, uint64, error)
 	ProcessBlocksToBatch([]proto.Message) (proto.Message, error)
 	DecodeProtoEntireBlockToJson(*bytes.Buffer) (*seer_common.BlocksBatchJson, error)
 	DecodeProtoEntireBlockToLabels(*bytes.Buffer, map[string]map[string]map[string]string) ([]indexer.EventLabel, []indexer.TransactionLabel, error)
@@ -109,15 +109,15 @@ func GetLatestBlockNumberWithRetry(client BlockchainClient, retryAttempts int, r
 	}
 }
 
-func CrawlEntireBlocks(client BlockchainClient, startBlock *big.Int, endBlock *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, []indexer.LogIndex, uint64, error) {
+func CrawlEntireBlocks(client BlockchainClient, startBlock *big.Int, endBlock *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, uint64, error) {
 	log.Printf("Operates with batch of blocks: %d-%d", startBlock, endBlock)
 
-	blocks, blocksIndex, txsIndex, eventsIndex, blocksSize, pBlockErr := client.FetchAsProtoBlocksWithEvents(startBlock, endBlock, debug, maxRequests)
+	blocks, blocksIndex, blocksSize, pBlockErr := client.FetchAsProtoBlocksWithEvents(startBlock, endBlock, debug, maxRequests)
 	if pBlockErr != nil {
-		return nil, nil, nil, nil, 0, pBlockErr
+		return nil, nil, 0, pBlockErr
 	}
 
-	return blocks, blocksIndex, txsIndex, eventsIndex, blocksSize, nil
+	return blocks, blocksIndex, blocksSize, nil
 }
 
 func DecodeTransactionInputData(contractABI *abi.ABI, data []byte) {

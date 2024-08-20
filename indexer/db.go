@@ -23,14 +23,6 @@ func LabelsTableName(blockchain string) string {
 	return fmt.Sprintf(blockchain + "_labels")
 }
 
-func TransactionsTableName(blockchain string) string {
-	return fmt.Sprintf(blockchain + "_transactions")
-}
-
-func LogsTableName(blockchain string) string {
-	return fmt.Sprintf(blockchain + "_logs")
-}
-
 func BlocksTableName(blockchain string) string {
 	return fmt.Sprintf(blockchain + "_blocks")
 }
@@ -157,65 +149,6 @@ func (p *PostgreSQLpgx) ReadBlockIndex(ctx context.Context, startBlock uint64, e
 
 }
 
-func (p *PostgreSQLpgx) ReadTransactionIndex(startBlock uint64, endBlock uint64) ([]TransactionIndex, error) {
-	pool := p.GetPool()
-
-	conn, err := pool.Acquire(context.Background())
-
-	if err != nil {
-		return nil, err
-	}
-
-	defer conn.Release()
-
-	rows, err := conn.Query(context.Background(), "SELECT * FROM transactions WHERE block_number >= $1 AND block_number <= $2", startBlock, endBlock)
-
-	if err != nil {
-		return nil, err
-	}
-
-	transactionsIndex, err := pgx.CollectRows(rows, pgx.RowToStructByName[TransactionIndex])
-
-	if err != nil {
-		return nil, err
-	}
-
-	return transactionsIndex, nil
-
-}
-
-func (p *PostgreSQLpgx) ReadLogIndex(startBlock uint64, endBlock uint64, addresses []string) ([]LogIndex, error) {
-	pool := p.GetPool()
-
-	conn, err := pool.Acquire(context.Background())
-
-	if err != nil {
-
-		return nil, err
-
-	}
-
-	defer conn.Release()
-
-	rows, err := conn.Query(context.Background(), "SELECT * FROM logs WHERE block_number >= $1 AND block_number <= $2 AND address = ANY($3)", startBlock, endBlock, addresses)
-
-	if err != nil {
-
-		return nil, err
-
-	}
-
-	logsIndex, err := pgx.CollectRows(rows, pgx.RowToStructByName[LogIndex])
-
-	if err != nil {
-
-		return nil, err
-
-	}
-
-	return logsIndex, nil
-}
-
 func (p *PostgreSQLpgx) ReadIndexOnRange(tableName string, startBlock uint64, endBlock uint64) ([]interface{}, error) {
 	pool := p.GetPool()
 
@@ -293,7 +226,7 @@ func updateValues(valuesMap map[string]UnnestInsertValueStruct, key string, valu
 	valuesMap[key] = tmp
 }
 
-func (p *PostgreSQLpgx) WriteIndexes(blockchain string, blocksIndexPack []BlockIndex, transactionsIndexPack []TransactionIndex, logsIndexPack []LogIndex) error {
+func (p *PostgreSQLpgx) WriteIndexes(blockchain string, blocksIndexPack []BlockIndex) error {
 
 	ctx := context.Background()
 	pool := p.GetPool()
@@ -322,22 +255,6 @@ func (p *PostgreSQLpgx) WriteIndexes(blockchain string, blocksIndexPack []BlockI
 	// Write blocks index
 	if len(blocksIndexPack) > 0 {
 		err = p.writeBlockIndexToDB(tx, blockchain, blocksIndexPack)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Write transactions index
-	if len(transactionsIndexPack) > 0 {
-		err = p.writeTransactionIndexToDB(tx, blockchain, transactionsIndexPack)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Write logs index
-	if len(logsIndexPack) > 0 {
-		err = p.writeLogIndexToDB(tx, blockchain, logsIndexPack)
 		if err != nil {
 			return err
 		}
@@ -379,7 +296,7 @@ func (p *PostgreSQLpgx) executeBatchInsert(tx pgx.Tx, ctx context.Context, table
 func (p *PostgreSQLpgx) writeBlockIndexToDB(tx pgx.Tx, blockchain string, indexes []BlockIndex) error {
 	tableName := BlocksTableName(blockchain)
 	isBlockchainWithL1Chain := IsBlockchainWithL1Chain(blockchain)
-	columns := []string{"block_number", "block_hash", "block_timestamp", "parent_hash", "row_id", "path"}
+	columns := []string{"block_number", "block_hash", "block_timestamp", "parent_hash", "row_id", "path", "transactions_indexed_at", "logs_indexed_at"}
 
 	valuesMap := make(map[string]UnnestInsertValueStruct)
 
@@ -413,6 +330,16 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(tx pgx.Tx, blockchain string, indexe
 		Values: make([]interface{}, 0),
 	}
 
+	valuesMap["transactions_indexed_at"] = UnnestInsertValueStruct{
+		Type:   "TIMESTAMP",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["logs_indexed_at"] = UnnestInsertValueStruct{
+		Type:   "TIMESTAMP",
+		Values: make([]interface{}, 0),
+	}
+
 	if isBlockchainWithL1Chain {
 		columns = append(columns, "l1_block_number")
 		valuesMap["l1_block_number"] = UnnestInsertValueStruct{
@@ -429,6 +356,8 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(tx pgx.Tx, blockchain string, indexe
 		updateValues(valuesMap, "parent_hash", index.ParentHash)
 		updateValues(valuesMap, "row_id", index.RowID)
 		updateValues(valuesMap, "path", index.Path)
+		updateValues(valuesMap, "transactions_indexed_at", "now()")
+		updateValues(valuesMap, "logs_indexed_at", "now()")
 
 		if isBlockchainWithL1Chain {
 			updateValues(valuesMap, "l1_block_number", index.L1BlockNumber)
@@ -437,196 +366,6 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(tx pgx.Tx, blockchain string, indexe
 
 	ctx := context.Background()
 	err = p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT (block_number) DO NOTHING")
-
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Add %d records into %s table", len(indexes), tableName)
-
-	return nil
-}
-
-func (p *PostgreSQLpgx) writeTransactionIndexToDB(tx pgx.Tx, blockchain string, indexes []TransactionIndex) error {
-
-	tableName := TransactionsTableName(blockchain)
-
-	columns := []string{"block_number", "block_hash", "hash", "index", "type", "from_address", "to_address", "selector", "row_id", "path"}
-	var valuesMap = make(map[string]UnnestInsertValueStruct)
-
-	valuesMap["block_number"] = UnnestInsertValueStruct{
-		Type:   "BIGINT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["block_hash"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["hash"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["index"] = UnnestInsertValueStruct{
-		Type:   "BIGINT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["type"] = UnnestInsertValueStruct{
-		Type:   "INT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["from_address"] = UnnestInsertValueStruct{
-		Type:   "BYTEA",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["to_address"] = UnnestInsertValueStruct{
-		Type:   "BYTEA",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["selector"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["row_id"] = UnnestInsertValueStruct{
-		Type:   "BIGINT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["path"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
-		Values: make([]interface{}, 0),
-	}
-
-	for _, index := range indexes {
-
-		fromAddressBytes, err := decodeAddress(index.FromAddress)
-		if err != nil {
-			fmt.Println("Error decoding from address:", err, index)
-			continue
-		}
-
-		toAddressBytes, err := decodeAddress(index.ToAddress)
-
-		if err != nil {
-			fmt.Println("Error decoding to address:", err, index)
-			continue
-		}
-
-		updateValues(valuesMap, "block_number", index.BlockNumber)
-		updateValues(valuesMap, "block_hash", index.BlockHash)
-		updateValues(valuesMap, "hash", index.TransactionHash)
-		updateValues(valuesMap, "index", index.TransactionIndex)
-		updateValues(valuesMap, "type", index.Type)
-		updateValues(valuesMap, "from_address", fromAddressBytes)
-		updateValues(valuesMap, "to_address", toAddressBytes)
-		updateValues(valuesMap, "selector", index.Selector)
-		updateValues(valuesMap, "row_id", index.RowID)
-		updateValues(valuesMap, "path", index.Path)
-
-	}
-
-	ctx := context.Background()
-
-	err = p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT (hash) DO NOTHING")
-
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Add %d records into %s table", len(indexes), tableName)
-
-	return nil
-}
-
-func (p *PostgreSQLpgx) writeLogIndexToDB(tx pgx.Tx, blockchain string, indexes []LogIndex) error {
-
-	tableName := LogsTableName(blockchain)
-
-	columns := []string{"transaction_hash", "block_hash", "address", "selector", "topic1", "topic2", "topic3", "row_id", "log_index", "path"}
-
-	var valuesMap = make(map[string]UnnestInsertValueStruct)
-
-	valuesMap["transaction_hash"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["block_hash"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["address"] = UnnestInsertValueStruct{
-		Type:   "BYTEA",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["selector"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["topic1"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["topic2"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["topic3"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["row_id"] = UnnestInsertValueStruct{
-		Type:   "BIGINT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["log_index"] = UnnestInsertValueStruct{
-		Type:   "BIGINT",
-		Values: make([]interface{}, 0),
-	}
-
-	valuesMap["path"] = UnnestInsertValueStruct{
-		Type:   "TEXT",
-		Values: make([]interface{}, 0),
-	}
-
-	for _, index := range indexes {
-
-		toAddressBytes, err := decodeAddress(index.Address)
-		if err != nil {
-			fmt.Println("Error decoding address:", err, index)
-			continue
-		}
-
-		updateValues(valuesMap, "transaction_hash", index.TransactionHash)
-		updateValues(valuesMap, "block_hash", index.BlockHash)
-		updateValues(valuesMap, "address", toAddressBytes)
-		updateValues(valuesMap, "selector", index.Selector)
-		updateValues(valuesMap, "topic1", index.Topic1)
-		updateValues(valuesMap, "topic2", index.Topic2)
-		updateValues(valuesMap, "topic3", index.Topic3)
-		updateValues(valuesMap, "row_id", index.RowID)
-		updateValues(valuesMap, "log_index", index.LogIndex)
-		updateValues(valuesMap, "path", index.Path)
-
-	}
-
-	ctx := context.Background()
-
-	err = p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT (transaction_hash, log_index) DO NOTHING")
 
 	if err != nil {
 		return err
