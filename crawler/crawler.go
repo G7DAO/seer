@@ -173,7 +173,7 @@ func (cp *CrawlPack) ProcessAndPush(client seer_blockchain.BlockchainClient, cra
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	errChan := make(chan error, 2)
+	errChan := make(chan error, 1)
 
 	go func() {
 		defer wg.Done()
@@ -229,10 +229,8 @@ func (cp *CrawlPack) ProcessAndPush(client seer_blockchain.BlockchainClient, cra
 	wg.Wait()
 	close(errChan)
 
-	for err := range errChan {
-		if err != nil {
-			return fmt.Errorf("error during processing writes, err: %v", err)
-		}
+	if err := <-errChan; err != nil {
+		return err
 	}
 
 	return nil
@@ -250,7 +248,7 @@ func (c *Crawler) Start(threads int) {
 	retryAttempts := 3
 	retryWaitTime := 5 * time.Second
 	waitForBlocksTime := retryWaitTime
-	maxWaitForBlocksTime := 24 * retryWaitTime
+	maxWaitForBlocksTime := 1 * retryWaitTime
 
 	// If Start block is not set, using last crawled block from indexes database
 	if c.startBlock == 0 {

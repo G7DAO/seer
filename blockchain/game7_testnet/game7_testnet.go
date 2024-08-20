@@ -214,8 +214,8 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 		blockNumbersRange = append(blockNumbersRange, new(big.Int).Set(i))
 	}
 
-	sem := make(chan struct{}, maxRequests)             // Semaphore to control concurrency
-	errChan := make(chan error, len(blockNumbersRange)) // Handle errors to stop corrupted processing
+	sem := make(chan struct{}, maxRequests) // Semaphore to control concurrency
+	errChan := make(chan error, 1)
 
 	for _, b := range blockNumbersRange {
 		wg.Add(1)
@@ -247,10 +247,8 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 	close(sem)
 	close(errChan)
 
-	for err := range errChan {
-		if err != nil {
-			return nil, err
-		}
+	if err := <-errChan; err != nil {
+		return nil, err
 	}
 
 	return blocks, nil
