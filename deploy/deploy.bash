@@ -26,7 +26,6 @@ USER_SYSTEMD_DIR="${USER_SYSTEMD_DIR:-/home/ubuntu/.config/systemd/user}"
 SEER_CRAWLER_ARBITRUM_ONE_SERVICE_FILE="seer-crawler-arbitrum-one.service"
 SEER_CRAWLER_ARBITRUM_SEPOLIA_SERVICE_FILE="seer-crawler-arbitrum-sepolia.service"
 SEER_CRAWLER_ETHEREUM_SERVICE_FILE="seer-crawler-ethereum.service"
-SEER_CRAWLER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE="seer-crawler-game7-orbit-arbitrum-sepolia.service"
 SEER_CRAWLER_GAME7_TESTNET_SERVICE_FILE="seer-crawler-game7-testnet.service"
 SEER_CRAWLER_MANTLE_SEPOLIA_SERVICE_FILE="seer-crawler-mantle-sepolia.service"
 SEER_CRAWLER_MANTLE_SERVICE_FILE="seer-crawler-mantle.service"
@@ -42,7 +41,6 @@ SEER_SYNCHRONIZER_ETHEREUM_SERVICE_FILE="seer-synchronizer-ethereum.service"
 SEER_SYNCHRONIZER_POLYGON_SERVICE_FILE="seer-synchronizer-polygon.service"
 SEER_SYNCHRONIZER_ARBITRUM_ONE_SERVICE_FILE="seer-synchronizer-arbitrum-one.service"
 SEER_SYNCHRONIZER_ARBITRUM_SEPOLIA_SERVICE_FILE="seer-synchronizer-arbitrum-sepolia.service"
-SEER_SYNCHRONIZER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE="seer-synchronizer-game7-orbit-arbitrum-sepolia.service"
 SEER_SYNCHRONIZER_GAME7_TESTNET_SERVICE_FILE="seer-synchronizer-game7-testnet.service"
 SEER_SYNCHRONIZER_MANTLE_SEPOLIA_SERVICE_FILE="seer-synchronizer-mantle-sepolia.service"
 SEER_SYNCHRONIZER_MANTLE_SERVICE_FILE="seer-synchronizer-mantle.service"
@@ -164,14 +162,6 @@ XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_ETHERE
 
 echo
 echo
-echo -e "${PREFIX_INFO} Replacing existing seer crawler for Game7 Orbit Arbitrum Sepolia blockchain service definition with ${SEER_CRAWLER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}"
-chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}"
-cp "${SCRIPT_DIR}/${SEER_CRAWLER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}"
-XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
-XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}"
-
-echo
-echo
 echo -e "${PREFIX_INFO} Replacing existing seer crawler for Mantle Sepolia blockchain service definition with ${SEER_CRAWLER_MANTLE_SEPOLIA_SERVICE_FILE}"
 chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_MANTLE_SEPOLIA_SERVICE_FILE}"
 cp "${SCRIPT_DIR}/${SEER_CRAWLER_MANTLE_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_MANTLE_SEPOLIA_SERVICE_FILE}"
@@ -278,14 +268,6 @@ chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_ARBITRUM_SEPOLIA_SERVICE_FILE}"
 cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_ARBITRUM_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_ARBITRUM_SEPOLIA_SERVICE_FILE}"
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_ARBITRUM_SEPOLIA_SERVICE_FILE}"
-
-echo
-echo
-echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Game7 Orbit Arbitrum Sepolia blockchain service definition with ${SEER_SYNCHRONIZER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}"
-chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}"
-cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}"
-XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
-XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_GAME7_ORBIT_ARBITRUM_SEPOLIA_SERVICE_FILE}"
 
 echo
 echo
