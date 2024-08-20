@@ -171,66 +171,44 @@ func (cp *CrawlPack) Initialize(startBlock int64) {
 func (cp *CrawlPack) ProcessAndPush(client seer_blockchain.BlockchainClient, crawler *Crawler) error {
 	packRange := fmt.Sprintf("%d-%d", cp.PackStartBlock, cp.PackEndBlock)
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-	errChan := make(chan error, 1)
+	// Prepare and save proto data
+	blocksBatch, batchErr := client.ProcessBlocksToBatch(cp.BlocksPack)
+	if batchErr != nil {
+		return fmt.Errorf("unable to process blocks to batch: %w", batchErr)
 
-	go func() {
-		defer wg.Done()
+	}
+	dataBytes, marshalErr := proto.Marshal(blocksBatch)
+	if marshalErr != nil {
+		return fmt.Errorf("failed to marshal blocks: %v", marshalErr)
+	}
 
-		// Prepare and save proto data
-		blocksBatch, batchErr := client.ProcessBlocksToBatch(cp.BlocksPack)
-		if batchErr != nil {
-			errChan <- fmt.Errorf("unable to process blocks to batch: %w", batchErr)
-			return
-		}
-		dataBytes, marshalErr := proto.Marshal(blocksBatch)
-		if marshalErr != nil {
-			errChan <- fmt.Errorf("failed to marshal blocks: %v", marshalErr)
-			return
-		}
+	if err := crawler.StorageInstance.Save(packRange, "data.proto", *bytes.NewBuffer(dataBytes)); err != nil {
+		return fmt.Errorf("failed to save data.proto: %w", err)
+	}
+	log.Printf("Saved .proto blocks with transactions and events to %s", packRange)
 
-		if err := crawler.StorageInstance.Save(packRange, "data.proto", *bytes.NewBuffer(dataBytes)); err != nil {
-			errChan <- fmt.Errorf("failed to save data.proto: %w", err)
-			return
-		}
-		log.Printf("Saved .proto blocks with transactions and events to %s", packRange)
-	}()
+	// Prepare and save indexes data
+	var interfaceBlocksIndexPack []indexer.BlockIndex
+	for _, v := range cp.BlocksIndexPack {
+		v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
+		interfaceBlocksIndexPack = append(interfaceBlocksIndexPack, v)
+	}
 
-	go func() {
-		defer wg.Done()
+	var interfaceTxsIndexPack []indexer.TransactionIndex
+	for _, v := range cp.TxsIndexPack {
+		v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
+		interfaceTxsIndexPack = append(interfaceTxsIndexPack, v)
+	}
 
-		// Prepare and save indexes data
-		var interfaceBlocksIndexPack []indexer.BlockIndex
-		for _, v := range cp.BlocksIndexPack {
-			v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
-			interfaceBlocksIndexPack = append(interfaceBlocksIndexPack, v)
-		}
+	var interfaceEventsIndexPack []indexer.LogIndex
+	for _, v := range cp.EventsIndexPack {
+		v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
+		interfaceEventsIndexPack = append(interfaceEventsIndexPack, v)
+	}
 
-		var interfaceTxsIndexPack []indexer.TransactionIndex
-		for _, v := range cp.TxsIndexPack {
-			v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
-			interfaceTxsIndexPack = append(interfaceTxsIndexPack, v)
-		}
-
-		var interfaceEventsIndexPack []indexer.LogIndex
-		for _, v := range cp.EventsIndexPack {
-			v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
-			interfaceEventsIndexPack = append(interfaceEventsIndexPack, v)
-		}
-
-		err := indexer.WriteIndicesToDatabase(crawler.blockchain, interfaceBlocksIndexPack, interfaceTxsIndexPack, interfaceEventsIndexPack)
-		if err != nil {
-			errChan <- fmt.Errorf("failed to write indices to database: %w", err)
-			return
-		}
-	}()
-
-	wg.Wait()
-	close(errChan)
-
-	if err := <-errChan; err != nil {
-		return err
+	err := indexer.WriteIndicesToDatabase(crawler.blockchain, interfaceBlocksIndexPack, interfaceTxsIndexPack, interfaceEventsIndexPack)
+	if err != nil {
+		return fmt.Errorf("failed to write indices to database: %w", err)
 	}
 
 	return nil
