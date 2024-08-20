@@ -222,7 +222,7 @@ func (d *Synchronizer) Start(customerDbUriFlag string) {
 		case <-ticker.C:
 			isEnd, err := d.SyncCycle(customerDbUriFlag)
 			if err != nil {
-				log.Println("Error during synchronization cycle:", err)
+				log.Fatalf("Error during synchronization cycle:", err)
 			}
 			if isEnd {
 				return
@@ -351,7 +351,11 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 				sem <- struct{}{} // Acquire semaphore
 
 				// Get the RDS connection for the customer
-				customer := customerDBConnections[update.CustomerID]
+				customer, customerExists := customerDBConnections[update.CustomerID]
+				if !customerExists {
+					errChan <- fmt.Errorf("no DB connection for customer %s", update.CustomerID)
+					return
+				}
 
 				fmt.Println("Customer: ", update.CustomerID)
 
