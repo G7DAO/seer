@@ -222,7 +222,7 @@ func (d *Synchronizer) Start(customerDbUriFlag string) {
 		case <-ticker.C:
 			isEnd, err := d.SyncCycle(customerDbUriFlag)
 			if err != nil {
-				log.Println("Error during synchronization cycle:", err)
+				log.Fatalf("Error during synchronization cycle:", err)
 			}
 			if isEnd {
 				return
@@ -351,13 +351,19 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 				sem <- struct{}{} // Acquire semaphore
 
 				// Get the RDS connection for the customer
-				customer := customerDBConnections[update.CustomerID]
+				customer, customerExists := customerDBConnections[update.CustomerID]
+				if !customerExists {
+					errChan <- fmt.Errorf("no DB connection for customer %s", update.CustomerID)
+					<-sem
+					return
+				}
 
 				// Create a connection to the user RDS
 				pool := customer.Pgx.GetPool()
 				conn, err := pool.Acquire(context.Background())
 				if err != nil {
 					errChan <- fmt.Errorf("error acquiring connection for customer %s: %w", update.CustomerID, err)
+					<-sem
 					return
 				}
 				defer conn.Release()
@@ -370,6 +376,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 				if decErr != nil {
 					log.Println("Error decoding events: ", decErr)
 					errChan <- fmt.Errorf("error decoding events for customer %s: %w", update.CustomerID, decErr)
+					<-sem
 					return
 				}
 
