@@ -14,19 +14,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Define errors
-
-// NoUpdatesFoundError is a custom error type that represents the case where no updates were found.
-type NoUpdatesFoundError struct {
-	Blockchain  string
-	BlockNumber uint64
-}
-
-// Error implements the error interface for NoUpdatesFoundError.
-func (e *NoUpdatesFoundError) Error() string {
-	return fmt.Sprintf("no updates found for blockchain %s at block %d", e.Blockchain, e.BlockNumber)
-}
-
 // DB is a global variable to hold the GORM database connection.
 
 func LabelsTableName(blockchain string) string {
@@ -880,20 +867,8 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 	var path string
 	var lastNumber uint64
 
-	// Check if no rows were returned
-	if !rows.Next() {
-		// Return a custom error indicating that no updates were found
-		return 0, "", nil, &NoUpdatesFoundError{
-			Blockchain:  blockchain,
-			BlockNumber: fromBlock,
-		}
-	}
-
 	for rows.Next() {
-
-		// Scan the current row's columns into the variables
 		err = rows.Scan(&lastNumber, &path, &customers)
-
 		if err != nil {
 			log.Println("Error scanning row:", err)
 			return 0, "", nil, err
@@ -903,9 +878,6 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 	var customerUpdates []CustomerUpdates
 
 	for _, customerUpdate := range customers {
-
-		// fmt.Println("Customer ID:", customerid)
-		// fmt.Println("Raw ABIs:", raw_abis)
 
 		for customerid, abis := range customerUpdate {
 

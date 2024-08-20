@@ -3,7 +3,6 @@ package synchronizer
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -212,7 +211,7 @@ func (d *Synchronizer) Start(customerDbUriFlag string) {
 
 	isEnd, err := d.SyncCycle(customerDbUriFlag)
 	if err != nil {
-		fmt.Println("Error during first synchronization cycle:", err)
+		fmt.Println("Error during initial synchronization cycle:", err)
 	}
 	if isEnd {
 		return
@@ -299,6 +298,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	// 2. For each update, read the original event data from storage
 	// 3. Decode input data using ABIs
 	// 4. Write updates to the user RDS
+	//var noUpdatesFoundErr *indexer.NoUpdatesFoundError
 	var isCycleFinished bool
 	for {
 		if d.endBlock != 0 {
@@ -316,15 +316,16 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		// This function will return a list of customer updates 1 update is 1 customer
 		lastBlockOfChank, path, updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, customerIds)
 
-		if err != nil {
-			if errors.Is(err, &indexer.NoUpdatesFoundError{}) {
-				log.Printf("No updates found in from block %d\n", d.startBlock)
-				return isEnd, nil
-			}
-			return isEnd, fmt.Errorf("error reading updates: %w", err)
+		if len(updates) == 0 {
+			log.Printf("No updates found for block %d\n", d.startBlock)
+			return isEnd, nil
 		}
 
-		fmt.Println("Last block of chank: ", lastBlockOfChank)
+		if crawler.SEER_CRAWLER_DEBUG {
+			log.Printf("Read batch key: %s", path)
+		}
+
+		log.Println("Last block of current chank: ", lastBlockOfChank)
 
 		// Read the raw data from the storage for current path
 		rawData, readErr := d.StorageInstance.Read(path)
@@ -363,10 +364,6 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 
 				var decodedEventsPack []indexer.EventLabel
 				var decodedTransactionsPack []indexer.TransactionLabel
-
-				if crawler.SEER_CRAWLER_DEBUG {
-					log.Printf("Key: %s", update.Path)
-				}
 
 				// decodedEvents, decodedTransactions, decErr
 				decodedEvents, decodedTransactions, decErr := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis)
