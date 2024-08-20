@@ -7,14 +7,16 @@ import "time"
 // Define the interface for handling general index types such as blocks, transactions, and logs for fast access to blockchain data.
 
 type BlockIndex struct {
-	chain          string
-	BlockNumber    uint64
-	BlockHash      string
-	BlockTimestamp uint64
-	ParentHash     string
-	RowID          uint64
-	Path           string
-	L1BlockNumber  uint64
+	chain               string
+	BlockNumber         uint64
+	BlockHash           string
+	BlockTimestamp      uint64
+	ParentHash          string
+	RowID               uint64
+	Path                string
+	L1BlockNumber       uint64
+	TransactionsIndexed bool
+	LogsIndexed         bool
 }
 
 func (b *BlockIndex) SetChain(chain string) {
@@ -22,87 +24,18 @@ func (b *BlockIndex) SetChain(chain string) {
 }
 
 // NewBlockIndex creates a new instance of BlockIndex with the chain set.
-func NewBlockIndex(chain string, blockNumber uint64, blockHash string, blockTimestamp uint64, parentHash string, row_id uint64, path string, l1BlockNumber uint64) BlockIndex {
+func NewBlockIndex(chain string, blockNumber uint64, blockHash string, blockTimestamp uint64, parentHash string, row_id uint64, path string, l1BlockNumber uint64, transactionsIndexed bool, logsIndexed bool) BlockIndex {
 	return BlockIndex{
-		chain:          chain,
-		BlockNumber:    blockNumber,
-		BlockHash:      blockHash,
-		BlockTimestamp: blockTimestamp,
-		ParentHash:     parentHash,
-		RowID:          row_id,
-		Path:           path,
-		L1BlockNumber:  l1BlockNumber,
-	}
-}
-
-type TransactionIndex struct {
-	chain            string
-	BlockNumber      uint64
-	BlockHash        string
-	BlockTimestamp   uint64
-	FromAddress      string
-	ToAddress        string
-	RowID            uint64
-	Selector         string
-	TransactionHash  string
-	TransactionIndex uint64
-	Type             uint64
-	Path             string
-}
-
-func (t TransactionIndex) TableName() string {
-	// This is the table name in the database for particular chain
-	return t.chain + "_transaction_index"
-}
-
-func NewTransactionIndex(chain string, blockNumber uint64, blockHash string, blockTimestamp uint64, fromAddress string, toAddress string, selector string, row_id uint64, transactionHash string, transactionIndex uint64, tx_type uint64, path string) TransactionIndex {
-	return TransactionIndex{
-		chain:            chain,
-		BlockNumber:      blockNumber,
-		BlockHash:        blockHash,
-		BlockTimestamp:   blockTimestamp,
-		FromAddress:      fromAddress,
-		ToAddress:        toAddress,
-		RowID:            row_id,
-		Selector:         selector,
-		TransactionHash:  transactionHash,
-		TransactionIndex: transactionIndex,
-		Type:             tx_type,
-		Path:             path,
-	}
-}
-
-type LogIndex struct {
-	chain           string
-	BlockNumber     uint64
-	BlockHash       string
-	BlockTimestamp  uint64
-	Address         string
-	TransactionHash string
-	Selector        *string
-	Topic1          *string
-	Topic2          *string
-	Topic3          *string
-	RowID           uint64
-	LogIndex        uint64
-	Path            string
-}
-
-func NewLogIndex(chain string, address string, blockNumber uint64, blockHash string, transactionHash string, BlockTimestamp uint64, topic0 *string, topic1 *string, topic2 *string, topic3 *string, row_id uint64, logIndex uint64, path string) LogIndex {
-	return LogIndex{
-		chain:           chain,
-		Address:         address,
-		BlockNumber:     blockNumber,
-		BlockHash:       blockHash,
-		BlockTimestamp:  BlockTimestamp,
-		TransactionHash: transactionHash,
-		Selector:        topic0,
-		Topic1:          topic1,
-		Topic2:          topic2,
-		Topic3:          topic3,
-		RowID:           row_id,
-		LogIndex:        logIndex,
-		Path:            path,
+		chain:               chain,
+		BlockNumber:         blockNumber,
+		BlockHash:           blockHash,
+		BlockTimestamp:      blockTimestamp,
+		ParentHash:          parentHash,
+		RowID:               row_id,
+		Path:                path,
+		L1BlockNumber:       l1BlockNumber,
+		TransactionsIndexed: transactionsIndexed,
+		LogsIndexed:         logsIndexed,
 	}
 }
 
@@ -195,14 +128,4 @@ type TransactionLabel struct {
 	TransactionHash string
 	LabelData       string
 	BlockTimestamp  uint64
-}
-
-type protoEventsWithAbi struct {
-	Events [][]byte
-	Abi    string
-}
-
-type protoTransactionsWithAbi struct {
-	Transactions [][]byte
-	Abi          string
 }

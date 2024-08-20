@@ -353,6 +353,8 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 				// Get the RDS connection for the customer
 				customer := customerDBConnections[update.CustomerID]
 
+				fmt.Println("Customer: ", update.CustomerID)
+
 				// Create a connection to the user RDS
 				pool := customer.Pgx.GetPool()
 				conn, err := pool.Acquire(context.Background())

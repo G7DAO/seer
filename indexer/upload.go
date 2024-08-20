@@ -100,54 +100,12 @@ func filterDuplicates(indexType string, existingIndices, newIndices []interface{
 		return filteredIndices
 	}
 
-	if indexType == "transaction" {
-		// Convert the existing indices to a map for faster lookups
-		var existingTransactionIndices map[string]TransactionIndex
-		for _, index := range existingIndices {
-			transactionIndex := index.(TransactionIndex)
-			existingTransactionIndices[transactionIndex.TransactionHash] = transactionIndex
-		}
-
-		// Filter out new indices that already exist
-		var filteredIndices []interface{}
-		for _, index := range newIndices {
-			transactionIndex := index.(TransactionIndex)
-			if _, exists := existingTransactionIndices[transactionIndex.TransactionHash]; !exists {
-				filteredIndices = append(filteredIndices, index)
-			}
-		}
-		return filteredIndices
-	}
-
-	if indexType == "log" {
-		// Convert the existing indices to a map for faster lookups
-		// Unique identifier for log indices is the transaction hash and log index
-		var existingLogIndices map[string]LogIndex
-		for _, index := range existingIndices {
-			logIndex := index.(LogIndex)
-			uniqueKey := logIndex.TransactionHash + string(logIndex.LogIndex)
-			existingLogIndices[uniqueKey] = logIndex
-		}
-
-		// Filter out new indices that already exist
-		var filteredIndices []interface{}
-		for _, index := range newIndices {
-			logIndex := index.(LogIndex)
-			uniqueKey := logIndex.TransactionHash + string(logIndex.LogIndex)
-			if _, exists := existingLogIndices[uniqueKey]; !exists {
-				filteredIndices = append(filteredIndices, index)
-			}
-		}
-
-		return filteredIndices
-	}
-
 	return nil
 }
 
 // WriteIndicesToDatabase writes the given indices to the database
-func WriteIndicesToDatabase(blockchain string, blocks []BlockIndex, transactions []TransactionIndex, logs []LogIndex) error {
+func WriteIndicesToDatabase(blockchain string, blocks []BlockIndex) error {
 	// Write block indices
 
-	return DBConnection.WriteIndexes(blockchain, blocks, transactions, logs)
+	return DBConnection.WriteIndexes(blockchain, blocks)
 }

@@ -152,8 +152,6 @@ type CrawlPack struct {
 
 	BlocksPack      []proto.Message
 	BlocksIndexPack []indexer.BlockIndex
-	TxsIndexPack    []indexer.TransactionIndex
-	EventsIndexPack []indexer.LogIndex
 
 	PackStartBlock int64
 	PackEndBlock   int64
@@ -194,19 +192,7 @@ func (cp *CrawlPack) ProcessAndPush(client seer_blockchain.BlockchainClient, cra
 		interfaceBlocksIndexPack = append(interfaceBlocksIndexPack, v)
 	}
 
-	var interfaceTxsIndexPack []indexer.TransactionIndex
-	for _, v := range cp.TxsIndexPack {
-		v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
-		interfaceTxsIndexPack = append(interfaceTxsIndexPack, v)
-	}
-
-	var interfaceEventsIndexPack []indexer.LogIndex
-	for _, v := range cp.EventsIndexPack {
-		v.Path = filepath.Join(crawler.basePath, packRange, "data.proto")
-		interfaceEventsIndexPack = append(interfaceEventsIndexPack, v)
-	}
-
-	err := indexer.WriteIndicesToDatabase(crawler.blockchain, interfaceBlocksIndexPack, interfaceTxsIndexPack, interfaceEventsIndexPack)
+	err := indexer.WriteIndicesToDatabase(crawler.blockchain, interfaceBlocksIndexPack)
 	if err != nil {
 		return fmt.Errorf("failed to write indices to database: %w", err)
 	}
@@ -313,7 +299,7 @@ func (c *Crawler) Start(threads int) {
 
 		if retryErr := retryOperation(retryAttempts, retryWaitTime, func() error {
 			// Fetch blocks with transactions
-			blocks, blocksIndex, txsIndex, eventsIndex, blocksSize, crawlErr := seer_blockchain.CrawlEntireBlocks(c.Client, new(big.Int).SetInt64(c.startBlock), new(big.Int).SetInt64(endBlock), SEER_CRAWLER_DEBUG, threads)
+			blocks, blocksIndex, blocksSize, crawlErr := seer_blockchain.CrawlEntireBlocks(c.Client, new(big.Int).SetInt64(c.startBlock), new(big.Int).SetInt64(endBlock), SEER_CRAWLER_DEBUG, threads)
 			if crawlErr != nil {
 				return fmt.Errorf("failed to crawl blocks, txs and events: %w", crawlErr)
 			}
@@ -321,8 +307,6 @@ func (c *Crawler) Start(threads int) {
 			crawlPack.PackSize += int64(blocksSize)
 			crawlPack.BlocksPack = append(crawlPack.BlocksPack, blocks...)
 			crawlPack.BlocksIndexPack = append(crawlPack.BlocksIndexPack, blocksIndex...)
-			crawlPack.TxsIndexPack = append(crawlPack.TxsIndexPack, txsIndex...)
-			crawlPack.EventsIndexPack = append(crawlPack.EventsIndexPack, eventsIndex...)
 			crawlPack.PackEndBlock = endBlock
 
 			// Push pack to database and storage if time comes
