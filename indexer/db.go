@@ -296,7 +296,7 @@ func (p *PostgreSQLpgx) executeBatchInsert(tx pgx.Tx, ctx context.Context, table
 func (p *PostgreSQLpgx) writeBlockIndexToDB(tx pgx.Tx, blockchain string, indexes []BlockIndex) error {
 	tableName := BlocksTableName(blockchain)
 	isBlockchainWithL1Chain := IsBlockchainWithL1Chain(blockchain)
-	columns := []string{"block_number", "block_hash", "block_timestamp", "parent_hash", "row_id", "path"}
+	columns := []string{"block_number", "block_hash", "block_timestamp", "parent_hash", "row_id", "path", "transactions_indexed_at", "events_indexed_at"}
 
 	valuesMap := make(map[string]UnnestInsertValueStruct)
 
@@ -330,6 +330,16 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(tx pgx.Tx, blockchain string, indexe
 		Values: make([]interface{}, 0),
 	}
 
+	valuesMap["transactions_indexed_at"] = UnnestInsertValueStruct{
+		Type:   "TIMESTAMP",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["events_indexed_at"] = UnnestInsertValueStruct{
+		Type:   "TIMESTAMP",
+		Values: make([]interface{}, 0),
+	}
+
 	if isBlockchainWithL1Chain {
 		columns = append(columns, "l1_block_number")
 		valuesMap["l1_block_number"] = UnnestInsertValueStruct{
@@ -346,6 +356,8 @@ func (p *PostgreSQLpgx) writeBlockIndexToDB(tx pgx.Tx, blockchain string, indexe
 		updateValues(valuesMap, "parent_hash", index.ParentHash)
 		updateValues(valuesMap, "row_id", index.RowID)
 		updateValues(valuesMap, "path", index.Path)
+		updateValues(valuesMap, "transactions_indexed_at", "now()")
+		updateValues(valuesMap, "events_indexed_at", "now()")
 
 		if isBlockchainWithL1Chain {
 			updateValues(valuesMap, "l1_block_number", index.L1BlockNumber)
