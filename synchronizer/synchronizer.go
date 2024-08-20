@@ -274,7 +274,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 			if latestErr != nil {
 				return isEnd, fmt.Errorf("failed to get latest block number: %v", latestErr)
 			}
-			d.startBlock = uint64(crawler.SetDefaultStartBlock(0, latestBlockNumber))
+			d.startBlock = uint64(latestBlockNumber.Int64() - crawler.SeerDefaultBlockShift)
 		}
 	}
 

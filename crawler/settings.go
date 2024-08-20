@@ -7,6 +7,7 @@ import (
 )
 
 var (
+	SeerDefaultBlockShift    int64  = 100
 	SeerCrawlerStoragePrefix string = "dev"
 
 	BlockchainURLs map[string]string
