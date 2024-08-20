@@ -274,7 +274,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 			if latestErr != nil {
 				return isEnd, fmt.Errorf("failed to get latest block number: %v", latestErr)
 			}
-			d.startBlock = uint64(crawler.SetDefaultStartBlock(0, latestBlockNumber)) - 100
+			d.startBlock = uint64(crawler.SetDefaultStartBlock(0, latestBlockNumber))
 		}
 	}
 
@@ -368,7 +368,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 				// decodedEvents, decodedTransactions, decErr
 				decodedEvents, decodedTransactions, decErr := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis)
 				if decErr != nil {
-					fmt.Println("Error decoding events: ", decErr)
+					log.Println("Error decoding events: ", decErr)
 					errChan <- fmt.Errorf("error decoding events for customer %s: %w", update.CustomerID, decErr)
 					return
 				}
