@@ -353,8 +353,6 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 			uint64(bI),
 			"",
 			block.L1BlockNumber,
-			true,
-			true,
 		))
 
 		blocksSize += uint64(proto.Size(block))
