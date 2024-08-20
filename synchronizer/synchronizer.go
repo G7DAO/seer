@@ -3,6 +3,7 @@ package synchronizer
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -316,6 +317,10 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		lastBlockOfChank, path, updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, customerIds)
 
 		if err != nil {
+			if errors.Is(err, &indexer.NoUpdatesFoundError{}) {
+				log.Printf("No updates found in from block %d\n", d.startBlock)
+				return isEnd, nil
+			}
 			return isEnd, fmt.Errorf("error reading updates: %w", err)
 		}
 

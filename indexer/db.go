@@ -14,6 +14,19 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Define errors
+
+// NoUpdatesFoundError is a custom error type that represents the case where no updates were found.
+type NoUpdatesFoundError struct {
+	Blockchain  string
+	BlockNumber uint64
+}
+
+// Error implements the error interface for NoUpdatesFoundError.
+func (e *NoUpdatesFoundError) Error() string {
+	return fmt.Sprintf("no updates found for blockchain %s at block %d", e.Blockchain, e.BlockNumber)
+}
+
 // DB is a global variable to hold the GORM database connection.
 
 func LabelsTableName(blockchain string) string {
@@ -794,7 +807,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
         WHERE
             block_number = $1
     ),
-	lates_block as (
+	latest_block_of_path as (
 		SELECT
 			block_number as block_number,
 			path as path
@@ -853,7 +866,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
     	path,
     	(SELECT json_agg(json_build_object(customer_id, abis)) FROM reformatted_jobs) as jobs
 	FROM
-    	lates_block
+    	latest_block_of_path
 	`, blocksTableName, blocksTableName)
 
 	rows, err := conn.Query(context.Background(), query, fromBlock, blockchain)
@@ -866,6 +879,15 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 	var customers []map[string]map[string]map[string]map[string]string
 	var path string
 	var lastNumber uint64
+
+	// Check if no rows were returned
+	if !rows.Next() {
+		// Return a custom error indicating that no updates were found
+		return 0, "", nil, &NoUpdatesFoundError{
+			Blockchain:  blockchain,
+			BlockNumber: fromBlock,
+		}
+	}
 
 	for rows.Next() {
 
@@ -893,17 +915,6 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 			})
 
 		}
-
-		// var abis map[string]map[string]map[string]string
-		// if err := json.Unmarshal(bytes.NewBufferString(raw_abis).Bytes(), &abis); err != nil {
-		// 	log.Println("Error unmarshalling abis:", err)
-		// 	continue
-		// }
-
-		// customerUpdates = append(customerUpdates, CustomerUpdates{
-		// 	CustomerID: string(customerid),
-		// 	Abis:       abis,
-		// })
 
 	}
 
