@@ -1021,7 +1021,7 @@ func (p *PostgreSQLpgx) WriteTransactions(tx pgx.Tx, blockchain string, transact
 	return nil
 }
 
-func (p *PostgreSQLpgx) CleanIndexes(blockchain string, batchLimit uint64) error {
+func (p *PostgreSQLpgx) CleanIndexes(blockchain string, batchLimit uint64, sleepTime int) error {
 	pool := p.GetPool()
 
 	conn, err := pool.Acquire(context.Background())
@@ -1057,6 +1057,9 @@ func (p *PostgreSQLpgx) CleanIndexes(blockchain string, batchLimit uint64) error
 		}
 
 		log.Println("Deleted", commandTag.RowsAffected(), "transactions indexes with corresponding logs")
+
+		// sleep for a while to avoid overloading the database
+		time.Sleep(time.Duration(sleepTime) * time.Second)
 	}
 
 	return nil

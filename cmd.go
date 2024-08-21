@@ -729,6 +729,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 
 	var chain string
 	var batchLimit uint64
+	var sleepTime int
 
 	cleanCommand := &cobra.Command{
 		Use:   "clean",
@@ -744,7 +745,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			cleanErr := indexer.DBConnection.CleanIndexes(chain, batchLimit)
+			cleanErr := indexer.DBConnection.CleanIndexes(chain, batchLimit, sleepTime)
 			if cleanErr != nil {
 				return cleanErr
 			}
@@ -755,6 +756,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 
 	cleanCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
 	cleanCommand.Flags().Uint64Var(&batchLimit, "batch-limit", 1000, "The number of rows to delete in each batch (default: 1000)")
+	cleanCommand.Flags().IntVar(&sleepTime, "sleep-time", 1, "The time to sleep between batches in seconds (default: 1)")
 
 	indexCommand.AddCommand(cleanCommand)
 
