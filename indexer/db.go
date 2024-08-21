@@ -1047,9 +1047,9 @@ func (p *PostgreSQLpgx) CleanIndexes(blockchain string, batchLimit uint64) error
 
 	// delete indexes in batches
 
-	for i := minBlockNumber; i <= maxBlockNumber; i += batchLimit {
+	log.Printf("Starting deletion of transactions indexes in blocks range from %d to %d number", minBlockNumber, maxBlockNumber)
 
-		log.Printf("Deleting transactions indexes in blocks range from %d to %d", i, i+batchLimit)
+	for i := minBlockNumber; i <= maxBlockNumber; i += batchLimit {
 
 		commandTag, err := conn.Exec(context.Background(), fmt.Sprintf("DELETE FROM %s WHERE block_number >= $1 AND block_number < $2", TransactionsTableName(blockchain)), i, i+batchLimit)
 		if err != nil {
