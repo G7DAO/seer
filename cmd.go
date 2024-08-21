@@ -45,7 +45,8 @@ func CreateRootCommand() *cobra.Command {
 	evmCmd := CreateEVMCommand()
 	synchronizerCmd := CreateSynchronizerCommand()
 	abiCmd := CreateAbiCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd)
+	dbCmd := CreateDatabaseOperationCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -707,6 +708,59 @@ func CreateAbiEnsureSelectorsCommand() *cobra.Command {
 	abiEnsureSelectorsCmd.Flags().BoolVar(&WriteToDB, "write-to-db", false, "Set this flag to write the correct selectors to the database (default: false)")
 	abiEnsureSelectorsCmd.Flags().StringVarP(&outFilePath, "out-file", "o", "./missing-selectors.txt", "The file to write the output to (default: stdout)")
 	return abiEnsureSelectorsCmd
+}
+
+func CreateDatabaseOperationCommand() *cobra.Command {
+	databaseCmd := &cobra.Command{
+		Use:   "databases",
+		Short: "Operations for database",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	indexCommand := &cobra.Command{
+		Use:   "index",
+		Short: "Actions for index database",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	var chain string
+	var batchLimit uint64
+
+	cleanCommand := &cobra.Command{
+		Use:   "clean",
+		Short: "Clean the database transactions and logs indexes",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			indexer.InitDBConnection()
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+
+			cleanErr := indexer.DBConnection.CleanIndexes(chain, batchLimit)
+			if cleanErr != nil {
+				return cleanErr
+			}
+
+			return nil
+		},
+	}
+
+	cleanCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	cleanCommand.Flags().Uint64Var(&batchLimit, "batch-limit", 1000, "The number of rows to delete in each batch (default: 1000)")
+
+	indexCommand.AddCommand(cleanCommand)
+
+	databaseCmd.AddCommand(indexCommand)
+
+	return databaseCmd
 }
 
 func CreateStarknetParseCommand() *cobra.Command {

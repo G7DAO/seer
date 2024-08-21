@@ -27,6 +27,10 @@ func BlocksTableName(blockchain string) string {
 	return fmt.Sprintf(blockchain + "_blocks")
 }
 
+func TransactionsTableName(blockchain string) string {
+	return fmt.Sprintf(blockchain + "_transactions")
+}
+
 func hexStringToInt(hexString string) (int64, error) {
 	// Remove the "0x" prefix from the hexadecimal string
 	hexString = strings.TrimPrefix(hexString, "0x")
@@ -1015,4 +1019,46 @@ func (p *PostgreSQLpgx) WriteTransactions(tx pgx.Tx, blockchain string, transact
 	log.Printf("Saved %d transactions records into %s table", len(transactions), tableName)
 
 	return nil
+}
+
+func (p *PostgreSQLpgx) CleanIndexes(blockchain string, batchLimit uint64) error {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
+	if err != nil {
+		return err
+	}
+
+	defer conn.Release()
+
+	// get max and min block number
+
+	var minBlockNumber uint64
+	var maxBlockNumber uint64
+
+	query := fmt.Sprintf("SELECT min(block_number), max(block_number) FROM %s", TransactionsTableName(blockchain))
+
+	err = conn.QueryRow(context.Background(), query).Scan(&minBlockNumber, &maxBlockNumber)
+
+	if err != nil {
+		return err
+	}
+
+	// delete indexes in batches
+
+	for i := minBlockNumber; i <= maxBlockNumber; i += batchLimit {
+
+		log.Printf("Deleting transactions indexes in blocks range from %d to %d", i, i+batchLimit)
+
+		commandTag, err := conn.Exec(context.Background(), fmt.Sprintf("DELETE FROM %s WHERE block_number >= $1 AND block_number < $2", TransactionsTableName(blockchain)), i, i+batchLimit)
+		if err != nil {
+			return err
+		}
+
+		log.Println("Deleted", commandTag.RowsAffected(), "transactions indexes with corresponding logs")
+	}
+
+	return nil
+
 }
