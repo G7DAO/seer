@@ -211,7 +211,7 @@ func (d *Synchronizer) Start(customerDbUriFlag string) {
 
 	isEnd, err := d.SyncCycle(customerDbUriFlag)
 	if err != nil {
-		fmt.Println("Error during first synchronization cycle:", err)
+		log.Println("Error during initial synchronization cycle:", err)
 	}
 	if isEnd {
 		return
@@ -222,7 +222,7 @@ func (d *Synchronizer) Start(customerDbUriFlag string) {
 		case <-ticker.C:
 			isEnd, err := d.SyncCycle(customerDbUriFlag)
 			if err != nil {
-				fmt.Println("Error during synchronization cycle:", err)
+				log.Fatalf("Error during synchronization cycle:", err)
 			}
 			if isEnd {
 				return
@@ -274,7 +274,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 			if latestErr != nil {
 				return isEnd, fmt.Errorf("failed to get latest block number: %v", latestErr)
 			}
-			d.startBlock = uint64(crawler.SetDefaultStartBlock(0, latestBlockNumber)) - 100
+			d.startBlock = uint64(latestBlockNumber.Int64() - crawler.SeerDefaultBlockShift)
 		}
 	}
 
@@ -298,6 +298,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	// 2. For each update, read the original event data from storage
 	// 3. Decode input data using ABIs
 	// 4. Write updates to the user RDS
+	//var noUpdatesFoundErr *indexer.NoUpdatesFoundError
 	var isCycleFinished bool
 	for {
 		if d.endBlock != 0 {
@@ -315,11 +316,16 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		// This function will return a list of customer updates 1 update is 1 customer
 		lastBlockOfChank, path, updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, customerIds)
 
-		if err != nil {
-			return isEnd, fmt.Errorf("error reading updates: %w", err)
+		if len(updates) == 0 {
+			log.Printf("No updates found for block %d\n", d.startBlock)
+			return isEnd, nil
 		}
 
-		fmt.Println("Last block of chank: ", lastBlockOfChank)
+		if crawler.SEER_CRAWLER_DEBUG {
+			log.Printf("Read batch key: %s", path)
+		}
+
+		log.Println("Last block of current chank: ", lastBlockOfChank)
 
 		// Read the raw data from the storage for current path
 		rawData, readErr := d.StorageInstance.Read(path)
@@ -345,7 +351,11 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 				sem <- struct{}{} // Acquire semaphore
 
 				// Get the RDS connection for the customer
-				customer := customerDBConnections[update.CustomerID]
+				customer, customerExists := customerDBConnections[update.CustomerID]
+				if !customerExists {
+					errChan <- fmt.Errorf("no DB connection for customer %s", update.CustomerID)
+					return
+				}
 
 				// Create a connection to the user RDS
 				pool := customer.Pgx.GetPool()
@@ -359,14 +369,10 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 				var decodedEventsPack []indexer.EventLabel
 				var decodedTransactionsPack []indexer.TransactionLabel
 
-				if crawler.SEER_CRAWLER_DEBUG {
-					log.Printf("Key: %s", update.Path)
-				}
-
 				// decodedEvents, decodedTransactions, decErr
 				decodedEvents, decodedTransactions, decErr := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis)
 				if decErr != nil {
-					fmt.Println("Error decoding events: ", decErr)
+					log.Println("Error decoding events: ", decErr)
 					errChan <- fmt.Errorf("error decoding events for customer %s: %w", update.CustomerID, decErr)
 					return
 				}
@@ -386,11 +392,8 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		close(errChan) // Close the channel to signal that all goroutines have finished
 
 		// Check for errors from goroutines
-		for err := range errChan {
-			fmt.Println("Error during synchronization cycle:", err)
-			if err != nil {
-				return isEnd, err
-			}
+		if err := <-errChan; err != nil {
+			return isEnd, err
 		}
 
 		d.startBlock = lastBlockOfChank + 1

@@ -44,7 +44,9 @@ func CreateRootCommand() *cobra.Command {
 	inspectorCmd := CreateInspectorCommand()
 	evmCmd := CreateEVMCommand()
 	synchronizerCmd := CreateSynchronizerCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd)
+	abiCmd := CreateAbiCommand()
+	dbCmd := CreateDatabaseOperationCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -217,11 +219,10 @@ func CreateStarknetCommand() *cobra.Command {
 }
 
 func CreateCrawlerCommand() *cobra.Command {
-	var startBlock, endBlock, confirmations int64
+	var startBlock, finalBlock, confirmations, batchSize int64
 	var timeout, threads, protoTimeLimit int
 	var protoSizeLimit uint64
 	var chain, baseDir string
-	var force bool
 
 	crawlerCmd := &cobra.Command{
 		Use:   "crawler",
@@ -248,7 +249,7 @@ func CreateCrawlerCommand() *cobra.Command {
 
 			indexer.InitDBConnection()
 
-			newCrawler, crawlerError := crawler.NewCrawler(chain, startBlock, endBlock, confirmations, timeout, baseDir, force, protoSizeLimit, protoTimeLimit)
+			newCrawler, crawlerError := crawler.NewCrawler(chain, startBlock, finalBlock, confirmations, batchSize, timeout, baseDir, protoSizeLimit, protoTimeLimit)
 			if crawlerError != nil {
 				return crawlerError
 			}
@@ -262,7 +263,7 @@ func CreateCrawlerCommand() *cobra.Command {
 				log.Fatalf("Start block could not be greater then latest block number at blockchain")
 			}
 
-			crawler.CurrentBlockchainState.SetLatestBlockNumber(latestBlockNumber)
+			crawler.CurrentBlockchainState.RaiseLatestBlockNumber(latestBlockNumber)
 
 			newCrawler.Start(threads)
 
@@ -272,12 +273,12 @@ func CreateCrawlerCommand() *cobra.Command {
 
 	crawlerCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
 	crawlerCmd.Flags().Int64Var(&startBlock, "start-block", 0, "The block number to start crawling from (default: fetch from database, if it is empty, run from latestBlockNumber minus shift)")
-	crawlerCmd.Flags().Int64Var(&endBlock, "end-block", 0, "The block number to end crawling at (default: endless)")
+	crawlerCmd.Flags().Int64Var(&finalBlock, "final-block", 0, "The block number to end crawling at (default: endless)")
 	crawlerCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
 	crawlerCmd.Flags().IntVar(&threads, "threads", 1, "Number of go-routines for concurrent crawling (default: 1)")
 	crawlerCmd.Flags().Int64Var(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
+	crawlerCmd.Flags().Int64Var(&batchSize, "batch-size", 10, "Dynamically changed maximum number of blocks to crawl in each batch (default: 10)")
 	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
-	crawlerCmd.Flags().BoolVar(&force, "force", false, "Set this flag to force the crawler start from the specified block, otherwise it checks database latest indexed block number (default: false)")
 	crawlerCmd.Flags().Uint64Var(&protoSizeLimit, "proto-size-limit", 25, "Proto file size limit in Mb (default: 25Mb)")
 	crawlerCmd.Flags().IntVar(&protoTimeLimit, "proto-time-limit", 300, "Proto time limit in seconds (default: 300sec)")
 
@@ -336,7 +337,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 				log.Fatalf("Start block could not be greater then latest block number at blockchain")
 			}
 
-			crawler.CurrentBlockchainState.SetLatestBlockNumber(latestBlockNumber)
+			crawler.CurrentBlockchainState.RaiseLatestBlockNumber(latestBlockNumber)
 
 			newSynchronizer.Start(customerDbUriFlag)
 
@@ -609,6 +610,159 @@ func CreateInspectorCommand() *cobra.Command {
 	inspectorCmd.AddCommand(storageCommand, readCommand, dbCommand)
 
 	return inspectorCmd
+}
+
+func CreateAbiCommand() *cobra.Command {
+	abiCmd := &cobra.Command{
+		Use:   "abi",
+		Short: "General commands for working with ABIs",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	abiParseCmd := CreateAbiParseCommand()
+	abiEnsureSelectorsCmd := CreateAbiEnsureSelectorsCommand()
+	abiCmd.AddCommand(abiParseCmd)
+	abiCmd.AddCommand(abiEnsureSelectorsCmd)
+
+	return abiCmd
+}
+
+func CreateAbiParseCommand() *cobra.Command {
+
+	var inFile, outFile string
+	var rawABI []byte
+	var readErr error
+
+	abiParseCmd := &cobra.Command{
+		Use:   "parse",
+		Short: "Parse an ABI and return seer's interal representation of that ABI",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if inFile != "" {
+				rawABI, readErr = os.ReadFile(inFile)
+			} else {
+				rawABI, readErr = io.ReadAll(os.Stdin)
+			}
+			return readErr
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			parsedABI, parseErr := indexer.PrintContractSignatures(string(rawABI))
+			if parseErr != nil {
+				return parseErr
+			}
+
+			content, marshalErr := json.Marshal(parsedABI)
+			if marshalErr != nil {
+				return marshalErr
+			}
+
+			if outFile != "" {
+				writeErr := os.WriteFile(outFile, content, 0644)
+				if writeErr != nil {
+					return writeErr
+				}
+			} else {
+				cmd.Println("ABI parsed successfully:")
+			}
+
+			return nil
+		},
+	}
+
+	abiParseCmd.Flags().StringVarP(&inFile, "abi", "a", "", "Path to contract ABI (default stdin)")
+	abiParseCmd.Flags().StringVarP(&outFile, "out", "o", "", "Path to write the output (default stdout)")
+
+	return abiParseCmd
+}
+
+func CreateAbiEnsureSelectorsCommand() *cobra.Command {
+
+	var chain, outFilePath string
+	var WriteToDB bool
+
+	abiEnsureSelectorsCmd := &cobra.Command{
+		Use:   "ensure-selectors",
+		Short: "Ensure that all ABI functions have selectors",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+
+			indexer.InitDBConnection()
+
+			updateErr := indexer.DBConnection.EnsureCorrectSelectors(chain, WriteToDB, outFilePath)
+			if updateErr != nil {
+				return updateErr
+			}
+			return nil
+		},
+	}
+
+	abiEnsureSelectorsCmd.Flags().StringVarP(&chain, "chain", "c", "", "The blockchain to crawl")
+	abiEnsureSelectorsCmd.Flags().BoolVar(&WriteToDB, "write-to-db", false, "Set this flag to write the correct selectors to the database (default: false)")
+	abiEnsureSelectorsCmd.Flags().StringVarP(&outFilePath, "out-file", "o", "./missing-selectors.txt", "The file to write the output to (default: stdout)")
+	return abiEnsureSelectorsCmd
+}
+
+func CreateDatabaseOperationCommand() *cobra.Command {
+	databaseCmd := &cobra.Command{
+		Use:   "databases",
+		Short: "Operations for database",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	indexCommand := &cobra.Command{
+		Use:   "index",
+		Short: "Actions for index database",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	var chain string
+	var batchLimit uint64
+	var sleepTime int
+
+	cleanCommand := &cobra.Command{
+		Use:   "clean",
+		Short: "Clean the database transactions and logs indexes",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			indexer.InitDBConnection()
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+
+			cleanErr := indexer.DBConnection.CleanIndexes(chain, batchLimit, sleepTime)
+			if cleanErr != nil {
+				return cleanErr
+			}
+
+			return nil
+		},
+	}
+
+	cleanCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	cleanCommand.Flags().Uint64Var(&batchLimit, "batch-limit", 1000, "The number of rows to delete in each batch (default: 1000)")
+	cleanCommand.Flags().IntVar(&sleepTime, "sleep-time", 1, "The time to sleep between batches in seconds (default: 1)")
+
+	indexCommand.AddCommand(cleanCommand)
+
+	databaseCmd.AddCommand(indexCommand)
+
+	return databaseCmd
 }
 
 func CreateStarknetParseCommand() *cobra.Command {

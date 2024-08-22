@@ -215,7 +215,7 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 	}
 
 	sem := make(chan struct{}, maxRequests)             // Semaphore to control concurrency
-	errChan := make(chan error, len(blockNumbersRange)) // Handle errors to stop corrupted processing
+	errChan := make(chan error, 1)
 
 	for _, b := range blockNumbersRange {
 		wg.Add(1)
@@ -247,10 +247,8 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 	close(sem)
 	close(errChan)
 
-	for err := range errChan {
-		if err != nil {
-			return nil, err
-		}
+	if err := <-errChan; err != nil {
+		return nil, err
 	}
 
 	return blocks, nil
@@ -288,7 +286,7 @@ func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxR
 	return parsedBlocks, nil
 }
 
-func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*ArbitrumSepoliaEventLog, []indexer.LogIndex, error) {
+func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*ArbitrumSepoliaEventLog, error) {
 	logs, err := c.ClientFilterLogs(context.Background(), ethereum.FilterQuery{
 		FromBlock: from,
 		ToBlock:   to,
@@ -296,61 +294,24 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 
 	if err != nil {
 		fmt.Println("Error fetching logs: ", err)
-		return nil, nil, err
+		return nil, err
 	}
 
 	var parsedEvents []*ArbitrumSepoliaEventLog
-	var eventsIndex []indexer.LogIndex
 
-	for i, log := range logs {
+	for _, log := range logs {
 		parsedEvent := ToProtoSingleEventLog(log)
 		parsedEvents = append(parsedEvents, parsedEvent)
 
-		// Prepare events to index
-		var topic0, topic1, topic2, topic3 *string
-
-		if len(parsedEvent.Topics) == 0 {
-			// Anonymous events
-			fmt.Printf("No topics found for event with tx hash: %s and log index: %d\n", parsedEvent.TransactionHash, parsedEvent.LogIndex)
-		} else {
-			topic0 = &parsedEvent.Topics[0] // First topic
-		}
-
-		// Assign topics based on availability
-		if len(parsedEvent.Topics) > 1 {
-			topic1 = &parsedEvent.Topics[1] // Second topic, if present
-		}
-		if len(parsedEvent.Topics) > 2 {
-			topic2 = &parsedEvent.Topics[2] // Third topic, if present
-		}
-
-		if len(parsedEvent.Topics) > 3 {
-			topic3 = &parsedEvent.Topics[3] // Fourth topic, if present
-		}
-
-		eventsIndex = append(eventsIndex, indexer.LogIndex{
-			Address:         parsedEvent.Address,
-			BlockNumber:     parsedEvent.BlockNumber,
-			BlockHash:       parsedEvent.BlockHash,
-			BlockTimestamp:  blocksCache[parsedEvent.BlockNumber].BlockTimestamp,
-			TransactionHash: parsedEvent.TransactionHash,
-			Selector:        topic0, // First topic
-			Topic1:          topic1,
-			Topic2:          topic2,
-			Topic3:          topic3,
-			RowID:           uint64(i), // TODO: Remove
-			LogIndex:        parsedEvent.LogIndex,
-			Path:            "",
-		})
 	}
 
-	return parsedEvents, eventsIndex, nil
+	return parsedEvents, nil
 }
 
-func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, []indexer.TransactionIndex, []indexer.LogIndex, uint64, error) {
+func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, uint64, error) {
 	blocks, err := c.ParseBlocksWithTransactions(from, to, debug, maxRequests)
 	if err != nil {
-		return nil, nil, nil, nil, 0, err
+		return nil, nil, 0, err
 	}
 
 	var blocksSize uint64
@@ -365,44 +326,23 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 		} // Assuming block.BlockNumber is int64 and block.Hash is string
 	}
 
-	events, eventsIndex, err := c.ParseEvents(from, to, blocksCache, debug)
+	events, err := c.ParseEvents(from, to, blocksCache, debug)
 	if err != nil {
-		return nil, nil, nil, nil, 0, err
+		return nil, nil, 0, err
 	}
 
 	var blocksProto []proto.Message
 	var blocksIndex []indexer.BlockIndex
-	var txsIndex []indexer.TransactionIndex
 
 	for bI, block := range blocks {
-		for txI, tx := range block.Transactions {
+		for _, tx := range block.Transactions {
 			for _, event := range events {
 				if tx.Hash == event.TransactionHash {
 					tx.Logs = append(tx.Logs, event)
 				}
 			}
-
-			// Prepare transactions to index
-			txSelector := "0x"
-
-			if len(tx.Input) > 10 {
-				txSelector = tx.Input[:10]
-			}
-
-			txsIndex = append(txsIndex, indexer.TransactionIndex{
-				BlockNumber:      tx.BlockNumber,
-				BlockHash:        tx.BlockHash,
-				BlockTimestamp:   tx.BlockTimestamp,
-				FromAddress:      tx.FromAddress,
-				ToAddress:        tx.ToAddress,
-				RowID:            uint64(txI),
-				Selector:         txSelector, // First 10 characters of the input data 0x + 4 bytes of the function signature
-				TransactionHash:  tx.Hash,
-				TransactionIndex: tx.TransactionIndex,
-				Type:             tx.TransactionType,
-				Path:             "",
-			})
 		}
+		
 
 		// Prepare blocks to index
 		blocksIndex = append(blocksIndex, indexer.NewBlockIndex("arbitrum_sepolia",
@@ -419,7 +359,7 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 		blocksProto = append(blocksProto, block) // Assuming block is already a proto.Message
 	}
 
-	return blocksProto, blocksIndex, txsIndex, eventsIndex, blocksSize, nil
+	return blocksProto, blocksIndex, blocksSize, nil
 }
 
 func (c *Client) ProcessBlocksToBatch(msgs []proto.Message) (proto.Message, error) {
@@ -433,14 +373,14 @@ func (c *Client) ProcessBlocksToBatch(msgs []proto.Message) (proto.Message, erro
 	}
 
 	return &ArbitrumSepoliaBlocksBatch{
-		Blocks:      blocks,
+		Blocks: blocks,
 		SeerVersion: version.SeerVersion,
 	}, nil
 }
 
 func ToEntireBlocksBatchFromLogProto(obj *ArbitrumSepoliaBlocksBatch) *seer_common.BlocksBatchJson {
 	blocksBatchJson := seer_common.BlocksBatchJson{
-		Blocks:      []seer_common.BlockJson{},
+		Blocks: []seer_common.BlockJson{},
 		SeerVersion: obj.SeerVersion,
 	}
 
@@ -517,10 +457,10 @@ func ToEntireBlocksBatchFromLogProto(obj *ArbitrumSepoliaBlocksBatch) *seer_comm
 			BaseFeePerGas:    b.BaseFeePerGas,
 			IndexedAt:        fmt.Sprintf("%d", b.IndexedAt),
 
-			MixHash:       b.MixHash,
-			SendCount:     b.SendCount,
-			SendRoot:      b.SendRoot,
-			L1BlockNumber: fmt.Sprintf("%d", b.L1BlockNumber),
+			MixHash:       b.MixHash, 
+			SendCount:     b.SendCount, 
+			SendRoot:      b.SendRoot, 
+			L1BlockNumber: fmt.Sprintf("%d", b.L1BlockNumber), 
 
 			Transactions: txs,
 		})
@@ -551,10 +491,10 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *ArbitrumSepoliaBlock {
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        fromHex(obj.IndexedAt).Uint64(),
 
-		MixHash:       obj.MixHash,
-		SendCount:     obj.SendCount,
-		SendRoot:      obj.SendRoot,
-		L1BlockNumber: fromHex(obj.L1BlockNumber).Uint64(),
+		MixHash:       obj.MixHash, 
+		SendCount:     obj.SendCount, 
+		SendRoot:      obj.SendRoot, 
+		L1BlockNumber: fromHex(obj.L1BlockNumber).Uint64(), 
 	}
 }
 
@@ -672,12 +612,12 @@ func (c *Client) DecodeProtoBlocks(data []string) ([]*ArbitrumSepoliaBlock, erro
 func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) (*seer_common.BlocksBatchJson, error) {
 	var protoBlocksBatch ArbitrumSepoliaBlocksBatch
 
-	dataBytes := rawData.Bytes()
+    dataBytes := rawData.Bytes()
 
-	err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal data: %v", err)
-	}
+    err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
+    if err != nil {
+        return nil, fmt.Errorf("failed to unmarshal data: %v", err)
+    }
 
 	blocksBatchJson := ToEntireBlocksBatchFromLogProto(&protoBlocksBatch)
 
@@ -689,10 +629,10 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 
 	dataBytes := rawData.Bytes()
 
-	err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal data: %v", err)
-	}
+    err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
+    if err != nil {
+        return nil, nil, fmt.Errorf("failed to unmarshal data: %v", err)
+    }
 
 	var labels []indexer.EventLabel
 	var txLabels []indexer.TransactionLabel
@@ -729,9 +669,9 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 					fmt.Println("Error decoding transaction not decoded data: ", tx.Hash, decodeErr)
 					decodedArgsTx = map[string]interface{}{
 						"input_raw": tx,
-						"abi":       abiMap[tx.ToAddress][selector]["abi"],
-						"selector":  selector,
-						"error":     decodeErr,
+						"abi": abiMap[tx.ToAddress][selector]["abi"],
+						"selector": selector,
+						"error": decodeErr,
 					}
 					label = indexer.SeerCrawlerRawLabel
 				}
@@ -785,15 +725,16 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 					return nil, nil, err
 				}
 
+
 				// Decode the event data
 				decodedArgsLogs, decodeErr = seer_common.DecodeLogArgsToLabelData(&contractAbi, e.Topics, e.Data)
 				if decodeErr != nil {
 					fmt.Println("Error decoding event not decoded data: ", e.TransactionHash, decodeErr)
 					decodedArgsLogs = map[string]interface{}{
 						"input_raw": e,
-						"abi":       abiMap[e.Address][topicSelector]["abi"],
-						"selector":  topicSelector,
-						"error":     decodeErr,
+						"abi": abiMap[e.Address][topicSelector]["abi"],
+						"selector": topicSelector,
+						"error": decodeErr,
 					}
 					label = indexer.SeerCrawlerRawLabel
 				}
@@ -840,6 +781,7 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 	var decodedArgs map[string]interface{}
 	var decodeErr error
 
+
 	for _, transaction := range decodedTransactions {
 
 		label := indexer.SeerCrawlerLabel
@@ -864,9 +806,9 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 			fmt.Println("Error decoding transaction not decoded data: ", transaction.Hash, decodeErr)
 			decodedArgs = map[string]interface{}{
 				"input_raw": transaction,
-				"abi":       abiMap[transaction.ToAddress][selector]["abi"],
-				"selector":  selector,
-				"error":     decodeErr,
+				"abi": abiMap[transaction.ToAddress][selector]["abi"],
+				"selector": selector,
+				"error": decodeErr,
 			}
 			label = indexer.SeerCrawlerRawLabel
 		}

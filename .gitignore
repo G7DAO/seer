@@ -198,6 +198,7 @@ docker.dev.env
 docker.test.dev
 docker.prod.env
 docker.moonstreamdb.env
+missing-selectors.txt
 
 .secrets/
 
