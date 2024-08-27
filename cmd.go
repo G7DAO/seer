@@ -220,7 +220,7 @@ func CreateStarknetCommand() *cobra.Command {
 
 func CreateCrawlerCommand() *cobra.Command {
 	var startBlock, finalBlock, confirmations, batchSize int64
-	var timeout, threads, protoTimeLimit int
+	var timeout, threads, protoTimeLimit, retryWait, retryMultiplier int
 	var protoSizeLimit uint64
 	var chain, baseDir string
 
@@ -249,7 +249,7 @@ func CreateCrawlerCommand() *cobra.Command {
 
 			indexer.InitDBConnection()
 
-			newCrawler, crawlerError := crawler.NewCrawler(chain, startBlock, finalBlock, confirmations, batchSize, timeout, baseDir, protoSizeLimit, protoTimeLimit)
+			newCrawler, crawlerError := crawler.NewCrawler(chain, startBlock, finalBlock, confirmations, batchSize, timeout, baseDir, protoSizeLimit, protoTimeLimit, retryWait, retryMultiplier)
 			if crawlerError != nil {
 				return crawlerError
 			}
@@ -271,16 +271,18 @@ func CreateCrawlerCommand() *cobra.Command {
 		},
 	}
 
-	crawlerCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	crawlerCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl")
 	crawlerCmd.Flags().Int64Var(&startBlock, "start-block", 0, "The block number to start crawling from (default: fetch from database, if it is empty, run from latestBlockNumber minus shift)")
-	crawlerCmd.Flags().Int64Var(&finalBlock, "final-block", 0, "The block number to end crawling at (default: endless)")
-	crawlerCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
-	crawlerCmd.Flags().IntVar(&threads, "threads", 1, "Number of go-routines for concurrent crawling (default: 1)")
-	crawlerCmd.Flags().Int64Var(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality (default: 10)")
-	crawlerCmd.Flags().Int64Var(&batchSize, "batch-size", 10, "Dynamically changed maximum number of blocks to crawl in each batch (default: 10)")
-	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
-	crawlerCmd.Flags().Uint64Var(&protoSizeLimit, "proto-size-limit", 25, "Proto file size limit in Mb (default: 25Mb)")
-	crawlerCmd.Flags().IntVar(&protoTimeLimit, "proto-time-limit", 300, "Proto time limit in seconds (default: 300sec)")
+	crawlerCmd.Flags().Int64Var(&finalBlock, "final-block", 0, "The block number to end crawling at")
+	crawlerCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds")
+	crawlerCmd.Flags().IntVar(&threads, "threads", 1, "Number of go-routines for concurrent crawling")
+	crawlerCmd.Flags().Int64Var(&confirmations, "confirmations", 10, "The number of confirmations to consider for block finality")
+	crawlerCmd.Flags().Int64Var(&batchSize, "batch-size", 10, "Dynamically changed maximum number of blocks to crawl in each batch")
+	crawlerCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data")
+	crawlerCmd.Flags().Uint64Var(&protoSizeLimit, "proto-size-limit", 25, "Proto file size limit in Mb")
+	crawlerCmd.Flags().IntVar(&protoTimeLimit, "proto-time-limit", 300, "Proto time limit in seconds")
+	crawlerCmd.Flags().IntVar(&retryWait, "retry-wait", 5000, "The wait time for the crawler in milliseconds before it try to fetch new block")
+	crawlerCmd.Flags().IntVar(&retryMultiplier, "retry-multiplier", 24, "Multiply wait time to get max waiting time before fetch new block")
 
 	return crawlerCmd
 }
