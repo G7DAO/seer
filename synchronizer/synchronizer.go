@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/storage"
 	"golang.org/x/exp/slices"
+	"google.golang.org/protobuf/proto"
 )
 
 type Synchronizer struct {
@@ -155,30 +157,38 @@ type CustomerDBConnection struct {
 	Pgx *indexer.PostgreSQLpgx
 }
 
-// getCustomers fetch ABI jobs, customer IDs and database URLs
-func (d *Synchronizer) getCustomers(customerDbUriFlag string) (map[string]CustomerDBConnection, []string, error) {
+// getCustomers fetches ABI jobs, extracts customer IDs, and establishes database connections.
+func (d *Synchronizer) getCustomers(customerDbUriFlag string, customerIds []string) (map[string]CustomerDBConnection, []string, error) {
 	customerDBConnections := make(map[string]CustomerDBConnection)
-	var customerIds []string
+	customerIdSet := make(map[string]struct{})
 
-	// Read ABI jobs from database
-	abiJobs, err := d.ReadAbiJobsFromDatabase(d.blockchain)
-	if err != nil {
-		return customerDBConnections, customerIds, err
+	// If no customer IDs are provided as arguments, fetch them from ABI jobs.
+	if len(customerIds) == 0 {
+		abiJobs, err := d.ReadAbiJobsFromDatabase(d.blockchain)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read ABI jobs: %w", err)
+		}
+
+		// Extract unique customer IDs from the ABI jobs.
+		for _, job := range abiJobs {
+			customerIdSet[job.CustomerID] = struct{}{}
+		}
+	} else {
+		// Otherwise, use the provided customer IDs directly.
+		for _, id := range customerIds {
+			customerIdSet[id] = struct{}{}
+		}
 	}
 
-	// Create a set of customer IDs from ABI jobs to remove duplicates
-	customerIdsSet := make(map[string]struct{})
-	for _, job := range abiJobs {
-		customerIdsSet[job.CustomerID] = struct{}{}
-	}
-
-	for id := range customerIdsSet {
+	var finalCustomerIds []string
+	for id := range customerIdSet {
 		var connectionString string
 		var dbConnErr error
+
 		if customerDbUriFlag == "" {
 			connectionString, dbConnErr = GetDBConnection(id)
 			if dbConnErr != nil {
-				log.Printf("Unable to get connection database URI for %s customer, err: %v", id, dbConnErr)
+				log.Printf("Unable to get connection database URI for customer %s, err: %v", id, dbConnErr)
 				continue
 			}
 		} else {
@@ -187,7 +197,7 @@ func (d *Synchronizer) getCustomers(customerDbUriFlag string) (map[string]Custom
 
 		pgx, pgxErr := indexer.NewPostgreSQLpgxWithCustomURI(connectionString)
 		if pgxErr != nil {
-			log.Printf("Error creating RDS connection for %s customer, err: %v", id, pgxErr)
+			log.Printf("Error creating RDS connection for customer %s, err: %v", id, pgxErr)
 			continue
 		}
 
@@ -195,12 +205,12 @@ func (d *Synchronizer) getCustomers(customerDbUriFlag string) (map[string]Custom
 			Uri: connectionString,
 			Pgx: pgx,
 		}
-		customerIds = append(customerIds, id)
-
+		finalCustomerIds = append(finalCustomerIds, id)
 	}
-	log.Println("Customer IDs to sync:", customerIds)
 
-	return customerDBConnections, customerIds, nil
+	log.Println("Customer IDs to sync:", finalCustomerIds)
+
+	return customerDBConnections, finalCustomerIds, nil
 }
 
 func (d *Synchronizer) Start(customerDbUriFlag string) {
@@ -234,7 +244,7 @@ func (d *Synchronizer) Start(customerDbUriFlag string) {
 func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	var isEnd bool
 
-	customerDBConnections, customerIds, customersErr := d.getCustomers(customerDbUriFlag)
+	customerDBConnections, customerIds, customersErr := d.getCustomers(customerDbUriFlag, nil)
 	if customersErr != nil {
 		return isEnd, customersErr
 	}
@@ -314,7 +324,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 
 		// Read updates from the indexer db
 		// This function will return a list of customer updates 1 update is 1 customer
-		lastBlockOfChank, path, updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, customerIds)
+		_, lastBlockOfChank, path, updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, customerIds)
 
 		if len(updates) == 0 {
 			log.Printf("No updates found for block %d\n", d.startBlock)
@@ -404,4 +414,187 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	}
 
 	return isEnd, nil
+}
+
+func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []string, customerIds []string, batchSize uint64, auto bool) error {
+	var useRPC bool
+	var isCycleFinished bool
+
+	fmt.Println("HistoricalSyncRef")
+
+	// Initialize start block if 0
+	if d.startBlock == 0 {
+		// Get the latest block from the indexer db
+		indexedLatestBlock, err := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain)
+		if err != nil {
+			return fmt.Errorf("error getting latest block number: %w", err)
+		}
+		d.startBlock = indexedLatestBlock
+	}
+
+	// Automatically update ABI jobs if auto mode is enabled
+	if auto {
+		if err := indexer.DBConnection.UpdateAbiJobsStatus(d.blockchain); err != nil {
+			return fmt.Errorf("error updating ABI: %w", err)
+		}
+	}
+
+	// Retrieve customer updates and deployment blocks
+	customerUpdates, addressesAbisInfo, err := indexer.DBConnection.SelectAbiJobs(d.blockchain, addresses, customerIds)
+	if err != nil {
+		return fmt.Errorf("error selecting ABI jobs: %w", err)
+	}
+
+	// Filter out blocks more
+	for address, abisInfo := range addressesAbisInfo {
+		if abisInfo.DeployedBlockNumber > d.startBlock {
+			delete(addressesAbisInfo, address)
+		}
+	}
+
+	// Get customer database connections
+	customerIdsMap := make(map[string]bool)
+	for _, update := range customerUpdates {
+		customerIdsMap[update.CustomerID] = true
+	}
+	var customerIdsList []string
+	for id := range customerIdsMap {
+		customerIdsList = append(customerIdsList, id)
+	}
+
+	customerDBConnections, _, err := d.getCustomers(customerDbUriFlag, customerIdsList)
+	if err != nil {
+		return fmt.Errorf("error getting customers: %w", err)
+	}
+
+	// Main processing loop
+	for {
+		if d.endBlock != 0 && d.startBlock <= d.endBlock {
+			isCycleFinished = true
+			log.Printf("End block %d almost reached", d.endBlock)
+		}
+
+		for address, abisInfo := range addressesAbisInfo {
+			if abisInfo.DeployedBlockNumber > d.startBlock {
+
+				// update the status of the address for the customer to done
+				err := indexer.DBConnection.UpdateAbisAsDone(abisInfo.IDs)
+				if err != nil {
+					return err
+				}
+
+				// drop the address
+				delete(addressesAbisInfo, address)
+			}
+		}
+
+		if len(addressesAbisInfo) == 0 {
+			break
+		}
+
+		// Determine the processing strategy (RPC or storage)
+		var path string
+		var firstBlockOfChunk uint64
+		if !useRPC {
+
+			path, firstBlockOfChunk, _, err = indexer.DBConnection.FindBatchPath(d.blockchain, d.startBlock)
+			if err != nil {
+				return fmt.Errorf("error finding batch path: %w", err)
+			}
+
+			if path == "" {
+				useRPC = true
+				d.endBlock = d.startBlock - batchSize
+			} else {
+				d.endBlock = firstBlockOfChunk
+			}
+		} else {
+			d.endBlock = d.startBlock - batchSize
+		}
+
+		// Read raw data from storage or via RPC
+		var rawData bytes.Buffer
+		if useRPC {
+			protoMessage, _, _, err := seer_blockchain.CrawlEntireBlocks(d.Client, big.NewInt(int64(d.startBlock)), big.NewInt(int64(firstBlockOfChunk)), false, 5)
+			if err != nil {
+				return fmt.Errorf("error reading events via RPC: %w", err)
+			}
+
+			blocksBatch, err := d.Client.ProcessBlocksToBatch(protoMessage)
+			if err != nil {
+				return fmt.Errorf("error processing blocks to batch: %w", err)
+			}
+
+			dataBytes, err := proto.Marshal(blocksBatch)
+			if err != nil {
+				return fmt.Errorf("error marshaling protoMessage: %w", err)
+			}
+
+			rawData = *bytes.NewBuffer(dataBytes)
+		} else {
+			rawData, err = d.StorageInstance.Read(path)
+			if err != nil {
+				return fmt.Errorf("error reading events from storage: %w", err)
+			}
+		}
+
+		log.Printf("Processing %d customer updates for block range %d-%d", len(customerUpdates), d.startBlock, firstBlockOfChunk)
+
+		// Process customer updates in parallel
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 5)  // Semaphore to control concurrency
+		errChan := make(chan error, 1) // Buffered channel for error handling
+
+		for _, update := range customerUpdates {
+			wg.Add(1)
+			go func(update indexer.CustomerUpdates) {
+				defer wg.Done()
+				sem <- struct{}{} // Acquire semaphore
+
+				customer, exists := customerDBConnections[update.CustomerID]
+				if !exists {
+					errChan <- fmt.Errorf("no DB connection for customer %s", update.CustomerID)
+					<-sem // Release semaphore
+					return
+				}
+
+				conn, err := customer.Pgx.GetPool().Acquire(context.Background())
+				if err != nil {
+					errChan <- fmt.Errorf("error acquiring connection for customer %s: %w", update.CustomerID, err)
+					<-sem // Release semaphore
+					return
+				}
+				defer conn.Release()
+
+				decodedEvents, decodedTransactions, err := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis)
+				if err != nil {
+					errChan <- fmt.Errorf("error decoding events for customer %s: %w", update.CustomerID, err)
+					<-sem // Release semaphore
+					return
+				}
+
+				customer.Pgx.WriteLabes(d.blockchain, decodedTransactions, decodedEvents)
+
+				<-sem // Release semaphore
+			}(update)
+		}
+
+		wg.Wait()
+		close(sem)
+
+		// Check for errors from goroutines
+		select {
+		case err := <-errChan:
+			return err
+		default:
+		}
+
+		d.startBlock = d.endBlock - 1
+
+		if isCycleFinished {
+			break
+		}
+	}
+
+	return nil
 }

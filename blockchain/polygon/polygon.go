@@ -105,6 +105,29 @@ func (c *Client) TransactionReceipt(ctx context.Context, hash common.Hash) (*typ
 	return receipt, err
 }
 
+// Get bytecode of a contract by address.
+func (c *Client) GetCode(ctx context.Context, address common.Address, blockNumber uint64) ([]byte, error) {
+	var code string
+	if blockNumber == 0 {
+		latestBlockNumber, err := c.GetLatestBlockNumber()
+		if err != nil {
+			return nil, err
+		}
+		blockNumber = latestBlockNumber.Uint64()
+	}
+
+	err := c.rpcClient.CallContext(ctx, &code, "eth_getCode", address, blockNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	if code == "0x" {
+		return nil, nil
+	}
+
+	return common.FromHex(code), nil
+}
+
 func (c *Client) ClientFilterLogs(ctx context.Context, q ethereum.FilterQuery, debug bool) ([]*seer_common.EventJson, error) {
 	var logs []*seer_common.EventJson
 	fromBlock := q.FromBlock

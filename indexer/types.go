@@ -60,11 +60,12 @@ type AbiJob struct {
 	Status                string
 	HistoricalCrawlStatus string
 	Progress              int
-	MoonwormTaskPickedup  bool
+	TaskPickedup          bool
 	Abi                   string
 	AbiType               string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
+	DeploymentBlockNumber uint64
 }
 
 type CustomerUpdates struct {
@@ -124,4 +125,9 @@ type TransactionLabel struct {
 	TransactionHash string
 	LabelData       string
 	BlockTimestamp  uint64
+}
+
+type AbiJobsDeployInfo struct {
+	DeployedBlockNumber uint64
+	IDs                 []string
 }

@@ -460,7 +460,7 @@ func (p *PostgreSQLpgx) ReadABIJobs(blockchain string) ([]AbiJob, error) {
 
 	defer conn.Release()
 
-	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, (abi::jsonb)->>'type' as abiType, created_at, updated_at FROM abi_jobs where chain=$1 and (abi::jsonb)->>'type' is not null", blockchain)
+	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, task_pickedup, abi, (abi::jsonb)->>'type' as abiType, created_at, updated_at, deployment_block_number FROM abi_jobs where chain=$1 and (abi::jsonb)->>'type' is not null", blockchain)
 
 	if err != nil {
 		return nil, err
@@ -519,14 +519,14 @@ func (p *PostgreSQLpgx) GetCustomersIDs(blockchain string) ([]string, error) {
 	return customerIds, nil
 }
 
-func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, customerIds []string) (uint64, string, []CustomerUpdates, error) {
+func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, customerIds []string) (uint64, uint64, string, []CustomerUpdates, error) {
 
 	pool := p.GetPool()
 
 	conn, err := pool.Acquire(context.Background())
 
 	if err != nil {
-		return 0, "", nil, err
+		return 0, 0, "", nil, err
 	}
 
 	defer conn.Release()
@@ -607,18 +607,18 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 
 	if err != nil {
 		log.Println("Error querying abi jobs from database", err)
-		return 0, "", nil, err
+		return 0, 0, "", nil, err
 	}
 
 	var customers []map[string]map[string]map[string]map[string]string
 	var path string
-	var lastNumber uint64
+	var firstBlockNumber, lastBlockNumber uint64
 
 	for rows.Next() {
-		err = rows.Scan(&lastNumber, &path, &customers)
+		err = rows.Scan(&lastBlockNumber, &path, &customers)
 		if err != nil {
 			log.Println("Error scanning row:", err)
-			return 0, "", nil, err
+			return 0, 0, "", nil, err
 		}
 	}
 
@@ -637,7 +637,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 
 	}
 
-	return lastNumber, path, customerUpdates, nil
+	return firstBlockNumber, lastBlockNumber, path, customerUpdates, nil
 
 }
 
@@ -1060,6 +1060,350 @@ func (p *PostgreSQLpgx) CleanIndexes(blockchain string, batchLimit uint64, sleep
 
 		// sleep for a while to avoid overloading the database
 		time.Sleep(time.Duration(sleepTime) * time.Second)
+	}
+
+	return nil
+
+}
+
+func (p *PostgreSQLpgx) UpdateAbiJobsStatus(blockchain string) error {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+
+	query := `
+		UPDATE abi_jobs 
+		SET historical_crawl_status = 'pickedup' 
+		WHERE chain = @chain
+		  AND historical_crawl_status = 'pending' 
+		  AND status = true 
+		  AND deployment_block_number IS NOT NULL
+	`
+
+	queryArgs := pgx.NamedArgs{
+		"chain": blockchain,
+	}
+
+	_, err = conn.Exec(context.Background(), query, queryArgs)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, customersIds []string) ([]CustomerUpdates, map[string]AbiJobsDeployInfo, error) {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+	if err != nil {
+		return nil, nil, err
+	}
+	defer conn.Release()
+
+	var queryBuilder strings.Builder
+
+	queryArgs := make(pgx.NamedArgs)
+
+	queryArgs["chain"] = blockchain
+
+	queryBuilder.WriteString(`
+		SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, 
+		       historical_crawl_status, progress, task_pickedup, abi, 
+		       (abi::jsonb)->>'type' AS abiType, created_at, updated_at, deployment_block_number
+		FROM abi_jobs 
+		WHERE chain = @chain AND historical_crawl_status = 'pickedup'
+	`)
+
+	if len(addresses) > 0 {
+		queryBuilder.WriteString(" AND address = ANY(@addresses) ")
+		queryArgs["addresses"] = addresses
+	}
+
+	if len(customersIds) > 0 {
+		queryBuilder.WriteString(" AND customer_id = ANY(@customer_ids) ")
+		queryArgs["customer_ids"] = customersIds
+	}
+
+	rows, err := conn.Query(context.Background(), queryBuilder.String(), queryArgs)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	abiJobs, err := pgx.CollectRows(rows, pgx.RowToStructByName[AbiJob])
+	if err != nil {
+		log.Println("Error collecting ABI jobs rows", err)
+		return nil, nil, err
+	}
+
+	if len(abiJobs) == 0 {
+		return []CustomerUpdates{}, map[string]AbiJobsDeployInfo{}, nil
+	}
+
+	customerUpdatesDict := make(map[string]CustomerUpdates)
+	addressDeployBlockDict := make(map[string]AbiJobsDeployInfo)
+
+	for _, abiJob := range abiJobs {
+		address := fmt.Sprintf("0x%x", abiJob.Address)
+
+		if _, exists := customerUpdatesDict[abiJob.CustomerID]; !exists {
+			customerUpdatesDict[abiJob.CustomerID] = CustomerUpdates{
+				CustomerID: abiJob.CustomerID,
+				Abis:       make(map[string]map[string]map[string]string),
+			}
+		}
+
+		if _, exists := customerUpdatesDict[abiJob.CustomerID].Abis[address]; !exists {
+			customerUpdatesDict[abiJob.CustomerID].Abis[address] = make(map[string]map[string]string)
+		}
+
+		customerUpdatesDict[abiJob.CustomerID].Abis[address][abiJob.AbiSelector] = map[string]string{
+			"abi":      abiJob.Abi,
+			"abi_name": abiJob.AbiName,
+		}
+
+		// Retrieve the struct from the map
+		deployInfo, exists := addressDeployBlockDict[address]
+		if !exists {
+			// Initialize the struct if it doesn't exist
+			deployInfo = AbiJobsDeployInfo{
+				DeployedBlockNumber: abiJob.DeploymentBlockNumber,
+				IDs:                 []string{},
+			}
+		}
+
+		// Modify the struct
+		deployInfo.IDs = append(deployInfo.IDs, abiJob.ID)
+
+		// Store the modified struct back in the map
+		addressDeployBlockDict[address] = deployInfo
+	}
+
+	var customerUpdates []CustomerUpdates
+	for _, customerUpdate := range customerUpdatesDict {
+		customerUpdates = append(customerUpdates, customerUpdate)
+	}
+
+	return customerUpdates, addressDeployBlockDict, nil
+}
+
+func (p *PostgreSQLpgx) UpdateAbisAsDone(ids []string) error {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+
+	query := `
+		UPDATE abi_jobs 
+		SET historical_crawl_status = 'done' 
+		WHERE id = ANY($1)
+	`
+
+	_, err = conn.Exec(context.Background(), query, ids)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// func (p *PostgreSQLpgx) SelectAndUpdateUnprocessedAbi(blockchain string, addresses []string, customersIds []string) ([]CustomerUpdates, map[string]uint64, error) {
+// 	pool := p.GetPool()
+
+// 	conn, err := pool.Acquire(context.Background())
+// 	if err != nil {
+// 		return nil, nil, err
+// 	}
+// 	defer conn.Release()
+
+// 	var queryBuilder strings.Builder
+
+// 	queryArgs := make(pgx.NamedArgs)
+
+// 	queryArgs["chain"] = blockchain
+
+// 	if len(addresses) > 0 {
+// 		queryBuilder.WriteString(`
+// 			UPDATE abi_jobs
+// 			SET historical_crawl_status = 'pickedup'
+// 			WHERE chain = @chain
+// 			  AND address = ANY(@addresses)
+// 		`)
+// 		queryArgs["addresses"] = addresses
+// 	} else {
+// 		queryBuilder.WriteString(`
+// 			UPDATE abi_jobs
+// 			SET historical_crawl_status = 'pickedup'
+// 			WHERE chain = @chain
+// 			  AND historical_crawl_status = 'pending'
+// 			  AND status = true
+// 			  AND deployment_block_number IS NOT NULL
+// 		`)
+// 	}
+
+// 	if len(customersIds) > 0 {
+
+// 		queryBuilder.WriteString(" AND customer_id = ANY(@customer_ids) ")
+// 		queryArgs["customer_ids"] = customersIds
+// 	}
+
+// 	queryBuilder.WriteString(`
+// 		RETURNING id, address, user_id, customer_id, abi_selector, chain, abi_name, status,
+// 		          historical_crawl_status, progress, moonworm_task_pickedup, abi,
+// 		          (abi::jsonb)->>'type' AS abiType, created_at, updated_at, deployment_block_number
+// 	`)
+
+// 	rows, err := conn.Query(context.Background(), queryBuilder.String(), queryArgs)
+// 	if err != nil {
+// 		return nil, nil, err
+// 	}
+
+// 	abiJobs, err := pgx.CollectRows(rows, pgx.RowToStructByName[AbiJob])
+// 	if err != nil {
+// 		log.Println("Error collecting ABI jobs rows", err)
+// 		return nil, nil, err
+// 	}
+
+// 	if len(abiJobs) == 0 {
+// 		return []CustomerUpdates{}, map[string]uint64{}, nil
+// 	}
+
+// 	customerUpdatesDict := make(map[string]CustomerUpdates)
+// 	addressDeployBlockDict := make(map[string]uint64)
+
+// 	for _, abiJob := range abiJobs {
+// 		address := fmt.Sprintf("0x%x", abiJob.Address)
+
+// 		if _, exists := customerUpdatesDict[abiJob.CustomerID]; !exists {
+// 			customerUpdatesDict[abiJob.CustomerID] = CustomerUpdates{
+// 				CustomerID: abiJob.CustomerID,
+// 				Abis:       make(map[string]map[string]map[string]string),
+// 			}
+// 		}
+
+// 		if _, exists := customerUpdatesDict[abiJob.CustomerID].Abis[address]; !exists {
+// 			customerUpdatesDict[abiJob.CustomerID].Abis[address] = make(map[string]map[string]string)
+// 		}
+
+// 		customerUpdatesDict[abiJob.CustomerID].Abis[address][abiJob.AbiSelector] = map[string]string{
+// 			"abi":      abiJob.Abi,
+// 			"abi_name": abiJob.AbiName,
+// 		}
+
+// 		addressDeployBlockDict[address] = abiJob.DeployedBlockNumber
+// 	}
+
+// 	var customerUpdates []CustomerUpdates
+// 	for _, customerUpdate := range customerUpdatesDict {
+// 		customerUpdates = append(customerUpdates, customerUpdate)
+// 	}
+
+// 	return customerUpdates, addressDeployBlockDict, nil
+// }
+
+func (p *PostgreSQLpgx) FindBatchPath(blockchain string, blockNumber uint64) (string, uint64, uint64, error) {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
+	if err != nil {
+		return "", 0, 0, err
+	}
+
+	defer conn.Release()
+
+	var path string
+
+	var minBlockNumber uint64
+
+	var maxBlockNumber uint64
+
+	query := fmt.Sprintf("SELECT path, min(block_number), max(block_number) FROM %s WHERE block_number = $1", BlocksTableName(blockchain))
+
+	// Check if we have at least one job before accessing
+
+	err = conn.QueryRow(context.Background(), query, blockNumber).Scan(&path, &minBlockNumber, &maxBlockNumber)
+
+	if err != nil {
+		return "",
+			0,
+			0,
+			err
+	}
+
+	return path, minBlockNumber, maxBlockNumber, nil
+
+}
+
+func (p *PostgreSQLpgx) GetAbiJobsWithoutDeployBlocks() (map[string]map[string][]string, error) {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer conn.Release()
+
+	/// get all addresses that not have deploy block number
+
+	rows, err := conn.Query(context.Background(), "SELECT id, chain, address FROM abi_jobs WHERE chain=$1 and deploy_block_number is null")
+
+	if err != nil {
+		return nil, err
+	}
+
+	// chain, address, ids
+	var chainsAddresses map[string]map[string][]string
+
+	for rows.Next() {
+
+		var id string
+		var chain string
+		var address string
+
+		err = rows.Scan(&id, &chain, &address)
+
+		if err != nil {
+			return nil, err
+		}
+
+		if chainsAddresses[chain] == nil {
+			chainsAddresses[chain] = make(map[string][]string)
+		}
+
+		chainsAddresses[chain][address] = append(chainsAddresses[chain][address], id)
+
+	}
+
+	return chainsAddresses, nil
+}
+
+func (p *PostgreSQLpgx) UpdateAbiJobsDeployBlock(blockNumber uint64, ids []string) error {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
+	if err != nil {
+		return err
+	}
+
+	defer conn.Release()
+
+	// for id, blockNumber := range ids {
+
+	_, err = conn.Exec(context.Background(), "UPDATE abi_jobs SET deploy_block_number=$1 WHERE id=$2", blockNumber, ids)
+
+	if err != nil {
+		return err
 	}
 
 	return nil
