@@ -288,8 +288,8 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		indexedLatestBlock = d.endBlock
 	}
 
-	if d.startBlock >= indexedLatestBlock {
-		log.Printf("Value in startBlock %d greater or equal indexedLatestBlock %d, waiting next iteration..", d.startBlock, indexedLatestBlock)
+	if d.startBlock > indexedLatestBlock {
+		log.Printf("Value in startBlock %d greater then indexedLatestBlock %d, waiting next iteration..", d.startBlock, indexedLatestBlock)
 		return isEnd, nil
 	}
 
