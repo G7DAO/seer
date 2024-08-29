@@ -697,7 +697,7 @@ func CreateAbiEnsureSelectorsCommand() *cobra.Command {
 
 			indexer.InitDBConnection()
 
-			updateErr := indexer.DBConnection.EnsureCorrectSelectors(chain, WriteToDB, outFilePath)
+			updateErr := indexer.DBConnection.EnsureCorrectSelectors(chain, WriteToDB, outFilePath, []string{})
 			if updateErr != nil {
 				return updateErr
 			}
@@ -769,8 +769,12 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 			if indexerErr != nil {
 				return indexerErr
 			}
-
+			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			if blockchainErr != nil {
+				return blockchainErr
+			}
 			indexer.InitDBConnection()
+
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -784,7 +788,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 		},
 	}
 
-	databaseCmd.AddCommand(deploymentBlocksCommand)
+	indexCommand.AddCommand(deploymentBlocksCommand)
 	databaseCmd.AddCommand(indexCommand)
 
 	return databaseCmd

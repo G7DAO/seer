@@ -106,7 +106,7 @@ func NewCrawler(blockchain string, startBlock, finalBlock, confirmations, batchS
 		panic(err)
 	}
 
-	client, err := seer_blockchain.NewClient(blockchain, BlockchainURLs[blockchain], timeout)
+	client, err := seer_blockchain.NewClient(blockchain, seer_blockchain.BlockchainURLs[blockchain], timeout)
 	if err != nil {
 		log.Fatal(err)
 	}

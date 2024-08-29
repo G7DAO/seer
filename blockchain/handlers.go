@@ -164,6 +164,8 @@ func DeployBlocksLookUpAndUpdate() error {
 		sem := make(chan struct{}, 5)  // Semaphore to control
 		errChan := make(chan error, 1) // Buffered channel for error handling
 
+		log.Printf("Processing chain: %s with amount of addresses: %d\n", chain, len(addresses))
+
 		for address, ids := range addresses {
 
 			wg.Add(1)
@@ -172,7 +174,7 @@ func DeployBlocksLookUpAndUpdate() error {
 				sem <- struct{}{}
 				defer func() { <-sem }()
 
-				client, err := NewClient(chain, "", 0)
+				client, err := NewClient(chain, BlockchainURLs[chain], 4)
 
 				if err != nil {
 					errChan <- err
@@ -186,6 +188,8 @@ func DeployBlocksLookUpAndUpdate() error {
 					errChan <- err
 					return
 				}
+
+				log.Printf("Deployed block: %d for address: %s in chain: %s\n", deployedBlock, address, chain)
 
 				if deployedBlock != 0 {
 					// update abi job with deployed block
@@ -236,24 +240,24 @@ func FindDeployedBlock(client BlockchainClient, address string) (uint64, error) 
 		return 0, err
 	}
 
-	var left uint64 = 0
-
+	var left uint64 = 1
 	var right uint64 = latestBlockNumber.Uint64()
+	var code []byte
 
 	for left < right {
-
 		mid := (left + right) / 2
 
-		code, err := client.GetCode(ctx, common.HexToAddress(address), mid)
+		code, err = client.GetCode(ctx, common.HexToAddress(address), mid)
 
 		if err != nil {
+			log.Printf("Failed to get code: %v", err)
 			return 0, err
 		}
 
-		if code == nil {
-			right = mid
-		} else {
+		if len(code) == 0 {
 			left = mid + 1
+		} else {
+			right = mid
 		}
 
 	}

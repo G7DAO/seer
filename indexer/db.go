@@ -77,6 +77,20 @@ func IsBlockchainWithL1Chain(blockchain string) bool {
 	}
 }
 
+func FilterABIJobs(abiJobs []AbiJob, ids []string) []AbiJob {
+	var filteredABIJobs []AbiJob
+
+	for _, abiJob := range abiJobs {
+		for _, id := range ids {
+			if abiJob.ID == id {
+				filteredABIJobs = append(filteredABIJobs, abiJob)
+			}
+		}
+	}
+
+	return filteredABIJobs
+}
+
 type PostgreSQLpgx struct {
 	pool *pgxpool.Pool
 }
@@ -477,7 +491,7 @@ func (p *PostgreSQLpgx) ReadABIJobs(blockchain string) ([]AbiJob, error) {
 		return nil, nil // or return an appropriate error if this is considered an error state
 	}
 
-	log.Println("Parsed abiJobs:", len(abiJobs), "for blockchain:", blockchain)
+	//log.Println("Parsed abiJobs:", len(abiJobs), "for blockchain:", blockchain)
 	// If you need to process or log the first ABI job separately, do it here
 
 	return abiJobs, nil
@@ -641,7 +655,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 
 }
 
-func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool, outputFilePath string) error {
+func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool, outputFilePath string, ids []string) error {
 
 	pool := p.GetPool()
 
@@ -661,20 +675,30 @@ func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool
 		return err
 	}
 
-	log.Println("Found", len(abiJobs), "ABI jobs for blockchain:", blockchain)
+	if len(ids) > 0 {
+		abiJobs = FilterABIJobs(abiJobs, ids)
+	} else {
+		log.Println("Found", len(abiJobs), "ABI jobs for blockchain:", blockchain)
+	}
+	var writer *bufio.Writer
+	var f *os.File
 
 	// for each ABI job, check if the selector is correct
 
-	f, err := os.OpenFile(outputFilePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if outputFilePath != "" {
 
-	if err != nil {
-		log.Println("Error opening file:", err)
-		return err
+		f, err := os.OpenFile(outputFilePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+
+		if err != nil {
+			log.Println("Error opening file:", err)
+			return err
+		}
+
+		writer := bufio.NewWriter(f)
+
+		writer.WriteString(fmt.Sprintf("ABI jobs for blockchain: %s runned as WriteToDB: %v recorded at %s\n", blockchain, WriteToDB, time.Now().String()))
+
 	}
-
-	writer := bufio.NewWriter(f)
-
-	writer.WriteString(fmt.Sprintf("ABI jobs for blockchain: %s runned as WriteToDB: %v recorded at %s\n", blockchain, WriteToDB, time.Now().String()))
 
 	for _, abiJob := range abiJobs {
 
@@ -718,18 +742,25 @@ func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool
 
 			}
 
-			_, err = writer.WriteString(fmt.Sprintf("ABI job ID: %s, Name: %s, Address: %x, Selector: %s, Correct Selector: %s\n", abiJob.ID, abiJob.AbiName, abiJob.Address, abiJob.AbiSelector, selector))
-			if err != nil {
-				log.Println("Error writing to file:", err)
-				continue
+			if outputFilePath != "" {
+
+				_, err = writer.WriteString(fmt.Sprintf("ABI job ID: %s, Name: %s, Address: %x, Selector: %s, Correct Selector: %s\n", abiJob.ID, abiJob.AbiName, abiJob.Address, abiJob.AbiSelector, selector))
+				if err != nil {
+					log.Println("Error writing to file:", err)
+					continue
+				}
+
 			}
 
 		}
 
 	}
-	writer.Flush()
 
-	f.Close()
+	if outputFilePath != "" {
+		writer.Flush()
+
+		f.Close()
+	}
 	return nil
 }
 
@@ -1171,7 +1202,7 @@ func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, cus
 		if !exists {
 			// Initialize the struct if it doesn't exist
 			deployInfo = AbiJobsDeployInfo{
-				DeployedBlockNumber: abiJob.DeploymentBlockNumber,
+				DeployedBlockNumber: *abiJob.DeploymentBlockNumber,
 				IDs:                 []string{},
 			}
 		}
@@ -1213,100 +1244,6 @@ func (p *PostgreSQLpgx) UpdateAbisAsDone(ids []string) error {
 
 	return nil
 }
-
-// func (p *PostgreSQLpgx) SelectAndUpdateUnprocessedAbi(blockchain string, addresses []string, customersIds []string) ([]CustomerUpdates, map[string]uint64, error) {
-// 	pool := p.GetPool()
-
-// 	conn, err := pool.Acquire(context.Background())
-// 	if err != nil {
-// 		return nil, nil, err
-// 	}
-// 	defer conn.Release()
-
-// 	var queryBuilder strings.Builder
-
-// 	queryArgs := make(pgx.NamedArgs)
-
-// 	queryArgs["chain"] = blockchain
-
-// 	if len(addresses) > 0 {
-// 		queryBuilder.WriteString(`
-// 			UPDATE abi_jobs
-// 			SET historical_crawl_status = 'pickedup'
-// 			WHERE chain = @chain
-// 			  AND address = ANY(@addresses)
-// 		`)
-// 		queryArgs["addresses"] = addresses
-// 	} else {
-// 		queryBuilder.WriteString(`
-// 			UPDATE abi_jobs
-// 			SET historical_crawl_status = 'pickedup'
-// 			WHERE chain = @chain
-// 			  AND historical_crawl_status = 'pending'
-// 			  AND status = true
-// 			  AND deployment_block_number IS NOT NULL
-// 		`)
-// 	}
-
-// 	if len(customersIds) > 0 {
-
-// 		queryBuilder.WriteString(" AND customer_id = ANY(@customer_ids) ")
-// 		queryArgs["customer_ids"] = customersIds
-// 	}
-
-// 	queryBuilder.WriteString(`
-// 		RETURNING id, address, user_id, customer_id, abi_selector, chain, abi_name, status,
-// 		          historical_crawl_status, progress, moonworm_task_pickedup, abi,
-// 		          (abi::jsonb)->>'type' AS abiType, created_at, updated_at, deployment_block_number
-// 	`)
-
-// 	rows, err := conn.Query(context.Background(), queryBuilder.String(), queryArgs)
-// 	if err != nil {
-// 		return nil, nil, err
-// 	}
-
-// 	abiJobs, err := pgx.CollectRows(rows, pgx.RowToStructByName[AbiJob])
-// 	if err != nil {
-// 		log.Println("Error collecting ABI jobs rows", err)
-// 		return nil, nil, err
-// 	}
-
-// 	if len(abiJobs) == 0 {
-// 		return []CustomerUpdates{}, map[string]uint64{}, nil
-// 	}
-
-// 	customerUpdatesDict := make(map[string]CustomerUpdates)
-// 	addressDeployBlockDict := make(map[string]uint64)
-
-// 	for _, abiJob := range abiJobs {
-// 		address := fmt.Sprintf("0x%x", abiJob.Address)
-
-// 		if _, exists := customerUpdatesDict[abiJob.CustomerID]; !exists {
-// 			customerUpdatesDict[abiJob.CustomerID] = CustomerUpdates{
-// 				CustomerID: abiJob.CustomerID,
-// 				Abis:       make(map[string]map[string]map[string]string),
-// 			}
-// 		}
-
-// 		if _, exists := customerUpdatesDict[abiJob.CustomerID].Abis[address]; !exists {
-// 			customerUpdatesDict[abiJob.CustomerID].Abis[address] = make(map[string]map[string]string)
-// 		}
-
-// 		customerUpdatesDict[abiJob.CustomerID].Abis[address][abiJob.AbiSelector] = map[string]string{
-// 			"abi":      abiJob.Abi,
-// 			"abi_name": abiJob.AbiName,
-// 		}
-
-// 		addressDeployBlockDict[address] = abiJob.DeployedBlockNumber
-// 	}
-
-// 	var customerUpdates []CustomerUpdates
-// 	for _, customerUpdate := range customerUpdatesDict {
-// 		customerUpdates = append(customerUpdates, customerUpdate)
-// 	}
-
-// 	return customerUpdates, addressDeployBlockDict, nil
-// }
 
 func (p *PostgreSQLpgx) FindBatchPath(blockchain string, blockNumber uint64) (string, uint64, uint64, error) {
 	pool := p.GetPool()
@@ -1355,32 +1292,52 @@ func (p *PostgreSQLpgx) GetAbiJobsWithoutDeployBlocks() (map[string]map[string][
 
 	/// get all addresses that not have deploy block number
 
-	rows, err := conn.Query(context.Background(), "SELECT id, chain, address FROM abi_jobs WHERE chain=$1 and deploy_block_number is null")
+	rows, err := conn.Query(context.Background(), "SELECT id, chain, address FROM abi_jobs WHERE deployment_block_number is null")
 
 	if err != nil {
+		log.Println("Error querying abi jobs from database", err)
 		return nil, err
 	}
 
 	// chain, address, ids
-	var chainsAddresses map[string]map[string][]string
+	chainsAddresses := make(map[string]map[string][]string)
 
 	for rows.Next() {
 
 		var id string
 		var chain string
+		var raw_address []byte
 		var address string
 
-		err = rows.Scan(&id, &chain, &address)
+		err = rows.Scan(&id, &chain, &raw_address)
 
 		if err != nil {
 			return nil, err
 		}
 
-		if chainsAddresses[chain] == nil {
+		address = fmt.Sprintf("0x%x", raw_address)
+
+		if _, exists := chainsAddresses[chain]; !exists {
 			chainsAddresses[chain] = make(map[string][]string)
 		}
 
 		chainsAddresses[chain][address] = append(chainsAddresses[chain][address], id)
+
+	}
+
+	// Run ensure selector for each chain
+
+	for chain, addressIds := range chainsAddresses {
+
+		for address := range addressIds {
+
+			err := p.EnsureCorrectSelectors(chain, true, "", addressIds[address])
+			if err != nil {
+
+				log.Println("Error ensuring correct selectors for chain:", chain, err)
+				return nil, err
+			}
+		}
 
 	}
 
@@ -1398,9 +1355,16 @@ func (p *PostgreSQLpgx) UpdateAbiJobsDeployBlock(blockNumber uint64, ids []strin
 
 	defer conn.Release()
 
-	// for id, blockNumber := range ids {
+	// Transform the ids to a slice of UUIDs
+	idsUUID := make([]uuid.UUID, len(ids))
+	for i, id := range ids {
+		idsUUID[i], err = uuid.Parse(id)
+		if err != nil {
+			return err
+		}
+	}
 
-	_, err = conn.Exec(context.Background(), "UPDATE abi_jobs SET deploy_block_number=$1 WHERE id=$2", blockNumber, ids)
+	_, err = conn.Exec(context.Background(), "UPDATE abi_jobs SET deployment_block_number=$1 WHERE id=ANY($2)", blockNumber, idsUUID)
 
 	if err != nil {
 		return err

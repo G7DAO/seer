@@ -65,7 +65,7 @@ type AbiJob struct {
 	AbiType               string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
-	DeploymentBlockNumber uint64
+	DeploymentBlockNumber *uint64
 }
 
 type CustomerUpdates struct {
