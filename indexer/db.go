@@ -250,7 +250,7 @@ func (p *PostgreSQLpgx) WriteIndexes(blockchain string, blocksIndexPack []BlockI
 	pool := p.GetPool()
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
-		fmt.Println("Connection error", err)
+		log.Println("Connection error", err)
 		return err
 	}
 	defer conn.Release()
@@ -304,7 +304,7 @@ func (p *PostgreSQLpgx) executeBatchInsert(tx pgx.Tx, ctx context.Context, table
 	// track execution time
 
 	if _, err := tx.Exec(ctx, query, valuesSlice...); err != nil {
-		fmt.Println("Error executing bulk insert", err)
+		log.Println("Error executing bulk insert", err)
 		return fmt.Errorf("error executing bulk insert for batch: %w", err)
 	}
 
@@ -1144,10 +1144,10 @@ func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, cus
 
 	queryBuilder.WriteString(`
 		SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, 
-		       historical_crawl_status, progress, task_pickedup, abi, 
+		       historical_crawl_status, progress, task_pickedup, '[' || abi || ']' as abi, 
 		       (abi::jsonb)->>'type' AS abiType, created_at, updated_at, deployment_block_number
-		FROM abi_jobs 
-		WHERE chain = @chain AND historical_crawl_status = 'pickedup'
+		FROM abi_jobs
+		WHERE chain = @chain AND ((abi::jsonb)->>'type' = 'function' or (abi::jsonb)->>'type' = 'event')
 	`)
 
 	if len(addresses) > 0 {
@@ -1261,14 +1261,22 @@ func (p *PostgreSQLpgx) FindBatchPath(blockchain string, blockNumber uint64) (st
 	var minBlockNumber uint64
 
 	var maxBlockNumber uint64
-
-	query := fmt.Sprintf("SELECT path, min(block_number), max(block_number) FROM %s WHERE block_number = $1", BlocksTableName(blockchain))
-
-	// Check if we have at least one job before accessing
+	query := fmt.Sprintf(`WITH path as (
+        SELECT
+            path
+        from
+            %s
+        WHERE
+            block_number = $1
+    ) SELECT path, min(block_number), max(block_number) FROM %s WHERE path = (SELECT path from path) group by path`, BlocksTableName(blockchain), BlocksTableName(blockchain))
 
 	err = conn.QueryRow(context.Background(), query, blockNumber).Scan(&path, &minBlockNumber, &maxBlockNumber)
 
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			// Blocks not indexed yet
+			return "", 0, 0, nil
+		}
 		return "",
 			0,
 			0,

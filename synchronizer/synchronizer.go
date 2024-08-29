@@ -326,6 +326,10 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		// This function will return a list of customer updates 1 update is 1 customer
 		_, lastBlockOfChank, path, updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, customerIds)
 
+		if err != nil {
+			return isEnd, fmt.Errorf("error reading updates: %w", err)
+		}
+
 		if len(updates) == 0 {
 			log.Printf("No updates found for block %d\n", d.startBlock)
 			return isEnd, nil
@@ -420,8 +424,6 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 	var useRPC bool
 	var isCycleFinished bool
 
-	fmt.Println("HistoricalSyncRef")
-
 	// Initialize start block if 0
 	if d.startBlock == 0 {
 		// Get the latest block from the indexer db
@@ -469,11 +471,6 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 	// Main processing loop
 	for {
-		if d.endBlock != 0 && d.startBlock <= d.endBlock {
-			isCycleFinished = true
-			log.Printf("End block %d almost reached", d.endBlock)
-		}
-
 		for address, abisInfo := range addressesAbisInfo {
 			if abisInfo.DeployedBlockNumber > d.startBlock {
 
@@ -504,18 +501,22 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 			if path == "" {
 				useRPC = true
-				d.endBlock = d.startBlock - batchSize
 			} else {
 				d.endBlock = firstBlockOfChunk
 			}
-		} else {
+		}
+
+		if useRPC {
 			d.endBlock = d.startBlock - batchSize
+			if d.endBlock == 0 {
+				d.endBlock = 1
+			}
 		}
 
 		// Read raw data from storage or via RPC
 		var rawData bytes.Buffer
 		if useRPC {
-			protoMessage, _, _, err := seer_blockchain.CrawlEntireBlocks(d.Client, big.NewInt(int64(d.startBlock)), big.NewInt(int64(firstBlockOfChunk)), false, 5)
+			protoMessage, _, _, err := seer_blockchain.CrawlEntireBlocks(d.Client, big.NewInt(int64(d.endBlock)), big.NewInt(int64(d.startBlock)), false, 5)
 			if err != nil {
 				return fmt.Errorf("error reading events via RPC: %w", err)
 			}
@@ -538,7 +539,7 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 			}
 		}
 
-		log.Printf("Processing %d customer updates for block range %d-%d", len(customerUpdates), d.startBlock, firstBlockOfChunk)
+		log.Printf("Processing %d customer updates for block range %d-%d", len(customerUpdates), d.startBlock, d.endBlock)
 
 		// Process customer updates in parallel
 		var wg sync.WaitGroup
@@ -585,13 +586,15 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		// Check for errors from goroutines
 		select {
 		case err := <-errChan:
+			log.Printf("Error processing customer updates: %v", err)
 			return err
 		default:
 		}
 
 		d.startBlock = d.endBlock - 1
 
-		if isCycleFinished {
+		if isCycleFinished || d.startBlock == 0 {
+			log.Println("Finished processing all customer updates")
 			break
 		}
 	}
