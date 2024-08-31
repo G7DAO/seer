@@ -685,7 +685,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 					fmt.Println("Error decoding input data: ", err)
 					return nil, nil, err
 				}
-
+				
 				decodedArgsTx, decodeErr = seer_common.DecodeTransactionInputDataToInterface(&txContractAbi, inputData)
 				if decodeErr != nil {
 					fmt.Println("Error decoding transaction not decoded data: ", tx.Hash, decodeErr)
@@ -696,6 +696,20 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 						"error": decodeErr,
 					}
 					label = indexer.SeerCrawlerRawLabel
+				}
+
+				receipt, err := c.TransactionReceipt(context.Background(), common.HexToHash(tx.Hash))
+
+				if err != nil {
+					fmt.Println("Error fetching transaction receipt: ", err)
+					return nil, nil, err
+				}
+
+				// check if the transaction was successful
+				if receipt.Status == 1 {
+					decodedArgsTx["status"] = 1
+				} else {
+					decodedArgsTx["status"] = 0
 				}
 
 				txLabelDataBytes, err := json.Marshal(decodedArgsTx)

@@ -420,7 +420,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	return isEnd, nil
 }
 
-func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []string, customerIds []string, batchSize uint64, auto bool) error {
+func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []string, customerIds []string, batchSize uint64, auto bool, threads int) error {
 	var useRPC bool
 	var isCycleFinished bool
 
@@ -543,8 +543,8 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 		// Process customer updates in parallel
 		var wg sync.WaitGroup
-		sem := make(chan struct{}, 5)  // Semaphore to control concurrency
-		errChan := make(chan error, 1) // Buffered channel for error handling
+		sem := make(chan struct{}, threads) // Semaphore to control concurrency
+		errChan := make(chan error, 1)      // Buffered channel for error handling
 
 		for _, update := range customerUpdates {
 			wg.Add(1)

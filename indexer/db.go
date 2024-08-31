@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
@@ -1376,6 +1378,77 @@ func (p *PostgreSQLpgx) UpdateAbiJobsDeployBlock(blockNumber uint64, ids []strin
 
 	if err != nil {
 		return err
+	}
+
+	return nil
+
+}
+
+func (p *PostgreSQLpgx) CreateJobsFromAbi(chain string, address string, abiFile string, customerID string, userID string, deployBlock uint64) error {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+
+	abiData, err := ioutil.ReadFile(abiFile)
+	if err != nil {
+		return err
+	}
+
+	var abiJson []map[string]interface{}
+	err = json.Unmarshal(abiData, &abiJson)
+	if err != nil {
+		return err
+	}
+
+	for _, abiJob := range abiJson {
+
+		// Generate a new UUID for the id column
+		jobID := uuid.New()
+
+		abiJobJson, err := json.Marshal(abiJob)
+		if err != nil {
+			log.Println("Error marshalling ABI job to JSON:", abiJob, err)
+			return err
+		}
+
+		// Wrap the JSON string in an array
+		abiJsonArray := "[" + string(abiJobJson) + "]"
+
+		// Get the correct selector for the ABI
+		abiObj, err := abi.JSON(strings.NewReader(abiJsonArray))
+		if err != nil {
+			log.Println("Error parsing ABI for ABI job:", abiJsonArray, err)
+			return err
+		}
+		var selector string
+
+		if abiJob["type"] == "event" {
+			selector = abiObj.Events[abiJob["name"].(string)].ID.String()
+		} else if abiJob["type"] == "function" {
+			selectorRaw := abiObj.Methods[abiJob["name"].(string)].ID
+			selector = fmt.Sprintf("0x%x", selectorRaw)
+		} else {
+			log.Println("ABI type not supported:", abiJob["type"])
+			continue
+		}
+
+		addressBytes, err := decodeAddress(address)
+
+		if err != nil {
+			log.Println("Error decoding address:", err, address)
+			continue
+		}
+
+		_, err = conn.Exec(context.Background(), "INSERT INTO abi_jobs (id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, task_pickedup, abi, deployment_block_number, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())", jobID, addressBytes, userID, customerID, selector, chain, abiJob["name"], "true", "pending", 0, false, abiJobJson, deployBlock)
+
+		if err != nil {
+			return err
+		}
+
 	}
 
 	return nil
