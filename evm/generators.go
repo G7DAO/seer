@@ -13,6 +13,7 @@ import (
 	"go/printer"
 	"go/token"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
@@ -616,7 +617,7 @@ func DeriveMethodReturnValues(parameters []ABIBoundParameter) ([]MethodReturnVal
 }
 
 // Produces a CLI specification for the structure with the given name, provided the AST nodes representing
-// the deployment method, the tranasaction methods, and the view methods for the corresponding smart contract.
+// the deployment method, the transaction methods, and the view methods for the corresponding smart contract.
 //
 // The value of the deployMethod argument is used to determine if the deployment functionality will be
 // added to the CLI. If deployMethod is nil, then a deployment command is not generated. This is signified
@@ -656,7 +657,15 @@ func ParseCLISpecification(structName string, deployMethod *ast.FuncDecl, viewMe
 
 	result.ViewHandlers = make([]HandlerDefinition, len(viewMethods))
 	currentViewHandler := 0
-	for methodName, methodNode := range viewMethods {
+
+	viewMethodNames := make([]string, 0, len(viewMethods))
+	for viewMethodName := range viewMethods {
+		viewMethodNames = append(viewMethodNames, viewMethodName)
+	}
+	sort.Strings(viewMethodNames)
+
+	for _, methodName := range viewMethodNames {
+		methodNode := viewMethods[methodName]
 		parameters := make([]ABIBoundParameter, len(methodNode.Type.Params.List))
 
 		// Every view method, when bound to Go, will retrun an error as its last return value.
@@ -701,7 +710,15 @@ func ParseCLISpecification(structName string, deployMethod *ast.FuncDecl, viewMe
 
 	result.TransactHandlers = make([]HandlerDefinition, len(transactMethods))
 	currentTransactHandler := 0
-	for methodName, methodNode := range transactMethods {
+
+	transactMethodNames := make([]string, 0, len(transactMethods))
+	for transactMethodName := range transactMethods {
+		transactMethodNames = append(transactMethodNames, transactMethodName)
+	}
+	sort.Strings(transactMethodNames)
+
+	for _, methodName := range transactMethodNames {
+		methodNode := transactMethods[methodName]
 		parameters := make([]ABIBoundParameter, len(methodNode.Type.Params.List))
 		for i, arg := range methodNode.Type.Params.List {
 			parameter, parameterErr := ParseBoundParameter(arg)
@@ -736,6 +753,7 @@ func ParseCLISpecification(structName string, deployMethod *ast.FuncDecl, viewMe
 func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, error) {
 	fileset := token.NewFileSet()
 	filename := ""
+
 	sourceAST, sourceASTErr := parser.ParseFile(fileset, filename, sourceCode, parser.ParseComments)
 	if sourceASTErr != nil {
 		return "", sourceASTErr
@@ -838,6 +856,7 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 	if deployTemplateErr != nil {
 		return code, deployTemplateErr
 	}
+
 	code = code + "\n\n" + b.String()
 
 	b.Reset()
