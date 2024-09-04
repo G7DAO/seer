@@ -753,7 +753,6 @@ func ParseCLISpecification(structName string, deployMethod *ast.FuncDecl, viewMe
 func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, error) {
 	fileset := token.NewFileSet()
 	filename := ""
-
 	sourceAST, sourceASTErr := parser.ParseFile(fileset, filename, sourceCode, parser.ParseComments)
 	if sourceASTErr != nil {
 		return "", sourceASTErr
@@ -856,7 +855,6 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 	if deployTemplateErr != nil {
 		return code, deployTemplateErr
 	}
-
 	code = code + "\n\n" + b.String()
 
 	b.Reset()
