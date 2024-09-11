@@ -1197,6 +1197,7 @@ func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, cus
 		customerUpdatesDict[abiJob.CustomerID].Abis[address][abiJob.AbiSelector] = map[string]string{
 			"abi":      abiJob.Abi,
 			"abi_name": abiJob.AbiName,
+			"abi_type": abiJob.AbiType,
 		}
 
 		// Retrieve the struct from the map

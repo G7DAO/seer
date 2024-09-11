@@ -92,6 +92,8 @@ type BlockchainClient interface {
 	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error)
 	ChainType() string
 	GetCode(context.Context, common.Address, uint64) ([]byte, error)
+	GetTransactionsLabels(uint64, uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error)
+	GetEventsLabels(uint64, uint64, map[string]map[string]map[string]string) ([]indexer.EventLabel, error)
 }
 
 func GetLatestBlockNumberWithRetry(client BlockchainClient, retryAttempts int, retryWaitTime time.Duration) (*big.Int, error) {

@@ -76,26 +76,15 @@ type CustomerUpdates struct {
 }
 
 type TaskForTransaction struct {
-	Hash     string `json:"hash"`
 	Address  string `json:"address"`
 	Selector string `json:"selector"`
 	ABI      string `json:"abi"`
-	RowID    uint64 `json:"row_id"`
-	Path     string `json:"path"`
 }
 
 type TaskForLog struct { // Assuming structure similar to TransactionIndex
-	Hash     string `json:"hash"`
 	Address  string `json:"address"`
 	Selector string `json:"selector"`
 	ABI      string `json:"abi"`
-	RowID    uint64 `json:"row_id"`
-	Path     string `json:"path"`
-}
-
-type RawChainData struct {
-	Transactions []TaskForTransaction `json:"transactions"`
-	Events       []TaskForLog         `json:"events"`
 }
 
 type EventLabel struct {

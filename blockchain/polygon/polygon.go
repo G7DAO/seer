@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -72,10 +73,10 @@ func (c *Client) GetLatestBlockNumber() (*big.Int, error) {
 }
 
 // BlockByNumber returns the block with the given number.
-func (c *Client) GetBlockByNumber(ctx context.Context, number *big.Int) (*seer_common.BlockJson, error) {
+func (c *Client) GetBlockByNumber(ctx context.Context, number *big.Int, withTransactions bool) (*seer_common.BlockJson, error) {
 
 	var rawResponse json.RawMessage // Use RawMessage to capture the entire JSON response
-	err := c.rpcClient.CallContext(ctx, &rawResponse, "eth_getBlockByNumber", "0x"+number.Text(16), true)
+	err := c.rpcClient.CallContext(ctx, &rawResponse, "eth_getBlockByNumber", "0x"+number.Text(16), withTransactions)
 	if err != nil {
 		fmt.Println("Error calling eth_getBlockByNumber: ", err)
 		return nil, err
@@ -207,7 +208,7 @@ func (c *Client) FetchBlocksInRange(from, to *big.Int, debug bool) ([]*seer_comm
 	ctx := context.Background() // For simplicity, using a background context; consider timeouts for production.
 
 	for i := new(big.Int).Set(from); i.Cmp(to) <= 0; i.Add(i, big.NewInt(1)) {
-		block, err := c.GetBlockByNumber(ctx, i)
+		block, err := c.GetBlockByNumber(ctx, i, true)
 		if err != nil {
 			return nil, err
 		}
@@ -236,7 +237,7 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 		blockNumbersRange = append(blockNumbersRange, new(big.Int).Set(i))
 	}
 
-	sem := make(chan struct{}, maxRequests)             // Semaphore to control concurrency
+	sem := make(chan struct{}, maxRequests) // Semaphore to control concurrency
 	errChan := make(chan error, 1)
 
 	for _, b := range blockNumbersRange {
@@ -246,7 +247,7 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 
 			sem <- struct{}{} // Acquire semaphore
 
-			block, getErr := c.GetBlockByNumber(ctx, b)
+			block, getErr := c.GetBlockByNumber(ctx, b, true)
 			if getErr != nil {
 				log.Printf("Failed to fetch block number: %d, error: %v", b, getErr)
 				errChan <- getErr
@@ -364,7 +365,6 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 				}
 			}
 		}
-		
 
 		// Prepare blocks to index
 		blocksIndex = append(blocksIndex, indexer.NewBlockIndex("polygon",
@@ -395,14 +395,14 @@ func (c *Client) ProcessBlocksToBatch(msgs []proto.Message) (proto.Message, erro
 	}
 
 	return &PolygonBlocksBatch{
-		Blocks: blocks,
+		Blocks:      blocks,
 		SeerVersion: version.SeerVersion,
 	}, nil
 }
 
 func ToEntireBlocksBatchFromLogProto(obj *PolygonBlocksBatch) *seer_common.BlocksBatchJson {
 	blocksBatchJson := seer_common.BlocksBatchJson{
-		Blocks: []seer_common.BlockJson{},
+		Blocks:      []seer_common.BlockJson{},
 		SeerVersion: obj.SeerVersion,
 	}
 
@@ -479,11 +479,6 @@ func ToEntireBlocksBatchFromLogProto(obj *PolygonBlocksBatch) *seer_common.Block
 			BaseFeePerGas:    b.BaseFeePerGas,
 			IndexedAt:        fmt.Sprintf("%d", b.IndexedAt),
 
-			
-			
-			
-			
-
 			Transactions: txs,
 		})
 	}
@@ -512,11 +507,6 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *PolygonBlock {
 		TotalDifficulty:  obj.TotalDifficulty,
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        fromHex(obj.IndexedAt).Uint64(),
-
-		
-		
-		
-		
 	}
 }
 
@@ -634,12 +624,12 @@ func (c *Client) DecodeProtoBlocks(data []string) ([]*PolygonBlock, error) {
 func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) (*seer_common.BlocksBatchJson, error) {
 	var protoBlocksBatch PolygonBlocksBatch
 
-    dataBytes := rawData.Bytes()
+	dataBytes := rawData.Bytes()
 
-    err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
-    if err != nil {
-        return nil, fmt.Errorf("failed to unmarshal data: %v", err)
-    }
+	err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal data: %v", err)
+	}
 
 	blocksBatchJson := ToEntireBlocksBatchFromLogProto(&protoBlocksBatch)
 
@@ -651,10 +641,10 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 
 	dataBytes := rawData.Bytes()
 
-    err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
-    if err != nil {
-        return nil, nil, fmt.Errorf("failed to unmarshal data: %v", err)
-    }
+	err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal data: %v", err)
+	}
 
 	var labels []indexer.EventLabel
 	var txLabels []indexer.TransactionLabel
@@ -685,15 +675,15 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 					fmt.Println("Error decoding input data: ", err)
 					return nil, nil, err
 				}
-				
+
 				decodedArgsTx, decodeErr = seer_common.DecodeTransactionInputDataToInterface(&txContractAbi, inputData)
 				if decodeErr != nil {
 					fmt.Println("Error decoding transaction not decoded data: ", tx.Hash, decodeErr)
 					decodedArgsTx = map[string]interface{}{
 						"input_raw": tx,
-						"abi": abiMap[tx.ToAddress][selector]["abi"],
-						"selector": selector,
-						"error": decodeErr,
+						"abi":       abiMap[tx.ToAddress][selector]["abi"],
+						"selector":  selector,
+						"error":     decodeErr,
 					}
 					label = indexer.SeerCrawlerRawLabel
 				}
@@ -761,16 +751,15 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 					return nil, nil, err
 				}
 
-
 				// Decode the event data
 				decodedArgsLogs, decodeErr = seer_common.DecodeLogArgsToLabelData(&contractAbi, e.Topics, e.Data)
 				if decodeErr != nil {
 					fmt.Println("Error decoding event not decoded data: ", e.TransactionHash, decodeErr)
 					decodedArgsLogs = map[string]interface{}{
 						"input_raw": e,
-						"abi": abiMap[e.Address][topicSelector]["abi"],
-						"selector": topicSelector,
-						"error": decodeErr,
+						"abi":       abiMap[e.Address][topicSelector]["abi"],
+						"selector":  topicSelector,
+						"error":     decodeErr,
 					}
 					label = indexer.SeerCrawlerRawLabel
 				}
@@ -817,7 +806,6 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 	var decodedArgs map[string]interface{}
 	var decodeErr error
 
-
 	for _, transaction := range decodedTransactions {
 
 		label := indexer.SeerCrawlerLabel
@@ -842,9 +830,9 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 			fmt.Println("Error decoding transaction not decoded data: ", transaction.Hash, decodeErr)
 			decodedArgs = map[string]interface{}{
 				"input_raw": transaction,
-				"abi": abiMap[transaction.ToAddress][selector]["abi"],
-				"selector": selector,
-				"error": decodeErr,
+				"abi":       abiMap[transaction.ToAddress][selector]["abi"],
+				"selector":  selector,
+				"error":     decodeErr,
 			}
 			label = indexer.SeerCrawlerRawLabel
 		}
@@ -878,4 +866,234 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 	}
 
 	return labels, nil
+}
+
+func (c *Client) GetTransactionByHash(ctx context.Context, hash string) (*seer_common.TransactionJson, error) {
+	var tx *seer_common.TransactionJson
+	err := c.rpcClient.CallContext(ctx, &tx, "eth_getTransactionByHash", hash)
+	return tx, err
+}
+
+func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMap map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error) {
+	var transactionsLabels []indexer.TransactionLabel
+
+	// Get blocks in range
+	blocks, err := c.FetchBlocksInRangeAsync(big.NewInt(int64(startBlock)), big.NewInt(int64(endBlock)), false, 1)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Get transactions in range
+
+	for _, block := range blocks {
+		for _, tx := range block.Transactions {
+
+			label := indexer.SeerCrawlerLabel
+
+			if len(tx.Input) < 10 { // If input is less than 3 characters then it direct transfer
+				continue
+			}
+
+			// Process transaction labels
+
+			selector := tx.Input[:10]
+
+			if abiMap[tx.ToAddress] != nil && abiMap[tx.ToAddress][selector] != nil {
+				txContractAbi, err := abi.JSON(strings.NewReader(abiMap[tx.ToAddress][selector]["abi"]))
+				if err != nil {
+					fmt.Println("Error initializing contract ABI transactions: ", err)
+					return nil, err
+				}
+
+				inputData, err := hex.DecodeString(tx.Input[2:])
+				if err != nil {
+					fmt.Println("Error decoding input data: ", err)
+					return nil, err
+				}
+
+				decodedArgsTx, decodeErr := seer_common.DecodeTransactionInputDataToInterface(&txContractAbi, inputData)
+				if decodeErr != nil {
+					fmt.Println("Error decoding transaction not decoded data: ", tx.Hash, decodeErr)
+					decodedArgsTx = map[string]interface{}{
+						"input_raw": tx,
+						"abi":       abiMap[tx.ToAddress][selector]["abi"],
+						"selector":  selector,
+						"error":     decodeErr,
+					}
+					label = indexer.SeerCrawlerRawLabel
+				}
+
+				receipt, err := c.TransactionReceipt(context.Background(), common.HexToHash(tx.Hash))
+
+				if err != nil {
+					fmt.Println("Error fetching transaction receipt: ", err)
+					return nil, err
+				}
+
+				// check if the transaction was successful
+				if receipt.Status == 1 {
+					decodedArgsTx["status"] = 1
+				} else {
+					decodedArgsTx["status"] = 0
+				}
+
+				txLabelDataBytes, err := json.Marshal(decodedArgsTx)
+				if err != nil {
+					fmt.Println("Error converting decodedArgsTx to JSON: ", err)
+					return nil, err
+				}
+
+				blockNumber, err := strconv.ParseUint(tx.BlockNumber, 10, 64)
+				if err != nil {
+					log.Fatalf("Failed to convert BlockNumber to uint64: %v", err)
+				}
+
+				uintBlockTimestamp, err := strconv.ParseUint(block.Timestamp, 10, 64)
+				if err != nil {
+					log.Fatalf("Failed to convert BlockTimestamp to uint64: %v", err)
+				}
+
+				// Convert transaction to label
+				transactionLabel := indexer.TransactionLabel{
+					Address:         tx.ToAddress,
+					BlockNumber:     blockNumber,
+					BlockHash:       tx.BlockHash,
+					CallerAddress:   tx.FromAddress,
+					LabelName:       abiMap[tx.ToAddress][selector]["abi_name"],
+					LabelType:       "tx_call",
+					OriginAddress:   tx.FromAddress,
+					Label:           label,
+					TransactionHash: tx.Hash,
+					LabelData:       string(txLabelDataBytes), // Convert JSON byte slice to string
+					BlockTimestamp:  uintBlockTimestamp,
+				}
+
+				transactionsLabels = append(transactionsLabels, transactionLabel)
+			}
+
+		}
+
+	}
+
+	return transactionsLabels, nil
+
+}
+
+func (c *Client) GetEventsLabels(startBlock uint64, endBlock uint64, abiMap map[string]map[string]map[string]string) ([]indexer.EventLabel, error) {
+	var eventsLabels []indexer.EventLabel
+
+	// Get events in range
+
+	var addresses []common.Address
+	var topics [][]common.Hash
+
+	for address, selectorMap := range abiMap {
+		for selector, _ := range selectorMap {
+			addresses = append(addresses, common.HexToAddress(address))
+			topics = append(topics, []common.Hash{common.HexToHash(selector)})
+		}
+	}
+
+	// query filter from abiMap
+	filter := ethereum.FilterQuery{
+		FromBlock: big.NewInt(int64(startBlock)),
+		ToBlock:   big.NewInt(int64(endBlock)),
+		Addresses: addresses,
+		Topics:    topics,
+	}
+
+	logs, err := c.ClientFilterLogs(context.Background(), filter, false)
+
+	if err != nil {
+		return nil, err
+	}
+
+	for _, log := range logs {
+		var decodedArgsLogs map[string]interface{}
+		label := indexer.SeerCrawlerLabel
+
+		var topicSelector string
+
+		if len(log.Topics) > 0 {
+			topicSelector = log.Topics[0]
+		} else {
+			// 0x0 is the default topic selector
+			topicSelector = "0x0"
+		}
+
+		if abiMap[log.Address] == nil || abiMap[log.Address][topicSelector] == nil {
+			continue
+		}
+
+		// Get the ABI string
+		contractAbi, err := abi.JSON(strings.NewReader(abiMap[log.Address][topicSelector]["abi"]))
+		if err != nil {
+			fmt.Println("Error initializing contract ABI: ", err)
+			return nil, err
+		}
+
+		// Decode the event data
+		decodedArgsLogs, decodeErr := seer_common.DecodeLogArgsToLabelData(&contractAbi, log.Topics, log.Data)
+		if decodeErr != nil {
+			fmt.Println("Error decoding event not decoded data: ", log.TransactionHash, decodeErr)
+			decodedArgsLogs = map[string]interface{}{
+				"input_raw": log,
+				"abi":       abiMap[log.Address][topicSelector]["abi"],
+				"selector":  topicSelector,
+				"error":     decodeErr,
+			}
+			label = indexer.SeerCrawlerRawLabel
+		}
+
+		// Convert decodedArgsLogs map to JSON
+		labelDataBytes, err := json.Marshal(decodedArgsLogs)
+		if err != nil {
+			fmt.Println("Error converting decodedArgsLogs to JSON: ", err)
+			return nil, err
+		}
+
+		// get transaction information
+		transaction, err := c.GetTransactionByHash(context.Background(), log.TransactionHash)
+
+		if err != nil {
+			return nil, err
+		}
+
+		blockNumber, err := strconv.ParseUint(log.BlockNumber, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		blockTimestamp, err := strconv.ParseUint(transaction.BlockTimestamp, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		logIndex, err := strconv.ParseUint(log.LogIndex, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert event to label
+		eventLabel := indexer.EventLabel{
+			Label:           label,
+			LabelName:       abiMap[log.Address][topicSelector]["abi_name"],
+			LabelType:       "event",
+			BlockNumber:     blockNumber,
+			BlockHash:       log.BlockHash,
+			Address:         log.Address,
+			OriginAddress:   transaction.FromAddress,
+			TransactionHash: log.TransactionHash,
+			LabelData:       string(labelDataBytes), // Convert JSON byte slice to string
+			BlockTimestamp:  blockTimestamp,
+			LogIndex:        logIndex,
+		}
+
+		eventsLabels = append(eventsLabels, eventLabel)
+
+	}
+
+	return eventsLabels, nil
+
 }

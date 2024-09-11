@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -72,10 +73,10 @@ func (c *Client) GetLatestBlockNumber() (*big.Int, error) {
 }
 
 // BlockByNumber returns the block with the given number.
-func (c *Client) GetBlockByNumber(ctx context.Context, number *big.Int) (*seer_common.BlockJson, error) {
+func (c *Client) GetBlockByNumber(ctx context.Context, number *big.Int, withTransactions bool) (*seer_common.BlockJson, error) {
 
 	var rawResponse json.RawMessage // Use RawMessage to capture the entire JSON response
-	err := c.rpcClient.CallContext(ctx, &rawResponse, "eth_getBlockByNumber", "0x"+number.Text(16), true)
+	err := c.rpcClient.CallContext(ctx, &rawResponse, "eth_getBlockByNumber", "0x"+number.Text(16), withTransactions)
 	if err != nil {
 		fmt.Println("Error calling eth_getBlockByNumber: ", err)
 		return nil, err
@@ -207,7 +208,7 @@ func (c *Client) FetchBlocksInRange(from, to *big.Int, debug bool) ([]*seer_comm
 	ctx := context.Background() // For simplicity, using a background context; consider timeouts for production.
 
 	for i := new(big.Int).Set(from); i.Cmp(to) <= 0; i.Add(i, big.NewInt(1)) {
-		block, err := c.GetBlockByNumber(ctx, i)
+		block, err := c.GetBlockByNumber(ctx, i, true)
 		if err != nil {
 			return nil, err
 		}
@@ -246,7 +247,7 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 
 			sem <- struct{}{} // Acquire semaphore
 
-			block, getErr := c.GetBlockByNumber(ctx, b)
+			block, getErr := c.GetBlockByNumber(ctx, b, true)
 			if getErr != nil {
 				log.Printf("Failed to fetch block number: %d, error: %v", b, getErr)
 				errChan <- getErr
@@ -878,4 +879,381 @@ func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCa
 	}
 
 	return labels, nil
+}
+
+
+// func DecodedJsonTransactionsToLabels(transactions []string, abiMap map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error) {
+// 	var labels []indexer.TransactionLabel
+// 	var decodedArgs map[string]interface{}
+// 	var decodeErr error
+
+// 	for _, transaction := range transactions {
+// 		var transactionJson seer_common.TransactionJson
+// 		err := json.Unmarshal([]byte(transaction), &transactionJson)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+
+// 		label := indexer.SeerCrawlerLabel
+
+// 		selector := transactionJson.Input[:10]
+
+// 		contractAbi, err := abi.JSON(strings.NewReader(abiMap[transactionJson.ToAddress][selector]["abi"]))
+
+// 		if err != nil {
+// 			return nil, err
+// 		}
+
+// 		inputData, err := hex.DecodeString(transactionJson.Input[2:])
+// 		if err != nil {
+// 			fmt.Println("Error decoding input data: ", err)
+// 			return nil, err
+// 		}
+
+// 		decodedArgs, decodeErr = seer_common.DecodeTransactionInputDataToInterface(&contractAbi, inputData)
+
+// 		if decodeErr != nil {
+// 			fmt.Println("Error decoding transaction not decoded data: ", transactionJson.Hash, decodeErr)
+// 			decodedArgs = map[string]interface{}{
+// 				"input_raw": transactionJson,
+// 				"abi": abiMap[transactionJson.ToAddress][selector]["abi"],
+// 				"selector": selector,
+// 				"error": decodeErr,
+// 			}
+// 			label = indexer.SeerCrawlerRawLabel
+// 		}
+
+// 		labelDataBytes, err := json.Marshal(decodedArgs)
+// 		if err != nil {
+// 			fmt.Println("Error converting decodedArgs to JSON: ", err)
+// 			return nil, err
+// 		}
+
+// 		// Convert JSON byte slice to string
+// 		labelDataString := string(labelDataBytes)
+
+// 		// Convert transaction to label
+// 		transactionLabel := indexer.TransactionLabel{
+// 			Address:         transactionJson.ToAddress,
+// 			BlockNumber:     transactionJson.BlockNumber,
+// 			BlockHash:       transactionJson.BlockHash,
+// 			CallerAddress:   transactionJson.FromAddress,
+// 			LabelName:       abiMap[transactionJson.ToAddress][selector]["abi_name"],
+// 			LabelType:       "tx_call",
+// 			OriginAddress:   transactionJson.FromAddress,
+// 			Label:           label,
+// 			TransactionHash: transactionJson.Hash,
+// 			LabelData:       labelDataString,
+// 			BlockTimestamp:  transactionJson.BlockTimestamp,
+// 		}
+
+// 		labels = append(labels, transactionLabel)
+
+// 	}
+
+// func DecodeJsonEventsToLabels( events []string, abiMap map[string]map[string]map[string]string) ([]indexer.EventLabel, error) {
+// 	var labels []indexer.EventLabel
+// 	var decodedArgs map[string]interface{}
+// 	var decodeErr error
+
+// 	for _, event := range events {
+// 		var eventJson seer_common.EventJson
+// 		err := json.Unmarshal([]byte(event), &eventJson)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+
+// 		label := indexer.SeerCrawlerLabel
+
+// 		var topicSelector string
+
+// 		if len(eventJson.Topics) > 0 {
+// 			topicSelector = eventJson.Topics[0]
+// 		} else {
+// 			// 0x0 is the default topic selector
+// 			topicSelector = "0x0"
+// 		}
+
+// 		if abiMap[eventJson.Address] == nil || abiMap[eventJson.Address][topicSelector] == nil {
+// 			continue
+// 		}
+
+// 		// Get the ABI string
+// 		contractAbi, err := abi.JSON(strings.NewReader(abiMap[eventJson.Address][topicSelector]["abi"]))
+// 		if err != nil {
+// 			fmt.Println("Error initializing contract ABI: ", err)
+// 			return nil, err
+// 		}
+
+// 		// Decode the event data
+// 		decodedArgs, decodeErr = seer_common.DecodeLogArgsToLabelData(&contractAbi, eventJson.Topics, eventJson.Data)
+// 		if decodeErr != nil {
+// 			fmt.Println("Error decoding event not decoded data: ", eventJson.TransactionHash, decodeErr)
+// 			decodedArgs = map[string]interface{}{
+// 				"input_raw": eventJson,
+// 				"abi": abiMap[eventJson.Address][topicSelector]["abi"],
+// 				"selector": topicSelector,
+// 				"error": decodeErr,
+// 			}
+// 			label = indexer.SeerCrawlerRawLabel
+// 		}
+
+// 		// Convert decodedArgs map to JSON
+// 		labelDataBytes, err := json.Marshal(decodedArgs)
+// 		if err != nil {
+// 			fmt.Println("Error converting decodedArgs to JSON: ", err)
+// 			return nil, err
+// 		}
+
+// 		// Convert event to label
+// 		eventLabel := indexer.EventLabel{
+// 			Label:           label,
+// 			LabelName:       abiMap[eventJson.Address][topicSelector]["abi_name"],
+// 			LabelType:       "event",
+// 			BlockNumber:     eventJson.BlockNumber,
+// 			BlockHash:       eventJson.BlockHash,
+// 			Address:         eventJson.Address,
+// 			OriginAddress:   eventJson.OriginAddress,
+// 			TransactionHash: eventJson.TransactionHash,
+// 			LabelData:       string(labelDataBytes), // Convert JSON byte slice to string
+// 			BlockTimestamp:  eventJson.BlockTimestamp,
+// 			LogIndex:        eventJson.LogIndex,
+// 		}
+
+// 		labels = append(labels, eventLabel)
+
+// 	}
+
+// 	return labels, nil
+// }
+
+
+func (c *Client) GetTransactionByHash(ctx context.Context, hash string) (*seer_common.TransactionJson, error) {
+	var tx *seer_common.TransactionJson
+	err := c.rpcClient.CallContext(ctx, &tx, "eth_getTransactionByHash", hash)
+	return tx, err
+}
+
+func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMap map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error) {
+	var transactionsLabels []indexer.TransactionLabel
+
+	// Get blocks in range
+	blocks, err := c.FetchBlocksInRangeAsync(big.NewInt(int64(startBlock)), big.NewInt(int64(endBlock)), false, 1)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Get transactions in range
+
+	for _, block := range blocks {
+		for _, tx := range block.Transactions {
+
+			label := indexer.SeerCrawlerLabel
+
+			if len(tx.Input) < 10 { // If input is less than 3 characters then it direct transfer
+				continue
+			}
+
+			// Process transaction labels
+
+			selector := tx.Input[:10]
+
+			if abiMap[tx.ToAddress] != nil && abiMap[tx.ToAddress][selector] != nil {
+				txContractAbi, err := abi.JSON(strings.NewReader(abiMap[tx.ToAddress][selector]["abi"]))
+				if err != nil {
+					fmt.Println("Error initializing contract ABI transactions: ", err)
+					return nil, err
+				}
+
+				inputData, err := hex.DecodeString(tx.Input[2:])
+				if err != nil {
+					fmt.Println("Error decoding input data: ", err)
+					return nil, err
+				}
+
+				decodedArgsTx, decodeErr := seer_common.DecodeTransactionInputDataToInterface(&txContractAbi, inputData)
+				if decodeErr != nil {
+					fmt.Println("Error decoding transaction not decoded data: ", tx.Hash, decodeErr)
+					decodedArgsTx = map[string]interface{}{
+						"input_raw": tx,
+						"abi":       abiMap[tx.ToAddress][selector]["abi"],
+						"selector":  selector,
+						"error":     decodeErr,
+					}
+					label = indexer.SeerCrawlerRawLabel
+				}
+
+				receipt, err := c.TransactionReceipt(context.Background(), common.HexToHash(tx.Hash))
+
+				if err != nil {
+					fmt.Println("Error fetching transaction receipt: ", err)
+					return nil, err
+				}
+
+				// check if the transaction was successful
+				if receipt.Status == 1 {
+					decodedArgsTx["status"] = 1
+				} else {
+					decodedArgsTx["status"] = 0
+				}
+
+				txLabelDataBytes, err := json.Marshal(decodedArgsTx)
+				if err != nil {
+					fmt.Println("Error converting decodedArgsTx to JSON: ", err)
+					return nil, err
+				}
+
+				blockNumber, err := strconv.ParseUint(tx.BlockNumber, 10, 64)
+				if err != nil {
+					log.Fatalf("Failed to convert BlockNumber to uint64: %v", err)
+				}
+
+				uintBlockTimestamp, err := strconv.ParseUint(block.Timestamp, 10, 64)
+				if err != nil {
+					log.Fatalf("Failed to convert BlockTimestamp to uint64: %v", err)
+				}
+
+				// Convert transaction to label
+				transactionLabel := indexer.TransactionLabel{
+					Address:         tx.ToAddress,
+					BlockNumber:     blockNumber,
+					BlockHash:       tx.BlockHash,
+					CallerAddress:   tx.FromAddress,
+					LabelName:       abiMap[tx.ToAddress][selector]["abi_name"],
+					LabelType:       "tx_call",
+					OriginAddress:   tx.FromAddress,
+					Label:           label,
+					TransactionHash: tx.Hash,
+					LabelData:       string(txLabelDataBytes), // Convert JSON byte slice to string
+					BlockTimestamp:  uintBlockTimestamp,
+				}
+
+				transactionsLabels = append(transactionsLabels, transactionLabel)
+			}
+
+		}
+
+	}
+
+	return transactionsLabels, nil
+
+}
+
+func (c *Client) GetEventsLabels(startBlock uint64, endBlock uint64, abiMap map[string]map[string]map[string]string) ([]indexer.EventLabel, error) {
+	var eventsLabels []indexer.EventLabel
+
+	// Get events in range
+
+	var addresses []common.Address
+	var topics [][]common.Hash
+
+	for address, selectorMap := range abiMap {
+		for selector, _ := range selectorMap {
+			addresses = append(addresses, common.HexToAddress(address))
+			topics = append(topics, []common.Hash{common.HexToHash(selector)})
+		}
+	}
+
+	// query filter from abiMap
+	filter := ethereum.FilterQuery{
+		FromBlock: big.NewInt(int64(startBlock)),
+		ToBlock:   big.NewInt(int64(endBlock)),
+		Addresses: addresses,
+		Topics:    topics,
+	}
+
+	logs, err := c.ClientFilterLogs(context.Background(), filter, false)
+
+	if err != nil {
+		return nil, err
+	}
+
+	for _, log := range logs {
+		var decodedArgsLogs map[string]interface{}
+		label := indexer.SeerCrawlerLabel
+
+		var topicSelector string
+
+		if len(log.Topics) > 0 {
+			topicSelector = log.Topics[0]
+		} else {
+			// 0x0 is the default topic selector
+			topicSelector = "0x0"
+		}
+
+		if abiMap[log.Address] == nil || abiMap[log.Address][topicSelector] == nil {
+			continue
+		}
+
+		// Get the ABI string
+		contractAbi, err := abi.JSON(strings.NewReader(abiMap[log.Address][topicSelector]["abi"]))
+		if err != nil {
+			fmt.Println("Error initializing contract ABI: ", err)
+			return nil, err
+		}
+
+		// Decode the event data
+		decodedArgsLogs, decodeErr := seer_common.DecodeLogArgsToLabelData(&contractAbi, log.Topics, log.Data)
+		if decodeErr != nil {
+			fmt.Println("Error decoding event not decoded data: ", log.TransactionHash, decodeErr)
+			decodedArgsLogs = map[string]interface{}{
+				"input_raw": log,
+				"abi":       abiMap[log.Address][topicSelector]["abi"],
+				"selector":  topicSelector,
+				"error":     decodeErr,
+			}
+			label = indexer.SeerCrawlerRawLabel
+		}
+
+		// Convert decodedArgsLogs map to JSON
+		labelDataBytes, err := json.Marshal(decodedArgsLogs)
+		if err != nil {
+			fmt.Println("Error converting decodedArgsLogs to JSON: ", err)
+			return nil, err
+		}
+
+		// get transaction information
+		transaction, err := c.GetTransactionByHash(context.Background(), log.TransactionHash)
+
+		if err != nil {
+			return nil, err
+		}
+
+		blockNumber, err := strconv.ParseUint(log.BlockNumber, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		blockTimestamp, err := strconv.ParseUint(transaction.BlockTimestamp, 10, 64) 	
+		if err != nil {
+			return nil, err
+		}
+
+		logIndex, err := strconv.ParseUint(log.LogIndex, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert event to label
+		eventLabel := indexer.EventLabel{
+			Label:           label,
+			LabelName:       abiMap[log.Address][topicSelector]["abi_name"],
+			LabelType:       "event",
+			BlockNumber:     blockNumber,
+			BlockHash:       log.BlockHash,
+			Address:         log.Address,
+			OriginAddress:   transaction.FromAddress,
+			TransactionHash: log.TransactionHash,
+			LabelData:       string(labelDataBytes), // Convert JSON byte slice to string
+			BlockTimestamp:  blockTimestamp,
+			LogIndex:        logIndex,
+		}
+
+		eventsLabels = append(eventsLabels, eventLabel)
+
+	}
+
+	return eventsLabels, nil
+
 }
