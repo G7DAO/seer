@@ -11,7 +11,6 @@ require (
 	github.com/jackc/pgx/v5 v5.5.3
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/crypto v0.20.0
-	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
 	golang.org/x/term v0.17.0
 	golang.org/x/tools v0.15.0
 	google.golang.org/api v0.167.0
@@ -62,6 +61,7 @@ require (
 	go.opentelemetry.io/otel v1.23.0 // indirect
 	go.opentelemetry.io/otel/metric v1.23.0 // indirect
 	go.opentelemetry.io/otel/trace v1.23.0 // indirect
+	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/mod v0.14.0 // indirect
 	golang.org/x/net v0.21.0 // indirect
 	golang.org/x/oauth2 v0.17.0 // indirect
