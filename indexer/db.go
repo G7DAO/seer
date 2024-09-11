@@ -72,6 +72,10 @@ func IsBlockchainWithL1Chain(blockchain string) bool {
 		return false
 	case "mantle_sepolia":
 		return false
+	case "b3":
+		return false
+	case "b3_sepolia":
+		return false
 	default:
 		return false
 	}
