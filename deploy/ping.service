@@ -1,0 +1,16 @@
+[Unit]
+Description=Ping systemd service
+StartLimitIntervalSec=300
+StartLimitBurst=3
+After=network.target
+
+[Service]
+Restart=on-failure
+RestartSec=15s
+WorkingDirectory=/home/ubuntu/
+ExecStart=/home/ubuntu/go/bin/ping
+CPUWeight=10
+SyslogIdentifier=ping
+
+[Install]
+WantedBy=multi-user.target
