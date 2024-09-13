@@ -12,7 +12,7 @@ done
 BLOCKCHAIN_NAMES_RAW=$(find blockchain/ -maxdepth 1 -type d | cut -f2 -d '/')
 for BLOCKCHAIN in $BLOCKCHAIN_NAMES_RAW; do
   if [ "$BLOCKCHAIN" != "" ] && [ "$BLOCKCHAIN" != "common" ]; then
-    if [ "$BLOCKCHAIN" != "ethereum" ] && [ "$BLOCKCHAIN" != "polygon" ] && [ "$BLOCKCHAIN" != "mantle" ] && [ "$BLOCKCHAIN" != "mantle_sepolia" ] && [ "$BLOCKCHAIN" != "sepolia" ] && [ "$BLOCKCHAIN" != "imx_zkevm" ] && [ "$BLOCKCHAIN" != "imx_zkevm_sepolia" ]; then
+    if [ "$BLOCKCHAIN" != "ethereum" ] && [ "$BLOCKCHAIN" != "polygon" ] && [ "$BLOCKCHAIN" != "mantle" ] && [ "$BLOCKCHAIN" != "mantle_sepolia" ] && [ "$BLOCKCHAIN" != "sepolia" ] && [ "$BLOCKCHAIN" != "imx_zkevm" ] && [ "$BLOCKCHAIN" != "imx_zkevm_sepolia" ] && [ "$BLOCKCHAIN" != "b3" ] && [ "$BLOCKCHAIN" != "b3_sepolia" ]; then
       ./seer blockchain generate -n $BLOCKCHAIN --side-chain
       echo "Generated interface for side-chain blockchain $BLOCKCHAIN"
     else

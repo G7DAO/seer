@@ -1,0 +1,16 @@
+[Unit]
+Description=Seer synchronizer service for b3 blockchain
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+WorkingDirectory=/home/ubuntu/seer
+EnvironmentFile=/home/ubuntu/seer-secrets/app.env
+Restart=on-failure
+RestartSec=15s
+ExecStart=/home/ubuntu/seer/seer synchronizer --chain b3
+SyslogIdentifier=seer-synchronizer-b3
+
+[Install]
+WantedBy=multi-user.target

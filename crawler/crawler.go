@@ -84,19 +84,21 @@ type Crawler struct {
 	Client          seer_blockchain.BlockchainClient
 	StorageInstance storage.Storer
 
-	blockchain     string
-	startBlock     int64
-	finalBlock     int64
-	confirmations  int64
-	batchSize      int64
-	baseDir        string
-	basePath       string
-	protoSizeLimit uint64
-	protoTimeLimit int
+	blockchain      string
+	startBlock      int64
+	finalBlock      int64
+	confirmations   int64
+	batchSize       int64
+	baseDir         string
+	basePath        string
+	protoSizeLimit  uint64
+	protoTimeLimit  int
+	retryWait       int
+	retryMultiplier int
 }
 
 // NewCrawler creates a new crawler instance with the given blockchain handler.
-func NewCrawler(blockchain string, startBlock, finalBlock, confirmations, batchSize int64, timeout int, baseDir string, protoSizeLimit uint64, protoTimeLimit int) (*Crawler, error) {
+func NewCrawler(blockchain string, startBlock, finalBlock, confirmations, batchSize int64, timeout int, baseDir string, protoSizeLimit uint64, protoTimeLimit, retryWait, retryMultiplier int) (*Crawler, error) {
 	var crawler Crawler
 
 	basePath := filepath.Join(baseDir, SeerCrawlerStoragePrefix, "data", blockchain)
@@ -116,15 +118,17 @@ func NewCrawler(blockchain string, startBlock, finalBlock, confirmations, batchS
 		Client:          client,
 		StorageInstance: storageInstance,
 
-		blockchain:     blockchain,
-		startBlock:     startBlock,
-		finalBlock:     finalBlock,
-		confirmations:  confirmations,
-		batchSize:      batchSize,
-		baseDir:        baseDir,
-		basePath:       basePath,
-		protoSizeLimit: protoSizeLimit,
-		protoTimeLimit: protoTimeLimit,
+		blockchain:      blockchain,
+		startBlock:      startBlock,
+		finalBlock:      finalBlock,
+		confirmations:   confirmations,
+		batchSize:       batchSize,
+		baseDir:         baseDir,
+		basePath:        basePath,
+		protoSizeLimit:  protoSizeLimit,
+		protoTimeLimit:  protoTimeLimit,
+		retryWait:       retryWait,
+		retryMultiplier: retryMultiplier,
 	}
 
 	return &crawler, nil
@@ -210,9 +214,9 @@ func (c *Crawler) Start(threads int) {
 	}
 
 	retryAttempts := 3
-	retryWaitTime := 5 * time.Second
+	retryWaitTime := time.Duration(c.retryWait) * time.Millisecond
 	waitForBlocksTime := retryWaitTime
-	maxWaitForBlocksTime := 24 * retryWaitTime
+	maxWaitForBlocksTime := time.Duration(c.retryMultiplier) * retryWaitTime
 
 	// If Start block is not set, using last crawled block from indexes database
 	if c.startBlock == 0 {
