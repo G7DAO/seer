@@ -35,6 +35,8 @@ SEER_CRAWLER_XAI_SERVICE_FILE="seer-crawler-xai.service"
 SEER_CRAWLER_SEPOLIA_SERVICE_FILE="seer-crawler-sepolia.service"
 SEER_CRAWLER_IMX_ZKEVM_SERVICE_FILE="seer-crawler-imx-zkevm.service"
 SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE="seer-crawler-imx-zkevm-sepolia.service"
+SEER_CRAWLER_B3_SERVICE_FILE="seer-crawler-b3.service"
+SEER_CRAWLER_B3_SEPOLIA_SERVICE_FILE="seer-crawler-b3-sepolia.service"
 
 # Synchronizer
 SEER_SYNCHRONIZER_ETHEREUM_SERVICE_FILE="seer-synchronizer-ethereum.service"
@@ -49,6 +51,8 @@ SEER_SYNCHRONIZER_XAI_SERVICE_FILE="seer-synchronizer-xai.service"
 SEER_SYNCHRONIZER_SEPOLIA_SERVICE_FILE="seer-synchronizer-sepolia.service"
 SEER_SYNCHRONIZER_IMX_ZKEVM_SERVICE_FILE="seer-synchronizer-imx-zkevm.service"
 SEER_SYNCHRONIZER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE="seer-synchronizer-imx-zkevm-sepolia.service"
+SEER_SYNCHRONIZER_B3_SERVICE_FILE="seer-synchronizer-b3.service"
+SEER_SYNCHRONIZER_B3_SEPOLIA_SERVICE_FILE="seer-synchronizer-b3-sepolia.service"
 
 set -eu
 
@@ -232,6 +236,21 @@ cp "${SCRIPT_DIR}/${SEER_CRAWLER_GAME7_TESTNET_SERVICE_FILE}" "${USER_SYSTEMD_DI
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_GAME7_TESTNET_SERVICE_FILE}"
 
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer crawler for B3 blockchain service definition with ${SEER_CRAWLER_B3_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_B3_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_CRAWLER_B3_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_B3_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_B3_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer crawler for B3 Sepolia blockchain service definition with ${SEER_CRAWLER_B3_SEPOLIA_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_B3_SEPOLIA_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_CRAWLER_B3_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_B3_SEPOLIA_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_B3_SEPOLIA_SERVICE_FILE}"
 
 # Synchronizers
 
@@ -332,3 +351,19 @@ chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_GAME7_TESTNET_SERVICE_FILE}"
 cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_GAME7_TESTNET_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_GAME7_TESTNET_SERVICE_FILE}"
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_GAME7_TESTNET_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for B3 blockchain service definition with ${SEER_SYNCHRONIZER_B3_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_B3_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_B3_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_B3_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_B3_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for B3 Sepolia blockchain service definition with ${SEER_SYNCHRONIZER_B3_SEPOLIA_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_B3_SEPOLIA_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_B3_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_B3_SEPOLIA_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_B3_SEPOLIA_SERVICE_FILE}"

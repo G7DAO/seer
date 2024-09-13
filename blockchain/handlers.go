@@ -67,6 +67,12 @@ func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 	} else if chain == "imx_zkevm_sepolia" {
 		client, err := imx_zkevm_sepolia.NewClient(url, timeout)
 		return client, err
+	} else if chain == "b3" {
+		client, err := imx_zkevm_sepolia.NewClient(url, timeout)
+		return client, err
+	} else if chain == "b3_sepolia" {
+		client, err := imx_zkevm_sepolia.NewClient(url, timeout)
+		return client, err
 	} else {
 		return nil, errors.New("unsupported chain type")
 	}
