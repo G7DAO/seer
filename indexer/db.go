@@ -1152,18 +1152,37 @@ func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, cus
 		WHERE chain = @chain AND ((abi::jsonb)->>'type' = 'function' or (abi::jsonb)->>'type' = 'event')
 	`)
 
+	fmt.Println("Addresses:", addresses)
+
 	if len(addresses) > 0 {
 		queryBuilder.WriteString(" AND address = ANY(@addresses) ")
-		queryArgs["addresses"] = addresses
+
+		// decode addresses
+		addressesBytes := make([][]byte, len(addresses))
+		for i, address := range addresses {
+			addressBytes, err := decodeAddress(address)
+			if err != nil {
+				return nil, nil, err
+			}
+			addressesBytes[i] = addressBytes // Assign directly to the index
+		}
+
+		queryArgs["addresses"] = addressesBytes
 	}
+
+	fmt.Println("Customer IDs:", customersIds)
 
 	if len(customersIds) > 0 {
 		queryBuilder.WriteString(" AND customer_id = ANY(@customer_ids) ")
 		queryArgs["customer_ids"] = customersIds
 	}
 
+	fmt.Println("Query:", queryBuilder.String())
+	fmt.Println("Query Args:", queryArgs)
+
 	rows, err := conn.Query(context.Background(), queryBuilder.String(), queryArgs)
 	if err != nil {
+		log.Println("Error querying ABI jobs from database", err)
 		return nil, nil, err
 	}
 
@@ -1200,8 +1219,14 @@ func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, cus
 			"abi_type": abiJob.AbiType,
 		}
 
+		if abiJob.DeploymentBlockNumber == nil {
+			value := uint64(1)
+			abiJob.DeploymentBlockNumber = &value
+		}
+
 		// Retrieve the struct from the map
 		deployInfo, exists := addressDeployBlockDict[address]
+
 		if !exists {
 			// Initialize the struct if it doesn't exist
 			deployInfo = AbiJobsDeployInfo{

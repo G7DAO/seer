@@ -14,6 +14,7 @@ import (
 	"time"
 
 	seer_blockchain "github.com/moonstream-to/seer/blockchain"
+	"github.com/moonstream-to/seer/blockchain/common"
 	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/storage"
@@ -410,6 +411,7 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 			return fmt.Errorf("error getting latest block number: %w", err)
 		}
 		d.startBlock = indexedLatestBlock
+		fmt.Printf("Start block is %d\n", d.startBlock)
 	}
 
 	// Automatically update ABI jobs as active if auto mode is enabled
@@ -425,9 +427,13 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		return fmt.Errorf("error selecting ABI jobs: %w", err)
 	}
 
+	fmt.Printf("Found %d customer updates\n", len(customerUpdates))
+
 	// Filter out blocks more
 	for address, abisInfo := range addressesAbisInfo {
+		fmt.Printf("Address %s, block %d\n", address, abisInfo.DeployedBlockNumber)
 		if abisInfo.DeployedBlockNumber > d.startBlock {
+			fmt.Printf("Deleting address %s\n", address, abisInfo.DeployedBlockNumber)
 			delete(addressesAbisInfo, address)
 		}
 	}
@@ -485,10 +491,14 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		}
 
 		if useRPC {
-			d.endBlock = d.startBlock - batchSize
-			if d.endBlock == 0 {
-				d.endBlock = 1
+			// Calculate the end block
+			if d.startBlock > batchSize {
+				d.endBlock = d.startBlock - batchSize
+			} else {
+				d.endBlock = 1 // Prevent underflow by setting endBlock to 1 if startBlock < batchSize
 			}
+
+			fmt.Printf("Start block is %d, end block is %d\n", d.startBlock, d.endBlock)
 		}
 
 		// Read raw data from storage or via RPC
@@ -529,7 +539,11 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 		for _, update := range customerUpdates {
 			wg.Add(1)
-			go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, sem, errChan, &wg)
+			if useRPC {
+				go d.processRPCCustomerUpdate(update, customerDBConnections, sem, errChan, &wg)
+			} else {
+				go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, sem, errChan, &wg)
+			}
 		}
 
 		wg.Wait()
@@ -631,7 +645,8 @@ func (d *Synchronizer) processRPCCustomerUpdate(
 	for address, selectorMap := range update.Abis {
 
 		for selector, abiInfo := range selectorMap {
-			if abiInfo["type"] == "event" {
+
+			if abiInfo["abi_type"] == "event" {
 				if _, ok := eventAbis[address]; !ok {
 					eventAbis[address] = make(map[string]map[string]string)
 				}
@@ -646,29 +661,49 @@ func (d *Synchronizer) processRPCCustomerUpdate(
 
 	}
 
-	// Read transactions and events from the blockchain
-
 	// Transactions
 
-	transactions, err := d.Client.GetTransactionsLabels(d.startBlock, d.endBlock, transactionAbis)
+	var transactions []indexer.TransactionLabel
+	var blocksCache map[uint64]common.BlockWithTransactions
 
-	if err != nil {
-		errChan <- fmt.Errorf("error getting transactions for customer %s: %w", update.CustomerID, err)
-		<-sem // Release semaphore
-		return
+	if len(transactionAbis) != 0 {
+
+		transactions, blocksCache, err = d.Client.GetTransactionsLabels(d.startBlock, d.endBlock, transactionAbis)
+
+		if err != nil {
+			log.Println("Error getting transactions for customer", update.CustomerID, ":", err)
+			errChan <- fmt.Errorf("error getting transactions for customer %s: %w", update.CustomerID, err)
+			<-sem // Release semaphore
+			return
+		}
+	} else {
+		transactions = make([]indexer.TransactionLabel, 0)
 	}
+
+	fmt.Printf("Transactions length: %d\n", len(transactions))
 
 	// Events
 
-	events, err := d.Client.GetEventsLabels(d.startBlock, d.endBlock, eventAbis)
+	var events []indexer.EventLabel
 
-	if err != nil {
+	if len(eventAbis) != 0 {
 
-		errChan <- fmt.Errorf("error getting events for customer %s: %w", update.CustomerID, err)
-		<-sem // Release semaphore
-		return
+		events, err = d.Client.GetEventsLabels(d.endBlock, d.startBlock, eventAbis, blocksCache)
 
+		if err != nil {
+
+			log.Println("Error getting events for customer", update.CustomerID, ":", err)
+
+			errChan <- fmt.Errorf("error getting events for customer %s: %w", update.CustomerID, err)
+			<-sem // Release semaphore
+			return
+
+		}
+	} else {
+		events = make([]indexer.EventLabel, 0)
 	}
+
+	fmt.Printf("Events length: %d\n", len(events))
 
 	customer.Pgx.WriteLabes(d.blockchain, transactions, events)
 

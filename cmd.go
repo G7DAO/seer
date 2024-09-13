@@ -906,7 +906,7 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 				return synchonizerErr
 			}
 
-			err := newSynchronizer.HistoricalSyncRef(customerDbUriFlag, customerIds, addresses, batchSize, auto, threads)
+			err := newSynchronizer.HistoricalSyncRef(customerDbUriFlag, addresses, customerIds, batchSize, auto, threads)
 
 			if err != nil {
 				return err

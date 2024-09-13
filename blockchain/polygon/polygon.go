@@ -874,19 +874,40 @@ func (c *Client) GetTransactionByHash(ctx context.Context, hash string) (*seer_c
 	return tx, err
 }
 
-func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMap map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error) {
+func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMap map[string]map[string]map[string]string) ([]indexer.TransactionLabel, map[uint64]seer_common.BlockWithTransactions, error) {
 	var transactionsLabels []indexer.TransactionLabel
+
+	var blocksCache map[uint64]seer_common.BlockWithTransactions
 
 	// Get blocks in range
 	blocks, err := c.FetchBlocksInRangeAsync(big.NewInt(int64(startBlock)), big.NewInt(int64(endBlock)), false, 1)
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Get transactions in range
 
 	for _, block := range blocks {
+
+		blockNumber, err := strconv.ParseUint(block.BlockNumber, 0, 64)
+		if err != nil {
+			log.Fatalf("Failed to convert BlockNumber to uint64: %v", err)
+		}
+
+		blockTimestamp, err := strconv.ParseUint(block.Timestamp, 0, 64)
+
+		if err != nil {
+			log.Fatalf("Failed to convert BlockTimestamp to uint64: %v", err)
+		}
+
+		blocksCache[blockNumber] = seer_common.BlockWithTransactions{
+			BlockNumber:    blockNumber,
+			BlockHash:      block.Hash,
+			BlockTimestamp: blockTimestamp,
+			Transactions:   make(map[string]seer_common.TransactionJson),
+		}
+
 		for _, tx := range block.Transactions {
 
 			label := indexer.SeerCrawlerLabel
@@ -894,6 +915,8 @@ func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMa
 			if len(tx.Input) < 10 { // If input is less than 3 characters then it direct transfer
 				continue
 			}
+			// Fill blocks cache
+			blocksCache[blockNumber].Transactions[tx.Hash] = tx
 
 			// Process transaction labels
 
@@ -903,13 +926,13 @@ func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMa
 				txContractAbi, err := abi.JSON(strings.NewReader(abiMap[tx.ToAddress][selector]["abi"]))
 				if err != nil {
 					fmt.Println("Error initializing contract ABI transactions: ", err)
-					return nil, err
+					return nil, nil, err
 				}
 
 				inputData, err := hex.DecodeString(tx.Input[2:])
 				if err != nil {
 					fmt.Println("Error decoding input data: ", err)
-					return nil, err
+					return nil, nil, err
 				}
 
 				decodedArgsTx, decodeErr := seer_common.DecodeTransactionInputDataToInterface(&txContractAbi, inputData)
@@ -928,7 +951,7 @@ func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMa
 
 				if err != nil {
 					fmt.Println("Error fetching transaction receipt: ", err)
-					return nil, err
+					return nil, nil, err
 				}
 
 				// check if the transaction was successful
@@ -941,17 +964,7 @@ func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMa
 				txLabelDataBytes, err := json.Marshal(decodedArgsTx)
 				if err != nil {
 					fmt.Println("Error converting decodedArgsTx to JSON: ", err)
-					return nil, err
-				}
-
-				blockNumber, err := strconv.ParseUint(tx.BlockNumber, 10, 64)
-				if err != nil {
-					log.Fatalf("Failed to convert BlockNumber to uint64: %v", err)
-				}
-
-				uintBlockTimestamp, err := strconv.ParseUint(block.Timestamp, 10, 64)
-				if err != nil {
-					log.Fatalf("Failed to convert BlockTimestamp to uint64: %v", err)
+					return nil, nil, err
 				}
 
 				// Convert transaction to label
@@ -966,7 +979,7 @@ func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMa
 					Label:           label,
 					TransactionHash: tx.Hash,
 					LabelData:       string(txLabelDataBytes), // Convert JSON byte slice to string
-					BlockTimestamp:  uintBlockTimestamp,
+					BlockTimestamp:  blockTimestamp,
 				}
 
 				transactionsLabels = append(transactionsLabels, transactionLabel)
@@ -976,23 +989,28 @@ func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMa
 
 	}
 
-	return transactionsLabels, nil
+	return transactionsLabels, blocksCache, nil
 
 }
 
-func (c *Client) GetEventsLabels(startBlock uint64, endBlock uint64, abiMap map[string]map[string]map[string]string) ([]indexer.EventLabel, error) {
+func (c *Client) GetEventsLabels(startBlock uint64, endBlock uint64, abiMap map[string]map[string]map[string]string, blocksCache map[uint64]seer_common.BlockWithTransactions) ([]indexer.EventLabel, error) {
 	var eventsLabels []indexer.EventLabel
+
+	if blocksCache == nil {
+		blocksCache = make(map[uint64]seer_common.BlockWithTransactions)
+	}
 
 	// Get events in range
 
 	var addresses []common.Address
-	var topics [][]common.Hash
+	var topics []common.Hash
 
 	for address, selectorMap := range abiMap {
 		for selector, _ := range selectorMap {
-			addresses = append(addresses, common.HexToAddress(address))
-			topics = append(topics, []common.Hash{common.HexToHash(selector)})
+			topics = append(topics, common.HexToHash(selector))
 		}
+
+		addresses = append(addresses, common.HexToAddress(address))
 	}
 
 	// query filter from abiMap
@@ -1000,9 +1018,8 @@ func (c *Client) GetEventsLabels(startBlock uint64, endBlock uint64, abiMap map[
 		FromBlock: big.NewInt(int64(startBlock)),
 		ToBlock:   big.NewInt(int64(endBlock)),
 		Addresses: addresses,
-		Topics:    topics,
+		Topics:    [][]common.Hash{topics},
 	}
-
 	logs, err := c.ClientFilterLogs(context.Background(), filter, false)
 
 	if err != nil {
@@ -1053,24 +1070,40 @@ func (c *Client) GetEventsLabels(startBlock uint64, endBlock uint64, abiMap map[
 			return nil, err
 		}
 
-		// get transaction information
-		transaction, err := c.GetTransactionByHash(context.Background(), log.TransactionHash)
-
+		blockNumber, err := strconv.ParseUint(log.BlockNumber, 0, 64)
 		if err != nil {
 			return nil, err
 		}
 
-		blockNumber, err := strconv.ParseUint(log.BlockNumber, 10, 64)
-		if err != nil {
-			return nil, err
+		if _, ok := blocksCache[blockNumber]; !ok {
+
+			// get block from rpc
+			block, err := c.GetBlockByNumber(context.Background(), big.NewInt(int64(blockNumber)), true)
+			if err != nil {
+				return nil, err
+			}
+
+			blockTimestamp, err := strconv.ParseUint(block.Timestamp, 0, 64)
+			if err != nil {
+				return nil, err
+			}
+
+			blocksCache[blockNumber] = seer_common.BlockWithTransactions{
+				BlockNumber:    blockNumber,
+				BlockHash:      block.Hash,
+				BlockTimestamp: blockTimestamp,
+				Transactions:   make(map[string]seer_common.TransactionJson),
+			}
+
+			for _, tx := range block.Transactions {
+				blocksCache[blockNumber].Transactions[tx.Hash] = tx
+			}
+
 		}
 
-		blockTimestamp, err := strconv.ParseUint(transaction.BlockTimestamp, 10, 64)
-		if err != nil {
-			return nil, err
-		}
+		transaction := blocksCache[blockNumber].Transactions[log.TransactionHash]
 
-		logIndex, err := strconv.ParseUint(log.LogIndex, 10, 64)
+		logIndex, err := strconv.ParseUint(log.LogIndex, 0, 64)
 		if err != nil {
 			return nil, err
 		}
@@ -1086,7 +1119,7 @@ func (c *Client) GetEventsLabels(startBlock uint64, endBlock uint64, abiMap map[
 			OriginAddress:   transaction.FromAddress,
 			TransactionHash: log.TransactionHash,
 			LabelData:       string(labelDataBytes), // Convert JSON byte slice to string
-			BlockTimestamp:  blockTimestamp,
+			BlockTimestamp:  blocksCache[blockNumber].BlockTimestamp,
 			LogIndex:        logIndex,
 		}
 
