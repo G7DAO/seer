@@ -11,6 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/moonstream-to/seer/blockchain/arbitrum_one"
 	"github.com/moonstream-to/seer/blockchain/arbitrum_sepolia"
+	"github.com/moonstream-to/seer/blockchain/b3"
+	"github.com/moonstream-to/seer/blockchain/b3_sepolia"
 	seer_common "github.com/moonstream-to/seer/blockchain/common"
 	"github.com/moonstream-to/seer/blockchain/ethereum"
 	"github.com/moonstream-to/seer/blockchain/game7_orbit_arbitrum_sepolia"
@@ -68,10 +70,10 @@ func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 		client, err := imx_zkevm_sepolia.NewClient(url, timeout)
 		return client, err
 	} else if chain == "b3" {
-		client, err := imx_zkevm_sepolia.NewClient(url, timeout)
+		client, err := b3.NewClient(url, timeout)
 		return client, err
 	} else if chain == "b3_sepolia" {
-		client, err := imx_zkevm_sepolia.NewClient(url, timeout)
+		client, err := b3_sepolia.NewClient(url, timeout)
 		return client, err
 	} else {
 		return nil, errors.New("unsupported chain type")
