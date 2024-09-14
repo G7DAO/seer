@@ -801,6 +801,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 	}
 
 	var jobChain, address, abiFile, customerId, userId string
+	var deployBlock uint64
 
 	createJobsCommand := &cobra.Command{
 		Use:   "create-jobs",
@@ -833,14 +834,16 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 			}
 
 			// detect deploy block
+			if deployBlock == 0 {
+				deployBlockFromChain, deployErr := seer_blockchain.FindDeployedBlock(client, address)
 
-			deploy_block, deployErr := seer_blockchain.FindDeployedBlock(client, address)
-
-			if deployErr != nil {
-				return deployErr
+				if deployErr != nil {
+					return deployErr
+				}
+				deployBlock = deployBlockFromChain
 			}
 
-			createJobsErr := indexer.DBConnection.CreateJobsFromAbi(jobChain, address, abiFile, customerId, userId, deploy_block)
+			createJobsErr := indexer.DBConnection.CreateJobsFromAbi(jobChain, address, abiFile, customerId, userId, deployBlock)
 			if createJobsErr != nil {
 				return createJobsErr
 			}
@@ -854,6 +857,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 	createJobsCommand.Flags().StringVar(&abiFile, "abi-file", "", "The path to the ABI file")
 	createJobsCommand.Flags().StringVar(&customerId, "customer-id", "", "The customer ID to create jobs for (default: '')")
 	createJobsCommand.Flags().StringVar(&userId, "user-id", "00000000-0000-0000-0000-000000000000", "The user ID to create jobs for (default: '00000000-0000-0000-0000-000000000000')")
+	createJobsCommand.Flags().Uint64Var(&deployBlock, "deploy-block", 0, "The block number to deploy contract (default: 0)")
 
 	indexCommand.AddCommand(deploymentBlocksCommand)
 	indexCommand.AddCommand(createJobsCommand)
