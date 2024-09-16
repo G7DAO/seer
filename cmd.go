@@ -223,6 +223,7 @@ func CreateCrawlerCommand() *cobra.Command {
 	var timeout, threads, protoTimeLimit, retryWait, retryMultiplier int
 	var protoSizeLimit uint64
 	var chain, baseDir string
+	var reverse bool
 
 	crawlerCmd := &cobra.Command{
 		Use:   "crawler",
@@ -265,7 +266,7 @@ func CreateCrawlerCommand() *cobra.Command {
 
 			crawler.CurrentBlockchainState.RaiseLatestBlockNumber(latestBlockNumber)
 
-			newCrawler.Start(threads)
+			newCrawler.Start(threads, reverse)
 
 			return nil
 		},
@@ -283,6 +284,7 @@ func CreateCrawlerCommand() *cobra.Command {
 	crawlerCmd.Flags().IntVar(&protoTimeLimit, "proto-time-limit", 300, "Proto time limit in seconds")
 	crawlerCmd.Flags().IntVar(&retryWait, "retry-wait", 5000, "The wait time for the crawler in milliseconds before it try to fetch new block")
 	crawlerCmd.Flags().IntVar(&retryMultiplier, "retry-multiplier", 24, "Multiply wait time to get max waiting time before fetch new block")
+	crawlerCmd.Flags().BoolVar(&reverse, "reverse", false, "Set this flag to crawl blocks in reverse order (default: false)")
 
 	return crawlerCmd
 }

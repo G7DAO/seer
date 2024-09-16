@@ -254,6 +254,7 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 	return blocks, nil
 }
 
+
 // ParseBlocksWithTransactions parses blocks and their transactions into custom data structure.
 // This method showcases how to handle and transform detailed block and transaction data.
 func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxRequests int) ([]*{{.BlockchainName}}Block, error) {
@@ -308,7 +309,13 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 	return parsedEvents, nil
 }
 
-func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, maxRequests int) ([]proto.Message, []indexer.BlockIndex, uint64, error) {
+func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, maxRequests int, reverse bool) ([]proto.Message, []indexer.BlockIndex, uint64, error) {
+
+	if reverse {
+		// Reverse the range
+		from, to = to, from
+	}
+
 	blocks, err := c.ParseBlocksWithTransactions(from, to, debug, maxRequests)
 	if err != nil {
 		return nil, nil, 0, err
