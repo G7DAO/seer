@@ -426,14 +426,13 @@ func (p *PostgreSQLpgx) GetEdgeDBBlock(ctx context.Context, blockchain, side str
 	return blockIndex, nil
 }
 
-func (p *PostgreSQLpgx) GetLatestDBBlockNumber(blockchain string) (uint64, error) {
+func (p *PostgreSQLpgx) GetLatestDBBlockNumber(blockchain string, reverse ...bool) (uint64, error) {
 
 	pool := p.GetPool()
 
 	conn, err := pool.Acquire(context.Background())
 	if err != nil {
 		return 0, err
-
 	}
 
 	defer conn.Release()
@@ -441,7 +440,14 @@ func (p *PostgreSQLpgx) GetLatestDBBlockNumber(blockchain string) (uint64, error
 	var blockNumber uint64
 
 	blocksTableName := BlocksTableName(blockchain)
-	query := fmt.Sprintf("SELECT block_number FROM %s ORDER BY block_number DESC LIMIT 1", blocksTableName)
+
+	// Check if reverse is provided, if not, default to false (DESC order)
+	orderDirection := "DESC"
+	if len(reverse) > 0 && reverse[0] {
+		orderDirection = "ASC"
+	}
+
+	query := fmt.Sprintf("SELECT block_number FROM %s ORDER BY block_number %s LIMIT 1", blocksTableName, orderDirection)
 
 	err = conn.QueryRow(context.Background(), query).Scan(&blockNumber)
 	if err != nil {
@@ -450,7 +456,6 @@ func (p *PostgreSQLpgx) GetLatestDBBlockNumber(blockchain string) (uint64, error
 	}
 
 	return blockNumber, nil
-
 }
 
 func (p *PostgreSQLpgx) ReadABIJobs(blockchain string) ([]AbiJob, error) {

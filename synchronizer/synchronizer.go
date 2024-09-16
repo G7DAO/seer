@@ -279,7 +279,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	}
 
 	// Get the latest block from the indexer db
-	indexedLatestBlock, idxLatestErr := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain)
+	indexedLatestBlock, idxLatestErr := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain, false)
 	if idxLatestErr != nil {
 		return isEnd, idxLatestErr
 	}

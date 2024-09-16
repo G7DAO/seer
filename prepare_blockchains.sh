@@ -21,3 +21,7 @@ for BLOCKCHAIN in $BLOCKCHAIN_NAMES_RAW; do
     fi
   fi
 done
+
+# make go fmt ./...
+
+go fmt ./blockchain/...
