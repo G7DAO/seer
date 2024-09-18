@@ -405,3 +405,75 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 
 	return isEnd, nil
 }
+
+func (d *Synchronizer) SyncContracts() {
+
+	if d.startBlock == 0 {
+		// Get the latest block from the indexer db
+		indexedLatestBlock, idxLatestErr := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain)
+		if idxLatestErr != nil {
+			log.Println("Error getting latest block from the indexer db:", idxLatestErr)
+			return
+		}
+
+		if indexedLatestBlock != 0 {
+			d.startBlock = indexedLatestBlock
+		} else {
+			panic("No start block found in indexer db")
+		}
+
+	}
+
+	if d.endBlock == 0 {
+		d.endBlock = 1
+	}
+
+	log.Printf("Sync contracts for blockchain %s in range of blocks %d-%d\n", d.blockchain, d.startBlock, d.endBlock)
+	// Read all paths from database
+	paths, err := indexer.DBConnection.GetPaths(d.blockchain, d.startBlock, d.endBlock)
+	if err != nil {
+		log.Println("Error reading paths from database:", err)
+		return
+	}
+
+	for _, path := range paths {
+
+		// Read the raw data from the storage for current path
+		rawData, readErr := d.StorageInstance.Read(path)
+
+		if readErr != nil {
+			log.Println("Error reading events for customers:", readErr)
+			return
+		}
+
+		log.Printf("Read blocks for path: %s\n", path)
+
+		// get all deployed contracts
+		batch, err := d.Client.DecodeProtoEntireBlockToJson(&rawData)
+
+		if err != nil {
+			log.Println("Error getting deployed contracts:", err)
+			return
+		}
+
+		log.Printf("Decoded %d blocks\n", len(batch.Blocks))
+
+		// get all deployed contracts
+		contracts, err := seer_blockchain.GetDeployedContracts(d.Client, batch)
+
+		if err != nil {
+			log.Println("Error getting deployed contracts:", err)
+			return
+		}
+
+		// Write contracts to the database
+
+		err = indexer.DBConnection.WriteContracts(d.blockchain, contracts)
+		if err != nil {
+			log.Println("Error writing contracts to database:", err)
+			return
+		}
+
+	}
+
+}

@@ -2,13 +2,17 @@ package blockchain
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"math/big"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/moonstream-to/seer/blockchain/arbitrum_one"
 	"github.com/moonstream-to/seer/blockchain/arbitrum_sepolia"
 	seer_common "github.com/moonstream-to/seer/blockchain/common"
@@ -93,6 +97,7 @@ type BlockchainClient interface {
 	DecodeProtoEntireBlockToJson(*bytes.Buffer) (*seer_common.BlocksBatchJson, error)
 	DecodeProtoEntireBlockToLabels(*bytes.Buffer, map[string]map[string]map[string]string) ([]indexer.EventLabel, []indexer.TransactionLabel, error)
 	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error)
+	TransactionReceipt(context.Context, string) (*types.Receipt, error)
 	ChainType() string
 }
 
@@ -141,4 +146,68 @@ func DecodeTransactionInputData(contractABI *abi.ABI, data []byte) {
 	}
 	fmt.Printf("Method Name: %s\n", method.Name)
 	fmt.Printf("Method inputs: %v\n", inputsMap)
+}
+
+func GetDeployedContracts(client BlockchainClient, BlocksBatch *seer_common.BlocksBatchJson) (map[string]indexer.EvmContract, error) {
+	deployedContracts := make(map[string]indexer.EvmContract)
+	for _, block := range BlocksBatch.Blocks {
+		for _, transaction := range block.Transactions {
+			if (transaction.ToAddress == "" || transaction.ToAddress == "0x") && transaction.Input != "0x" {
+
+				// make get receipt call
+
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+
+				transactionReceipt, err := client.TransactionReceipt(ctx, transaction.Hash)
+				if err != nil {
+					log.Printf("Failed to get transaction receipt: %v", err)
+					continue
+				}
+
+				if transactionReceipt.ContractAddress == (common.Address{}) {
+					continue
+				}
+
+				// Extract contract address as string
+				contractAddress := transactionReceipt.ContractAddress.String() // Assuming ContractAddress is of type common.Address
+
+				timestamp, err := strconv.ParseUint(block.Timestamp, 10, 64)
+				if err != nil {
+					log.Printf("Failed to parse block timestamp: %v", err)
+					// Handle the error appropriately (e.g., continue to the next block or return)
+					return nil, err
+				}
+
+				transactionIndex, err := strconv.ParseUint(transaction.TransactionIndex, 10, 64)
+				if err != nil {
+					log.Printf("Failed to parse transaction index: %v", err)
+					// Handle the error appropriately (e.g., continue to the next transaction or return)
+					return nil, err
+				}
+
+				// Assign EvmContract to the map
+				deployedContracts[contractAddress] = indexer.EvmContract{
+					Address:                  contractAddress,
+					Bytecode:                 nil,
+					DeployedBytecode:         transaction.Input,
+					Abi:                      nil,
+					DeployedAtBlockNumber:    transactionReceipt.BlockNumber.Uint64(),
+					DeployedAtBlockHash:      block.Hash,
+					DeployedAtBlockTimestamp: timestamp,
+					TransactionHash:          transaction.Hash,
+					TransactionIndex:         transactionIndex,
+					Name:                     nil,
+					Statistics:               nil,
+					SupportedStandards:       nil,
+				}
+
+				// Try to get bytecode
+			}
+		}
+	}
+
+	log.Printf("Found %d deployed contracts", len(deployedContracts))
+
+	return deployedContracts, nil
 }

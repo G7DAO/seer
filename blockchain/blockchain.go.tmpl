@@ -99,7 +99,7 @@ func (c *Client) BlockByHash(ctx context.Context, hash common.Hash) (*seer_commo
 }
 
 // TransactionReceipt returns the receipt of a transaction by transaction hash.
-func (c *Client) TransactionReceipt(ctx context.Context, hash common.Hash) (*types.Receipt, error) {
+func (c *Client) TransactionReceipt(ctx context.Context, hash string) (*types.Receipt, error) {
 	var receipt *types.Receipt
 	err := c.rpcClient.CallContext(ctx, &receipt, "eth_getTransactionReceipt", hash)
 	return receipt, err
