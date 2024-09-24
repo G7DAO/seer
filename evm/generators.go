@@ -905,10 +905,11 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 		if formattingErr != nil {
 			return code, formattingErr
 		}
+
 		code = string(generatedCode)
 	}
-
-	return code, nil
+	codeImportsFixed := strings.ReplaceAll(code, "github.com/quan8/go-ethereum", "github.com/ethereum/go-ethereum")
+	return codeImportsFixed, nil
 }
 
 // This template is used to generate the skeleton of the CLI, along with all utility methods that can be
@@ -1066,6 +1067,239 @@ func Create{{.StructName}}Command() *cobra.Command {
 
 	return cmd
 }
+
+// OperationType represents the type of operation for a Safe transaction
+type OperationType uint8
+
+const (
+	Call         OperationType = 0
+	DelegateCall OperationType = 1
+)
+
+// String returns the string representation of the OperationType
+func (o OperationType) String() string {
+	switch o {
+	case Call:
+		return "Call"
+	case DelegateCall:
+		return "DelegateCall"
+	default:
+		return "Unknown"
+	}
+}
+
+// SafeTransactionData represents the data for a Safe transaction
+type SafeTransactionData struct {
+	To             string        ` + "`" + `json:"to"` + "`" + `
+	Value          string        ` + "`" + `json:"value"` + "`" + `
+	Data           string        ` + "`" + `json:"data"` + "`" + `
+	Operation      OperationType ` + "`" + `json:"operation"` + "`" + `
+	SafeTxGas      uint64        ` + "`" + `json:"safeTxGas"` + "`" + `
+	BaseGas        uint64        ` + "`" + `json:"baseGas"` + "`" + `
+	GasPrice       string        ` + "`" + `json:"gasPrice"` + "`" + `
+	GasToken       string        ` + "`" + `json:"gasToken"` + "`" + `
+	RefundReceiver string        ` + "`" + `json:"refundReceiver"` + "`" + `
+	Nonce          uint64        ` + "`" + `json:"nonce"` + "`" + `
+	SafeTxHash     string        ` + "`" + `json:"safeTxHash"` + "`" + `
+	Sender         string        ` + "`" + `json:"sender"` + "`" + `
+	Signature      string        ` + "`" + `json:"signature"` + "`" + `
+	Origin         string        ` + "`" + `json:"origin"` + "`" + `
+}
+
+const (
+	NativeTokenAddress = "0x0000000000000000000000000000000000000000"
+)
+
+
+func DeployWithSafe(rpcURL string, keyfile string, password string, safeAddress common.Address, factoryAddress common.Address, value *big.Int, txServiceBaseUrl string, deployBytecode []byte) error {
+	// Generate salt
+	salt, err := GenerateProperSalt(safeAddress)
+	if err != nil {
+		return fmt.Errorf("failed to generate salt: %v", err)
+	}
+
+	abi, err := ImmutableCreate2Factory.ImmutableCreate2FactoryMetaData.GetAbi()
+	if err != nil {
+		return fmt.Errorf("failed to get ABI: %v", err)
+	}
+
+	safeCreate2TxData, err := abi.Pack("safeCreate2", salt, deployBytecode)
+	if err != nil {
+		return fmt.Errorf("failed to pack safeCreate2 transaction: %v", err)
+	}
+
+	return CreateSafeProposal(rpcURL, keyfile, password, safeAddress, factoryAddress, safeCreate2TxData, value, txServiceBaseUrl)
+}
+
+func GenerateProperSalt(from common.Address) ([32]byte, error) {
+	var salt [32]byte
+
+	// Copy the 'from' address to the first 20 bytes of the salt
+	copy(salt[:20], from[:])
+
+	// Generate random bytes for the remaining 12 bytes
+	_, err := rand.Read(salt[20:])
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("failed to generate random bytes: %w", err)
+	}
+
+	return salt, nil
+}
+
+func CreateSafeProposal(rpcURL string, keyfile string, password string, safeAddress common.Address, to common.Address, data []byte, value *big.Int, txServiceBaseUrl string) error {
+	key, err := KeyFromFile(keyfile, password)
+	if err != nil {
+		return fmt.Errorf("failed to load key from file: %v", err)
+	}
+
+	client, err := ethclient.Dial(rpcURL)
+	if err != nil {
+		return fmt.Errorf("failed to connect to the Ethereum client: %v", err)
+	}
+
+	chainID, err := client.ChainID(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to get chain ID: %v", err)
+	}
+
+	// Create a new instance of the GnosisSafe contract
+	safeInstance, err := GnosisSafe.NewGnosisSafe(safeAddress, client)
+	if err != nil {
+		return fmt.Errorf("failed to create GnosisSafe instance: %v", err)
+	}
+
+	// Fetch the current nonce from the Safe contract
+	nonce, err := safeInstance.Nonce(&bind.CallOpts{})
+	if err != nil {
+		return fmt.Errorf("failed to fetch nonce from Safe contract: %v", err)
+	}
+
+	safeTransactionData := SafeTransactionData{
+		To:             to.Hex(),
+		Value:          value.String(),
+		Data:           common.Bytes2Hex(data),
+		Operation:      Call,
+		SafeTxGas:      0,
+		BaseGas:        0,
+		GasPrice:       "0",
+		GasToken:       NativeTokenAddress,
+		RefundReceiver: NativeTokenAddress, 
+		Nonce:          nonce.Uint64(),
+	}
+
+	// Calculate SafeTxHash
+	safeTxHash, err := CalculateSafeTxHash(safeAddress, safeTransactionData, chainID)
+	if err != nil {
+		return fmt.Errorf("failed to calculate SafeTxHash: %v", err)
+	}
+
+	// Sign the SafeTxHash
+	signature, err := crypto.Sign(safeTxHash.Bytes(), key.PrivateKey)
+	if err != nil {
+		return fmt.Errorf("failed to sign SafeTxHash: %v", err)
+	}
+
+	// Adjust V value for Ethereum's replay protection
+	signature[64] += 27
+
+	// Convert signature to hex
+	senderSignature := "0x" + common.Bytes2Hex(signature)
+
+	// Prepare the request body
+	requestBody := map[string]interface{}{
+		"to":             safeTransactionData.To,
+		"value":          safeTransactionData.Value,
+		"data":           "0x" + safeTransactionData.Data,
+		"operation":      int(safeTransactionData.Operation),
+		"safeTxGas":      fmt.Sprintf("%d", safeTransactionData.SafeTxGas),
+		"baseGas":        fmt.Sprintf("%d", safeTransactionData.BaseGas),
+		"gasPrice":       safeTransactionData.GasPrice,
+		"gasToken":       safeTransactionData.GasToken,
+		"refundReceiver": safeTransactionData.RefundReceiver,
+		"nonce":          fmt.Sprintf("%d", safeTransactionData.Nonce),
+		"safeTxHash":     safeTxHash.Hex(),
+		"sender":         key.Address.Hex(),
+		"signature":      senderSignature,
+		"origin":         fmt.Sprintf("{\"url\":\"%s\",\"name\":\"TokenSender Deployment\"}", txServiceBaseUrl),
+	}
+
+	// Marshal the request body to JSON
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request body: %v", err)
+	}
+
+	// Send the request to the Safe Transaction Service
+	req, err := http.NewRequest("POST", txServiceBaseUrl, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	httpClient := &http.Client{}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	fmt.Println("Safe proposal created successfully")
+	return nil
+}
+
+func CalculateSafeTxHash(safeAddress common.Address, txData SafeTransactionData, chainID *big.Int) (common.Hash, error) {
+	domainSeparator := apitypes.TypedDataDomain{
+		ChainId:           (*math.HexOrDecimal256)(chainID),
+		VerifyingContract: safeAddress.Hex(),
+	}
+
+	typedData := apitypes.TypedData{
+		Types: apitypes.Types{
+			"EIP712Domain": []apitypes.Type{
+				{Name: "chainId", Type: "uint256"},
+				{Name: "verifyingContract", Type: "address"},
+			},
+			"SafeTx": []apitypes.Type{
+				{Name: "to", Type: "address"},
+				{Name: "value", Type: "uint256"},
+				{Name: "data", Type: "bytes"},
+				{Name: "operation", Type: "uint8"},
+				{Name: "safeTxGas", Type: "uint256"},
+				{Name: "baseGas", Type: "uint256"},
+				{Name: "gasPrice", Type: "uint256"},
+				{Name: "gasToken", Type: "address"},
+				{Name: "refundReceiver", Type: "address"},
+				{Name: "nonce", Type: "uint256"},
+			},
+		},
+		Domain:      domainSeparator,
+		PrimaryType: "SafeTx",
+		Message: apitypes.TypedDataMessage{
+			"to":             txData.To,
+			"value":          txData.Value,
+			"data":           "0x" + txData.Data,
+			"operation":      fmt.Sprintf("%d", txData.Operation),
+			"safeTxGas":      fmt.Sprintf("%d", txData.SafeTxGas),
+			"baseGas":        fmt.Sprintf("%d", txData.BaseGas),
+			"gasPrice":       txData.GasPrice,
+			"gasToken":       txData.GasToken,
+			"refundReceiver": txData.RefundReceiver,
+			"nonce":          fmt.Sprintf("%d", txData.Nonce),
+		},
+	}
+
+	typedDataHash, _, err := apitypes.TypedDataAndHash(typedData)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("failed to hash typed data: %v", err)
+	}
+
+	return common.BytesToHash(typedDataHash), nil
+}
 `
 
 // This template generates the handler for smart contract deployment. It is intended to be used with a
@@ -1077,6 +1311,8 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var gasLimit uint64
 	var simulate bool
 	var timeout uint
+	var useSafe bool
+	var safeAddress, txServiceBaseUrl, factoryAddress string
 
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
@@ -1089,6 +1325,25 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if keyfile == "" {
 				return fmt.Errorf("--keystore not specified (this should be a path to an Ethereum account keystore file)")
+			}
+
+			if useSafe {
+				if safeAddress == "" {
+					return fmt.Errorf("--safe-address not specified")
+				}
+				if !common.IsHexAddress(safeAddress) {
+					return fmt.Errorf("--safe-address is not a valid Ethereum address")
+				}
+				if txServiceBaseUrl == "" {
+					return fmt.Errorf("--tx-service-base-url not specified")
+				}
+
+				if factoryAddress == "" {
+					return fmt.Errorf("--factory-address not specified")
+				}
+				if !common.IsHexAddress(factoryAddress) {
+					return fmt.Errorf("--factory-address is not a valid Ethereum address")
+				}
 			}
 
 			{{range .DeployHandler.MethodArgs}}
@@ -1121,6 +1376,31 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 			}
 
 			SetTransactionParametersFromArgs(transactionOpts, nonce, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, gasLimit, simulate)
+
+			if useSafe {
+				// Generate deploy bytecode with constructor arguments
+				deployBytecode, err := generate{{.StructName}}DeployBytecode(
+					{{- range .DeployHandler.MethodArgs}}
+					{{.CLIVar}},
+					{{- end}}
+				)
+				if err != nil {
+					return fmt.Errorf("failed to generate deploy bytecode: %v", err)
+				}
+
+				// Create Safe proposal for deployment
+				value := transactionOpts.Value
+				if value == nil {
+					value = big.NewInt(0)
+				}
+				err = DeployWithSafe(rpc, keyfile, password, common.HexToAddress(safeAddress), common.HexToAddress(factoryAddress), value, txServiceBaseUrl, deployBytecode)
+				if err != nil {
+					return fmt.Errorf("failed to create Safe proposal: %v", err)
+				}
+
+				cmd.Println("Safe proposal for deployment created successfully")
+				return nil
+			}
 
 			address, deploymentTransaction, _, deploymentErr := {{.DeployHandler.MethodName}}(
 				transactionOpts,
@@ -1175,12 +1455,39 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().Uint64Var(&gasLimit, "gas-limit", 0, "Gas limit for the transaction")
 	cmd.Flags().BoolVar(&simulate, "simulate", false, "Simulate the transaction without sending it")
 	cmd.Flags().UintVar(&timeout, "timeout", 60, "Timeout (in seconds) for interactions with the JSONRPC API")
+	cmd.Flags().BoolVar(&useSafe, "safe", false, "Create a Safe proposal instead of directly executing the transaction")
+	cmd.Flags().StringVar(&safeAddress, "safe-address", "", "Address of the Safe contract (required if --safe is set)")
+	cmd.Flags().StringVar(&txServiceBaseUrl, "tx-service-base-url", "", "Base URL for the Safe Transaction Service (required if --safe is set)")
+	cmd.Flags().StringVar(&factoryAddress, "factory-address", "", "Address of the ImmutableCreate2Factory contract (required if --safe is set)")
 
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
 	{{- end}}
 
 	return cmd
+}
+
+func generate{{.StructName}}DeployBytecode(
+	{{- range .DeployHandler.MethodArgs}}
+	{{.CLIVar}} {{.CLIType}},
+	{{- end}}
+) ([]byte, error) {
+	abiPacked, err := {{.StructName}}MetaData.GetAbi()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ABI: %v", err)
+	}
+
+	constructorArguments, err := abiPacked.Pack("",
+		{{- range .DeployHandler.MethodArgs}}
+		{{.CLIVar}},
+		{{- end}}
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pack constructor arguments: %v", err)
+	}
+
+	deployBytecode := append(common.FromHex({{.StructName}}MetaData.Bin), constructorArguments...)
+	return deployBytecode, nil
 }
 {{end}}
 `
@@ -1281,131 +1588,173 @@ func {{.HandlerName}}() *cobra.Command {
 var TransactMethodCommandsTemplate string = `{{$structName := .StructName}}
 {{range .TransactHandlers}}
 func {{.HandlerName}}() *cobra.Command {
-	var keyfile, nonce, password, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, rpc, contractAddressRaw string
-	var gasLimit uint64
-	var simulate bool
-	var timeout uint
-	var contractAddress common.Address
+    var keyfile, nonce, password, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, rpc, contractAddressRaw string
+    var gasLimit uint64
+    var simulate bool
+    var timeout uint
+    var contractAddress common.Address
+    var useSafe bool
+    var safeAddress, txServiceBaseUrl string
 
-	{{range .MethodArgs}}
-	var {{.CLIVar}} {{.CLIType}}
-	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
-	{{- end}}
+    {{range .MethodArgs}}
+    var {{.CLIVar}} {{.CLIType}}
+    {{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
+    {{- end}}
 
-	cmd := &cobra.Command{
-		Use: "{{(KebabCase .MethodName)}}",
-		Short: "Execute the {{.MethodName}} method on a {{$structName}} contract",
-		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if keyfile == "" {
-				return fmt.Errorf("--keystore not specified")
-			}
+    cmd := &cobra.Command{
+        Use: "{{(KebabCase .MethodName)}}",
+        Short: "Execute the {{.MethodName}} method on a {{$structName}} contract",
+        PreRunE: func(cmd *cobra.Command, args []string) error {
+            if contractAddressRaw == "" {
+                return fmt.Errorf("--contract not specified")
+            } else if !common.IsHexAddress(contractAddressRaw) {
+                return fmt.Errorf("--contract is not a valid Ethereum address")
+            }
+            contractAddress = common.HexToAddress(contractAddressRaw)
 
-			if contractAddressRaw == "" {
-				return fmt.Errorf("--contract not specified")
-			} else if !common.IsHexAddress(contractAddressRaw) {
-				return fmt.Errorf("--contract is not a valid Ethereum address")
-			}
-			contractAddress = common.HexToAddress(contractAddressRaw)
+            if keyfile == "" {
+                return fmt.Errorf("--keystore not specified (this should be a path to an Ethereum account keystore file)")
+            }
 
-			{{range .MethodArgs}}
-			{{.PreRunE}}
-			{{- end}}
+            if useSafe {
+                if safeAddress == "" {
+                    return fmt.Errorf("--safe-address not specified")
+                }
+                if !common.IsHexAddress(safeAddress) {
+                    return fmt.Errorf("--safe-address is not a valid Ethereum address")
+                }
+                if txServiceBaseUrl == "" {
+                    return fmt.Errorf("--tx-service-base-url not specified")
+                }
+            }
 
-			return nil
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			client, clientErr := NewClient(rpc)
-			if clientErr != nil {
-				return clientErr
-			}
+            {{range .MethodArgs}}
+            {{.PreRunE}}
+            {{- end}}
 
-			key, keyErr := KeyFromFile(keyfile, password)
-			if keyErr != nil {
-				return keyErr
-			}
+            return nil
+        },
+        RunE: func(cmd *cobra.Command, args []string) error {
+            client, clientErr := NewClient(rpc)
+            if clientErr != nil {
+                return clientErr
+            }
 
-			chainIDCtx, cancelChainIDCtx := NewChainContext(timeout)
-			defer cancelChainIDCtx()
-			chainID, chainIDErr := client.ChainID(chainIDCtx)
-			if chainIDErr != nil {
-				return chainIDErr
-			}
+            key, keyErr := KeyFromFile(keyfile, password)
+            if keyErr != nil {
+                return keyErr
+            }
 
-			transactionOpts, transactionOptsErr := bind.NewKeyedTransactorWithChainID(key.PrivateKey, chainID)
-			if transactionOptsErr != nil {
-				return transactionOptsErr
-			}
+            chainIDCtx, cancelChainIDCtx := NewChainContext(timeout)
+            defer cancelChainIDCtx()
+            chainID, chainIDErr := client.ChainID(chainIDCtx)
+            if chainIDErr != nil {
+                return chainIDErr
+            }
 
-			SetTransactionParametersFromArgs(transactionOpts, nonce, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, gasLimit, simulate)
+            transactionOpts, transactionOptsErr := bind.NewKeyedTransactorWithChainID(key.PrivateKey, chainID)
+            if transactionOptsErr != nil {
+                return transactionOptsErr
+            }
 
-			contract, contractErr := New{{$structName}}(contractAddress, client)
-			if contractErr != nil {
-				return contractErr
-			}
+            SetTransactionParametersFromArgs(transactionOpts, nonce, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, gasLimit, simulate)
 
-			session := {{$structName}}TransactorSession{
-				Contract: &contract.{{$structName}}Transactor,
-				TransactOpts: *transactionOpts,
-			}
+            contract, contractErr := New{{$structName}}(contractAddress, client)
+            if contractErr != nil {
+                return contractErr
+            }
 
-			transaction, transactionErr := session.{{.MethodName}}(
-				{{- range .MethodArgs}}
-				{{.CLIVar}},
-				{{- end}}
-			)
-			if transactionErr != nil {
-				return transactionErr
-			}
+            session := {{$structName}}TransactorSession{
+                Contract: &contract.{{$structName}}Transactor,
+                TransactOpts: *transactionOpts,
+            }
 
-			cmd.Printf("Transaction hash: %s\n", transaction.Hash().Hex())
-			if transactionOpts.NoSend {
-				estimationMessage := ethereum.CallMsg{
-					From: 		transactionOpts.From,
+            if useSafe {
+                // Generate transaction data
+                transactionData, err := session.{{.MethodName}}(
+                    {{range .MethodArgs}}
+                    {{.CLIVar}},
+                    {{- end}}
+                )
+                if err != nil {
+                    return fmt.Errorf("failed to generate transaction data: %v", err)
+                }
+
+                // Create Safe proposal for transaction
+				value := transactionOpts.Value
+				if value == nil {
+					value = big.NewInt(0)
+				}
+                err = CreateSafeProposal(rpc, keyfile, password, common.HexToAddress(safeAddress), contractAddress, transactionData.Data(), value, txServiceBaseUrl)
+                if err != nil {
+                    return fmt.Errorf("failed to create Safe proposal: %v", err)
+                }
+
+                cmd.Println("Safe proposal for transaction created successfully")
+                return nil
+            }
+
+            transaction, err := session.{{.MethodName}}(
+                {{range .MethodArgs}}
+                {{.CLIVar}},
+                {{- end}}
+            )
+            if err != nil {
+                return err
+            }
+
+            cmd.Printf("Transaction hash: %s\n", transaction.Hash().Hex())
+            if transactionOpts.NoSend {
+                estimationMessage := ethereum.CallMsg{
+                    From: 		transactionOpts.From,
 					To: 		&contractAddress,
-					Data: 		transaction.Data(),
-				}
+                    Data: 		transaction.Data(),
+                }
 
-				gasEstimationCtx, cancelGasEstimationCtx := NewChainContext(timeout)
-				defer cancelGasEstimationCtx()
+                gasEstimationCtx, cancelGasEstimationCtx := NewChainContext(timeout)
+                defer cancelGasEstimationCtx()
 
-				gasEstimate, gasEstimateErr := client.EstimateGas(gasEstimationCtx, estimationMessage)
-				if gasEstimateErr != nil {
-					return gasEstimateErr
-				}
+                gasEstimate, gasEstimateErr := client.EstimateGas(gasEstimationCtx, estimationMessage)
+                if gasEstimateErr != nil {
+                    return gasEstimateErr
+                }
 
-				transactionBinary, transactionBinaryErr := transaction.MarshalBinary()
-				if transactionBinaryErr != nil {
-					return transactionBinaryErr
-				}
-				transactionBinaryHex := hex.EncodeToString(transactionBinary)
+                transactionBinary, transactionBinaryErr := transaction.MarshalBinary()
+                if transactionBinaryErr != nil {
+                    return transactionBinaryErr
+                }
+                transactionBinaryHex := hex.EncodeToString(transactionBinary)
 
-				cmd.Printf("Transaction: %s\nEstimated gas: %d\n", transactionBinaryHex, gasEstimate)
-			} else {
-				cmd.Println("Transaction submitted")
-			}
+                cmd.Printf("Transaction: %s\nEstimated gas: %d\n", transactionBinaryHex, gasEstimate)
+            } else {
+                cmd.Println("Transaction submitted")
+            }
 
-			return nil
-		},
-	}
+            return nil
+        },
+    }
 
-	cmd.Flags().StringVar(&rpc, "rpc", "", "URL of the JSONRPC API to use")
-	cmd.Flags().StringVar(&keyfile, "keyfile", "", "Path to the keystore file to use for the transaction")
-	cmd.Flags().StringVar(&password, "password", "", "Password to use to unlock the keystore (if not specified, you will be prompted for the password when the command executes)")
-	cmd.Flags().StringVar(&nonce, "nonce", "", "Nonce to use for the transaction")
-	cmd.Flags().StringVar(&value, "value", "", "Value to send with the transaction")
-	cmd.Flags().StringVar(&gasPrice, "gas-price", "", "Gas price to use for the transaction")
-	cmd.Flags().StringVar(&maxFeePerGas, "max-fee-per-gas", "", "Maximum fee per gas to use for the (EIP-1559) transaction")
-	cmd.Flags().StringVar(&maxPriorityFeePerGas, "max-priority-fee-per-gas", "", "Maximum priority fee per gas to use for the (EIP-1559) transaction")
-	cmd.Flags().Uint64Var(&gasLimit, "gas-limit", 0, "Gas limit for the transaction")
-	cmd.Flags().BoolVar(&simulate, "simulate", false, "Simulate the transaction without sending it")
-	cmd.Flags().UintVar(&timeout, "timeout", 60, "Timeout (in seconds) for interactions with the JSONRPC API")
+    cmd.Flags().StringVar(&rpc, "rpc", "", "URL of the JSONRPC API to use")
+    cmd.Flags().StringVar(&keyfile, "keyfile", "", "Path to the keystore file to use for the transaction")
+    cmd.Flags().StringVar(&password, "password", "", "Password to use to unlock the keystore (if not specified, you will be prompted for the password when the command executes)")
+    cmd.Flags().StringVar(&nonce, "nonce", "", "Nonce to use for the transaction")
+    cmd.Flags().StringVar(&value, "value", "", "Value to send with the transaction")
+    cmd.Flags().StringVar(&gasPrice, "gas-price", "", "Gas price to use for the transaction")
+    cmd.Flags().StringVar(&maxFeePerGas, "max-fee-per-gas", "", "Maximum fee per gas to use for the (EIP-1559) transaction")
+    cmd.Flags().StringVar(&maxPriorityFeePerGas, "max-priority-fee-per-gas", "", "Maximum priority fee per gas to use for the (EIP-1559) transaction")
+    cmd.Flags().Uint64Var(&gasLimit, "gas-limit", 0, "Gas limit for the transaction")
+    cmd.Flags().BoolVar(&simulate, "simulate", false, "Simulate the transaction without sending it")
+    cmd.Flags().UintVar(&timeout, "timeout", 60, "Timeout (in seconds) for interactions with the JSONRPC API")
 	cmd.Flags().StringVar(&contractAddressRaw, "contract", "", "Address of the contract to interact with")
+	cmd.Flags().BoolVar(&useSafe, "safe", false, "Create a Safe proposal instead of directly executing the transaction")
+    cmd.Flags().StringVar(&safeAddress, "safe-address", "", "Address of the Safe contract (required if --safe is set)")
+    cmd.Flags().StringVar(&txServiceBaseUrl, "tx-service-base-url", "", "Base URL for the Safe Transaction Service (required if --safe is set)")
 
-	{{range .MethodArgs}}
-	cmd.Flags().{{.Flag}}
-	{{- end}}
+    {{range .MethodArgs}}
+    cmd.Flags().{{.Flag}}
+    {{- end}}
 
-	return cmd
+    return cmd
 }
 {{- end}}
 `
