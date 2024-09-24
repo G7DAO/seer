@@ -595,7 +595,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
                 abi_selector,
                 json_build_object(
                     'abi',
-                    '[' || abi || ']',
+                    ('[' || abi || ']')::jsonb,
                     'abi_name',
                     abi_name
                 )
@@ -630,7 +630,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 		return 0, 0, "", nil, err
 	}
 
-	var customers []map[string]map[string]map[string]map[string]string
+	var customers []map[string]map[string]map[string]*AbiEntry
 	var path string
 	var firstBlockNumber, lastBlockNumber uint64
 
@@ -708,9 +708,8 @@ func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool
 
 	for _, abiJob := range abiJobs {
 
-		// Get the correct selector for the ABI
-		abiObj, err := abi.JSON(strings.NewReader("[" + abiJob.Abi + "]"))
-
+		// Now you can use abiJSONStr as a string
+		abiObj, err := abi.JSON(strings.NewReader(abiJob.Abi))
 		if err != nil {
 			log.Println("Error parsing ABI for ABI job:", abiJob.ID, err)
 			return err
@@ -1150,13 +1149,11 @@ func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, cus
 
 	queryBuilder.WriteString(`
 		SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, 
-		       historical_crawl_status, progress, task_pickedup, '[' || abi || ']' as abi, 
-		       (abi::jsonb)->>'type' AS abiType, created_at, updated_at, deployment_block_number
+		       historical_crawl_status, progress, moonworm_task_pickedup as task_pickedup, '[' || abi || ']' as abi, 
+		       (abi::jsonb)->>'type' AS abiType, created_at, updated_at, 1 as deployment_block_number
 		FROM abi_jobs
 		WHERE chain = @chain AND ((abi::jsonb)->>'type' = 'function' or (abi::jsonb)->>'type' = 'event')
 	`)
-
-	fmt.Println("Addresses:", addresses)
 
 	if len(addresses) > 0 {
 		queryBuilder.WriteString(" AND address = ANY(@addresses) ")
@@ -1174,15 +1171,10 @@ func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, cus
 		queryArgs["addresses"] = addressesBytes
 	}
 
-	fmt.Println("Customer IDs:", customersIds)
-
 	if len(customersIds) > 0 {
 		queryBuilder.WriteString(" AND customer_id = ANY(@customer_ids) ")
 		queryArgs["customer_ids"] = customersIds
 	}
-
-	fmt.Println("Query:", queryBuilder.String())
-	fmt.Println("Query Args:", queryArgs)
 
 	rows, err := conn.Query(context.Background(), queryBuilder.String(), queryArgs)
 	if err != nil {
@@ -1209,18 +1201,18 @@ func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, cus
 		if _, exists := customerUpdatesDict[abiJob.CustomerID]; !exists {
 			customerUpdatesDict[abiJob.CustomerID] = CustomerUpdates{
 				CustomerID: abiJob.CustomerID,
-				Abis:       make(map[string]map[string]map[string]string),
+				Abis:       make(map[string]map[string]*AbiEntry),
 			}
 		}
 
 		if _, exists := customerUpdatesDict[abiJob.CustomerID].Abis[address]; !exists {
-			customerUpdatesDict[abiJob.CustomerID].Abis[address] = make(map[string]map[string]string)
+			customerUpdatesDict[abiJob.CustomerID].Abis[address] = make(map[string]*AbiEntry)
 		}
 
-		customerUpdatesDict[abiJob.CustomerID].Abis[address][abiJob.AbiSelector] = map[string]string{
-			"abi":      abiJob.Abi,
-			"abi_name": abiJob.AbiName,
-			"abi_type": abiJob.AbiType,
+		customerUpdatesDict[abiJob.CustomerID].Abis[address][abiJob.AbiSelector] = &AbiEntry{
+			AbiJSON: abiJob.Abi,
+			AbiName: abiJob.AbiName,
+			AbiType: abiJob.AbiType,
 		}
 
 		if abiJob.DeploymentBlockNumber == nil {

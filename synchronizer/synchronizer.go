@@ -30,10 +30,11 @@ type Synchronizer struct {
 	batchSize  uint64
 	baseDir    string
 	basePath   string
+	threads    int
 }
 
 // NewSynchronizer creates a new synchronizer instance with the given blockchain handler.
-func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize uint64, timeout int) (*Synchronizer, error) {
+func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize uint64, timeout int, threads int) (*Synchronizer, error) {
 	var synchronizer Synchronizer
 
 	basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", blockchain)
@@ -51,6 +52,10 @@ func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize
 
 	log.Printf("Initialized new synchronizer at blockchain: %s, startBlock: %d, endBlock: %d", blockchain, startBlock, endBlock)
 
+	if threads <= 0 {
+		threads = 1
+	}
+
 	synchronizer = Synchronizer{
 		Client:          client,
 		StorageInstance: storageInstance,
@@ -61,6 +66,7 @@ func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize
 		batchSize:  batchSize,
 		baseDir:    baseDir,
 		basePath:   basePath,
+		threads:    threads,
 	}
 
 	return &synchronizer, nil
@@ -399,7 +405,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	return isEnd, nil
 }
 
-func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []string, customerIds []string, batchSize uint64, auto bool, threads int) error {
+func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []string, customerIds []string, batchSize uint64, auto bool) error {
 	var useRPC bool
 	var isCycleFinished bool
 
@@ -534,8 +540,8 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 		// Process customer updates in parallel
 		var wg sync.WaitGroup
-		sem := make(chan struct{}, threads) // Semaphore to control concurrency
-		errChan := make(chan error, 1)      // Buffered channel for error handling
+		sem := make(chan struct{}, d.threads) // Semaphore to control concurrency
+		errChan := make(chan error, 1)        // Buffered channel for error handling
 
 		for _, update := range customerUpdates {
 			wg.Add(1)
@@ -596,15 +602,20 @@ func (d *Synchronizer) processProtoCustomerUpdate(
 		return
 	}
 	defer conn.Release()
-
-	decodedEvents, decodedTransactions, err := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis)
+	decodedEvents, decodedTransactions, err := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis, d.threads)
 	if err != nil {
-		errChan <- fmt.Errorf("error decoding events for customer %s: %w", update.CustomerID, err)
+		errChan <- fmt.Errorf("error  %s: %w", update.CustomerID, err)
 		<-sem // Release semaphore
 		return
 	}
 
-	customer.Pgx.WriteLabes(d.blockchain, decodedTransactions, decodedEvents)
+	err = customer.Pgx.WriteLabes(d.blockchain, decodedTransactions, decodedEvents)
+
+	if err != nil {
+		errChan <- fmt.Errorf("error writing labels for customer %s: %w", update.CustomerID, err)
+		<-sem // Release semaphore
+		return
+	}
 
 	<-sem // Release semaphore
 }
@@ -639,21 +650,21 @@ func (d *Synchronizer) processRPCCustomerUpdate(
 
 	// split abis by the type of the task
 
-	eventAbis := make(map[string]map[string]map[string]string)
-	transactionAbis := make(map[string]map[string]map[string]string)
+	eventAbis := make(map[string]map[string]*indexer.AbiEntry)
+	transactionAbis := make(map[string]map[string]*indexer.AbiEntry)
 
 	for address, selectorMap := range update.Abis {
 
 		for selector, abiInfo := range selectorMap {
 
-			if abiInfo["abi_type"] == "event" {
+			if abiInfo.AbiType == "event" {
 				if _, ok := eventAbis[address]; !ok {
-					eventAbis[address] = make(map[string]map[string]string)
+					eventAbis[address] = make(map[string]*indexer.AbiEntry)
 				}
 				eventAbis[address][selector] = abiInfo
 			} else {
 				if _, ok := transactionAbis[address]; !ok {
-					transactionAbis[address] = make(map[string]map[string]string)
+					transactionAbis[address] = make(map[string]*indexer.AbiEntry)
 				}
 				transactionAbis[address][selector] = abiInfo
 			}
@@ -705,7 +716,13 @@ func (d *Synchronizer) processRPCCustomerUpdate(
 
 	fmt.Printf("Events length: %d\n", len(events))
 
-	customer.Pgx.WriteLabes(d.blockchain, transactions, events)
+	err = customer.Pgx.WriteLabes(d.blockchain, transactions, events)
+
+	if err != nil {
+		errChan <- fmt.Errorf("error writing labels for customer %s: %w", update.CustomerID, err)
+		<-sem // Release semaphore
+		return
+	}
 
 	<-sem // Release semaphore
 }

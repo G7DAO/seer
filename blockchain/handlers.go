@@ -96,12 +96,12 @@ type BlockchainClient interface {
 	FetchAsProtoBlocksWithEvents(*big.Int, *big.Int, bool, int) ([]proto.Message, []indexer.BlockIndex, uint64, error)
 	ProcessBlocksToBatch([]proto.Message) (proto.Message, error)
 	DecodeProtoEntireBlockToJson(*bytes.Buffer) (*seer_common.BlocksBatchJson, error)
-	DecodeProtoEntireBlockToLabels(*bytes.Buffer, map[string]map[string]map[string]string) ([]indexer.EventLabel, []indexer.TransactionLabel, error)
-	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error)
+	DecodeProtoEntireBlockToLabels(*bytes.Buffer, map[string]map[string]*indexer.AbiEntry, int) ([]indexer.EventLabel, []indexer.TransactionLabel, error)
+	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]*indexer.AbiEntry) ([]indexer.TransactionLabel, error)
 	ChainType() string
 	GetCode(context.Context, common.Address, uint64) ([]byte, error)
-	GetTransactionsLabels(uint64, uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, map[uint64]seer_common.BlockWithTransactions, error)
-	GetEventsLabels(uint64, uint64, map[string]map[string]map[string]string, map[uint64]seer_common.BlockWithTransactions) ([]indexer.EventLabel, error)
+	GetTransactionsLabels(uint64, uint64, map[string]map[string]*indexer.AbiEntry) ([]indexer.TransactionLabel, map[uint64]seer_common.BlockWithTransactions, error)
+	GetEventsLabels(uint64, uint64, map[string]map[string]*indexer.AbiEntry, map[uint64]seer_common.BlockWithTransactions) ([]indexer.EventLabel, error)
 }
 
 func GetLatestBlockNumberWithRetry(client BlockchainClient, retryAttempts int, retryWaitTime time.Duration) (*big.Int, error) {

@@ -295,7 +295,7 @@ func CreateCrawlerCommand() *cobra.Command {
 
 func CreateSynchronizerCommand() *cobra.Command {
 	var startBlock, endBlock, batchSize uint64
-	var timeout int
+	var timeout, threads int
 	var chain, baseDir, customerDbUriFlag string
 
 	synchronizerCmd := &cobra.Command{
@@ -336,7 +336,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			indexer.InitDBConnection()
 
-			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout)
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout, threads)
 			if synchonizerErr != nil {
 				return synchonizerErr
 			}
@@ -365,6 +365,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 	synchronizerCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
 	synchronizerCmd.Flags().Uint64Var(&batchSize, "batch-size", 100, "The number of blocks to crawl in each batch (default: 100)")
 	synchronizerCmd.Flags().StringVar(&customerDbUriFlag, "customer-db-uri", "", "Set customer database URI for development. This workflow bypass fetching customer IDs and its database URL connection strings from mdb-v3-controller API")
+	synchronizerCmd.Flags().IntVar(&threads, "threads", 5, "Number of go-routines for concurrent decoding")
 
 	return synchronizerCmd
 }
@@ -835,6 +836,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 
 			// detect deploy block
 			if deployBlock == 0 {
+				fmt.Println("Deploy block is not provided, trying to find it from chain")
 				deployBlockFromChain, deployErr := seer_blockchain.FindDeployedBlock(client, address)
 
 				if deployErr != nil {
@@ -907,12 +909,12 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			indexer.InitDBConnection()
 
-			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout)
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout, threads)
 			if synchonizerErr != nil {
 				return synchonizerErr
 			}
 
-			err := newSynchronizer.HistoricalSyncRef(customerDbUriFlag, addresses, customerIds, batchSize, auto, threads)
+			err := newSynchronizer.HistoricalSyncRef(customerDbUriFlag, addresses, customerIds, batchSize, auto)
 
 			if err != nil {
 				return err

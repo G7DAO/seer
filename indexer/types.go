@@ -1,6 +1,11 @@
 package indexer
 
-import "time"
+import (
+	"sync"
+	"time"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
+)
 
 // gorm is a Go ORM library for working with databases
 
@@ -69,10 +74,10 @@ type AbiJob struct {
 }
 
 type CustomerUpdates struct {
-	CustomerID string                                  `json:"customer_id"`
-	Abis       map[string]map[string]map[string]string `json:"abis"`
-	LastBlock  uint64                                  `json:"last_block"`
-	Path       string                                  `json:"path"`
+	CustomerID string                          `json:"customer_id"`
+	Abis       map[string]map[string]*AbiEntry `json:"abis"`
+	LastBlock  uint64                          `json:"last_block"`
+	Path       string                          `json:"path"`
 }
 
 type TaskForTransaction struct {
@@ -119,4 +124,12 @@ type TransactionLabel struct {
 type AbiJobsDeployInfo struct {
 	DeployedBlockNumber uint64
 	IDs                 []string
+}
+
+type AbiEntry struct {
+	AbiJSON string
+	Abi     *abi.ABI
+	AbiName string
+	AbiType string
+	Once    sync.Once
 }
