@@ -16,7 +16,3 @@ examples/ownable-erc-721/OwnableERC721.go: rebuild
 
 ownable-erc-721: examples/ownable-erc-721/OwnableERC721.go
 	go build ./examples/ownable-erc-721
-
-
-
-token-sender: ./seer evm generate --package TokenSender --output ../../g7/protocol/bindings/TokenSender/TokenSender.go --hardhat ../../g7/protocol/web3/artifacts/contracts/faucet/TokenSender.sol/TokenSender.json --cli --struct TokenSender
