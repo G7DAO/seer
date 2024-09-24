@@ -677,6 +677,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 		semaphoreChan <- struct{}{}
 		go func(b *ArbitrumSepoliaBlock) {
 			defer wg.Done()
+			defer func() { <-semaphoreChan }()
 
 			// Local slices to collect labels for this block
 			var localEventLabels []indexer.EventLabel
@@ -760,7 +761,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 						BlockTimestamp:  b.Timestamp,
 					}
 
-					txLabels = append(txLabels, transactionLabel)
+					localTxLabels = append(localTxLabels, transactionLabel)
 				}
 
 				// Process events
@@ -828,7 +829,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 						LogIndex:        e.LogIndex,
 					}
 
-					labels = append(labels, eventLabel)
+					localEventLabels = append(localEventLabels, eventLabel)
 				}
 			}
 

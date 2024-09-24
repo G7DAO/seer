@@ -1464,7 +1464,7 @@ func (p *PostgreSQLpgx) CreateJobsFromAbi(chain string, address string, abiFile 
 			log.Println("Error decoding address:", err, address)
 			continue
 		}
-		_, err = conn.Exec(context.Background(), "INSERT INTO abi_jobs (id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), now())", jobID, addressBytes, userID, customerID, selector, chain, abiJob["name"], "true", "pending", 0, false, abiJobJson)
+		_, err = conn.Exec(context.Background(), "INSERT INTO abi_jobs (id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), now()) ON CONFLICT DO NOTHING", jobID, addressBytes, userID, customerID, selector, chain, abiJob["name"], "true", "pending", 0, false, abiJobJson)
 		//_, err = conn.Exec(context.Background(), "INSERT INTO abi_jobs (id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, task_pickedup, abi, deployment_block_number, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())", jobID, addressBytes, userID, customerID, selector, chain, abiJob["name"], "true", "pending", 0, false, abiJobJson, deployBlock)
 
 		if err != nil {

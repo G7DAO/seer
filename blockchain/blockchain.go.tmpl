@@ -679,8 +679,9 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 		semaphoreChan <- struct{}{}
 		go func(b *{{.BlockchainName}}Block) {
 			defer wg.Done()
+			defer func() { <-semaphoreChan }()
 
-
+		
 			// Local slices to collect labels for this block
 			var localEventLabels []indexer.EventLabel
 			var localTxLabels []indexer.TransactionLabel

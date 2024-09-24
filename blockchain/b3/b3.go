@@ -828,7 +828,6 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 			labels = append(labels, localEventLabels...)
 			txLabels = append(txLabels, localTxLabels...)
 			labelsMutex.Unlock()
-
 		}(b)
 	}
 	// Wait for all block processing goroutines to finish
@@ -845,6 +844,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 	if len(errorMessages) > 0 {
 		return nil, nil, fmt.Errorf("errors occurred during processing:\n%s", strings.Join(errorMessages, "\n"))
 	}
+
 	return labels, txLabels, nil
 }
 
