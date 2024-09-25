@@ -679,7 +679,7 @@ func (d *Synchronizer) processRPCCustomerUpdate(
 
 	if len(transactionAbis) != 0 {
 		fmt.Printf("Getting transactions for customer %s\n", update.CustomerID)
-		transactions, blocksCache, err = d.Client.GetTransactionsLabels(d.endBlock, d.startBlock, transactionAbis)
+		transactions, blocksCache, err = d.Client.GetTransactionsLabels(d.endBlock, d.startBlock, transactionAbis, d.threads)
 
 		if err != nil {
 			log.Println("Error getting transactions for customer", update.CustomerID, ":", err)

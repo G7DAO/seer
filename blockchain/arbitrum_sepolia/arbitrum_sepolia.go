@@ -940,13 +940,13 @@ func (c *Client) GetTransactionByHash(ctx context.Context, hash string) (*seer_c
 	return tx, err
 }
 
-func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMap map[string]map[string]*indexer.AbiEntry) ([]indexer.TransactionLabel, map[uint64]seer_common.BlockWithTransactions, error) {
+func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMap map[string]map[string]*indexer.AbiEntry, threads int) ([]indexer.TransactionLabel, map[uint64]seer_common.BlockWithTransactions, error) {
 	var transactionsLabels []indexer.TransactionLabel
 
 	var blocksCache map[uint64]seer_common.BlockWithTransactions
 
 	// Get blocks in range
-	blocks, err := c.FetchBlocksInRangeAsync(big.NewInt(int64(startBlock)), big.NewInt(int64(endBlock)), false, 1)
+	blocks, err := c.FetchBlocksInRangeAsync(big.NewInt(int64(startBlock)), big.NewInt(int64(endBlock)), false, threads)
 
 	if err != nil {
 		return nil, nil, err
@@ -965,6 +965,10 @@ func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMa
 
 		if err != nil {
 			log.Fatalf("Failed to convert BlockTimestamp to uint64: %v", err)
+		}
+
+		if blocksCache == nil {
+			blocksCache = make(map[uint64]seer_common.BlockWithTransactions)
 		}
 
 		blocksCache[blockNumber] = seer_common.BlockWithTransactions{
@@ -990,12 +994,21 @@ func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMa
 
 			if abiMap[tx.ToAddress] != nil && abiMap[tx.ToAddress][selector] != nil {
 
-				if abiMap[tx.ToAddress][selector].Abi == nil {
-					abiMap[tx.ToAddress][selector].Abi, err = seer_common.GetABI(abiMap[tx.ToAddress][selector].AbiJSON)
+				abiEntryTx := abiMap[tx.ToAddress][selector]
+
+				var err error
+				abiEntryTx.Once.Do(func() {
+					abiEntryTx.Abi, err = seer_common.GetABI(abiEntryTx.AbiJSON)
 					if err != nil {
 						fmt.Println("Error getting ABI: ", err)
-						return nil, nil, err
+						return
 					}
+				})
+
+				// Check if an error occurred during ABI parsing
+				if abiEntryTx.Abi == nil {
+					fmt.Println("Error getting ABI: ", err)
+					return nil, nil, err
 				}
 
 				inputData, err := hex.DecodeString(tx.Input[2:])
@@ -1004,12 +1017,12 @@ func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMa
 					return nil, nil, err
 				}
 
-				decodedArgsTx, decodeErr := seer_common.DecodeTransactionInputDataToInterface(abiMap[tx.ToAddress][selector].Abi, inputData)
+				decodedArgsTx, decodeErr := seer_common.DecodeTransactionInputDataToInterface(abiEntryTx.Abi, inputData)
 				if decodeErr != nil {
 					fmt.Println("Error decoding transaction not decoded data: ", tx.Hash, decodeErr)
 					decodedArgsTx = map[string]interface{}{
 						"input_raw": tx,
-						"abi":       abiMap[tx.ToAddress][selector].AbiJSON,
+						"abi":       abiEntryTx.AbiJSON,
 						"selector":  selector,
 						"error":     decodeErr,
 					}
@@ -1042,7 +1055,7 @@ func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMa
 					BlockNumber:     blockNumber,
 					BlockHash:       tx.BlockHash,
 					CallerAddress:   tx.FromAddress,
-					LabelName:       abiMap[tx.ToAddress][selector].AbiName,
+					LabelName:       abiEntryTx.AbiName,
 					LabelType:       "tx_call",
 					OriginAddress:   tx.FromAddress,
 					Label:           label,
@@ -1112,21 +1125,26 @@ func (c *Client) GetEventsLabels(startBlock uint64, endBlock uint64, abiMap map[
 			continue
 		}
 
-		// Get the ABI string
-		if abiMap[log.Address][topicSelector].Abi == nil {
-			abiMap[log.Address][topicSelector].Abi, err = seer_common.GetABI(abiMap[log.Address][topicSelector].AbiJSON)
-			if err != nil {
-				fmt.Println("Error getting ABI: ", err)
-				return nil, err
-			}
+		abiEntryLog := abiMap[log.Address][topicSelector]
+
+		var initErr error
+		abiEntryLog.Once.Do(func() {
+			abiEntryLog.Abi, initErr = seer_common.GetABI(abiEntryLog.AbiJSON)
+		})
+
+		// Check if an error occurred during ABI parsing
+		if initErr != nil || abiEntryLog.Abi == nil {
+			fmt.Println("Error getting ABI: ", initErr)
+			return nil, initErr
 		}
+
 		// Decode the event data
-		decodedArgsLogs, decodeErr := seer_common.DecodeLogArgsToLabelData(abiMap[log.Address][topicSelector].Abi, log.Topics, log.Data)
+		decodedArgsLogs, decodeErr := seer_common.DecodeLogArgsToLabelData(abiEntryLog.Abi, log.Topics, log.Data)
 		if decodeErr != nil {
 			fmt.Println("Error decoding event not decoded data: ", log.TransactionHash, decodeErr)
 			decodedArgsLogs = map[string]interface{}{
 				"input_raw": log,
-				"abi":       abiMap[log.Address][topicSelector].AbiJSON,
+				"abi":       abiEntryLog.AbiJSON,
 				"selector":  topicSelector,
 				"error":     decodeErr,
 			}
@@ -1181,7 +1199,7 @@ func (c *Client) GetEventsLabels(startBlock uint64, endBlock uint64, abiMap map[
 		// Convert event to label
 		eventLabel := indexer.EventLabel{
 			Label:           label,
-			LabelName:       abiMap[log.Address][topicSelector].AbiName,
+			LabelName:       abiEntryLog.AbiName,
 			LabelType:       "event",
 			BlockNumber:     blockNumber,
 			BlockHash:       log.BlockHash,

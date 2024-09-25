@@ -100,7 +100,7 @@ type BlockchainClient interface {
 	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]*indexer.AbiEntry) ([]indexer.TransactionLabel, error)
 	ChainType() string
 	GetCode(context.Context, common.Address, uint64) ([]byte, error)
-	GetTransactionsLabels(uint64, uint64, map[string]map[string]*indexer.AbiEntry) ([]indexer.TransactionLabel, map[uint64]seer_common.BlockWithTransactions, error)
+	GetTransactionsLabels(uint64, uint64, map[string]map[string]*indexer.AbiEntry, int) ([]indexer.TransactionLabel, map[uint64]seer_common.BlockWithTransactions, error)
 	GetEventsLabels(uint64, uint64, map[string]map[string]*indexer.AbiEntry, map[uint64]seer_common.BlockWithTransactions) ([]indexer.EventLabel, error)
 }
 
