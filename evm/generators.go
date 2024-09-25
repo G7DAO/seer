@@ -1119,17 +1119,17 @@ func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress com
 		return fmt.Errorf("failed to generate salt: %v", err)
 	}
 
-	abi, err := ImmutableCreate2Factory.ImmutableCreate2FactoryMetaData.GetAbi()
+	abi, err := CreateCall.CreateCallMetaData.GetAbi()
 	if err != nil {
 		return fmt.Errorf("failed to get ABI: %v", err)
 	}
 
-	safeCreate2TxData, err := abi.Pack("safeCreate2", salt, deployBytecode)
+	safeCreate2TxData, err := abi.Pack("performCreate2", value, deployBytecode, salt)
 	if err != nil {
-		return fmt.Errorf("failed to pack safeCreate2 transaction: %v", err)
+		return fmt.Errorf("failed to pack performCreate2 transaction: %v", err)
 	}
 
-	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreate2TxData, value, txServiceBaseUrl, OperationType(safeOperation))
+	return CreateSafeProposal(client, key, safeAddress, safeAddress, safeCreate2TxData, value, txServiceBaseUrl, OperationType(safeOperation))
 }
 
 func GenerateProperSalt(from common.Address) ([32]byte, error) {
