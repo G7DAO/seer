@@ -780,6 +780,8 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 			// - github.com/ethereum/go-ethereum/accounts/keystore
 			// - github.com/ethereum/go-ethereum/ethclient
 			// - golang.org/x/term
+			// - github.com/moonstream-to/seer/bindings/GnosisSafe
+			// - github.com/moonstream-to/seer/bindings/CreateCall
 			if t.Tok == token.IMPORT {
 				t.Specs = append(
 					t.Specs,
@@ -793,6 +795,8 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/ethereum/go-ethereum/accounts/keystore"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/ethereum/go-ethereum/ethclient"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"golang.org/x/term"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/moonstream-to/seer/bindings/GnosisSafe"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/moonstream-to/seer/bindings/CreateCall"`}},
 				)
 			}
 			return true
