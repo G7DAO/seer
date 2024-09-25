@@ -1111,7 +1111,7 @@ const (
 )
 
 
-func DeployWithSafe(rpcURL string, keyfile string, password string, safeAddress common.Address, factoryAddress common.Address, value *big.Int, txServiceBaseUrl string, deployBytecode []byte) error {
+func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, txServiceBaseUrl string, deployBytecode []byte, safeOperation OperationType) error {
 	// Generate salt
 	salt, err := GenerateProperSalt(safeAddress)
 	if err != nil {
@@ -1128,7 +1128,7 @@ func DeployWithSafe(rpcURL string, keyfile string, password string, safeAddress 
 		return fmt.Errorf("failed to pack safeCreate2 transaction: %v", err)
 	}
 
-	return CreateSafeProposal(rpcURL, keyfile, password, safeAddress, factoryAddress, safeCreate2TxData, value, txServiceBaseUrl)
+	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreate2TxData, value, txServiceBaseUrl, OperationType(safeOperation))
 }
 
 func GenerateProperSalt(from common.Address) ([32]byte, error) {
@@ -1146,17 +1146,7 @@ func GenerateProperSalt(from common.Address) ([32]byte, error) {
 	return salt, nil
 }
 
-func CreateSafeProposal(rpcURL string, keyfile string, password string, safeAddress common.Address, to common.Address, data []byte, value *big.Int, txServiceBaseUrl string) error {
-	key, err := KeyFromFile(keyfile, password)
-	if err != nil {
-		return fmt.Errorf("failed to load key from file: %v", err)
-	}
-
-	client, err := ethclient.Dial(rpcURL)
-	if err != nil {
-		return fmt.Errorf("failed to connect to the Ethereum client: %v", err)
-	}
-
+func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, to common.Address, data []byte, value *big.Int, txServiceBaseUrl string, safeOperation OperationType) error {
 	chainID, err := client.ChainID(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to get chain ID: %v", err)
@@ -1178,7 +1168,7 @@ func CreateSafeProposal(rpcURL string, keyfile string, password string, safeAddr
 		To:             to.Hex(),
 		Value:          value.String(),
 		Data:           common.Bytes2Hex(data),
-		Operation:      Call,
+		Operation:      safeOperation,
 		SafeTxGas:      0,
 		BaseGas:        0,
 		GasPrice:       "0",
@@ -1311,9 +1301,8 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var gasLimit uint64
 	var simulate bool
 	var timeout uint
-	var useSafe bool
-	var safeAddress, txServiceBaseUrl, factoryAddress string
-
+	var safeAddress, safeApi, safeCreate2 string
+	var safeOperation uint8
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
 	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
@@ -1327,22 +1316,39 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				return fmt.Errorf("--keystore not specified (this should be a path to an Ethereum account keystore file)")
 			}
 
-			if useSafe {
-				if safeAddress == "" {
-					return fmt.Errorf("--safe-address not specified")
-				}
+			if rpc == "" {
+				return fmt.Errorf("--rpc not specified (this should be a URL to an Ethereum JSONRPC API)")
+			}
+
+			if safeAddress != "" {
 				if !common.IsHexAddress(safeAddress) {
-					return fmt.Errorf("--safe-address is not a valid Ethereum address")
+					return fmt.Errorf("--safe is not a valid Ethereum address")
 				}
-				if txServiceBaseUrl == "" {
-					return fmt.Errorf("--tx-service-base-url not specified")
+				if safeApi == "" {
+					client, clientErr := NewClient(rpc)
+					if clientErr != nil {
+						return clientErr
+					}
+					chainIDCtx, cancelChainIDCtx := NewChainContext(timeout)
+					defer cancelChainIDCtx()
+					chainID, chainIDErr := client.ChainID(chainIDCtx)
+					if chainIDErr != nil {
+						return chainIDErr
+					}
+					safeApi = "https://safe-client.safe.global/v1/chains/" + chainID.String() + "/transactions/" + safeAddress + "/propose"
+					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
 				}
 
-				if factoryAddress == "" {
-					return fmt.Errorf("--factory-address not specified")
+				if safeCreate2 == "" {
+					fmt.Println("--safe-create2 not specified, using default (0x0000000000FFe8B47B3e2130213B802212439497)")
+					safeCreate2 = "0x0000000000FFe8B47B3e2130213B802212439497"
 				}
-				if !common.IsHexAddress(factoryAddress) {
-					return fmt.Errorf("--factory-address is not a valid Ethereum address")
+				if !common.IsHexAddress(safeCreate2) {
+					return fmt.Errorf("--safe-create2 is not a valid Ethereum address")
+				}
+
+				if OperationType(safeOperation).String() == "Unknown" {
+					return fmt.Errorf("--safe-operation must be 0 (Call) or 1 (DelegateCall)")
 				}
 			}
 
@@ -1377,7 +1383,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 
 			SetTransactionParametersFromArgs(transactionOpts, nonce, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, gasLimit, simulate)
 
-			if useSafe {
+			if safeAddress != "" {
 				// Generate deploy bytecode with constructor arguments
 				deployBytecode, err := generate{{.StructName}}DeployBytecode(
 					{{- range .DeployHandler.MethodArgs}}
@@ -1393,7 +1399,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = DeployWithSafe(rpc, keyfile, password, common.HexToAddress(safeAddress), common.HexToAddress(factoryAddress), value, txServiceBaseUrl, deployBytecode)
+				err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreate2), value, safeApi, deployBytecode, OperationType(safeOperation))
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
@@ -1455,11 +1461,11 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().Uint64Var(&gasLimit, "gas-limit", 0, "Gas limit for the transaction")
 	cmd.Flags().BoolVar(&simulate, "simulate", false, "Simulate the transaction without sending it")
 	cmd.Flags().UintVar(&timeout, "timeout", 60, "Timeout (in seconds) for interactions with the JSONRPC API")
-	cmd.Flags().BoolVar(&useSafe, "safe", false, "Create a Safe proposal instead of directly executing the transaction")
-	cmd.Flags().StringVar(&safeAddress, "safe-address", "", "Address of the Safe contract (required if --safe is set)")
-	cmd.Flags().StringVar(&txServiceBaseUrl, "tx-service-base-url", "", "Base URL for the Safe Transaction Service (required if --safe is set)")
-	cmd.Flags().StringVar(&factoryAddress, "factory-address", "", "Address of the ImmutableCreate2Factory contract (required if --safe is set)")
-
+	cmd.Flags().StringVar(&safeAddress, "safe", "", "Address of the Safe contract")
+	cmd.Flags().StringVar(&safeApi, "safe-api", "", "Safe API for the Safe Transaction Service (optional)")
+	cmd.Flags().StringVar(&safeCreate2, "safe-create2", "", "Address of the ImmutableCreate2Factory contract (optional)")
+	cmd.Flags().Uint8Var(&safeOperation, "safe-operation", 0, "Safe operation type: 0 (Call) or 1 (DelegateCall)")
+	
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
 	{{- end}}
@@ -1593,8 +1599,8 @@ func {{.HandlerName}}() *cobra.Command {
     var simulate bool
     var timeout uint
     var contractAddress common.Address
-    var useSafe bool
-    var safeAddress, txServiceBaseUrl string
+    var safeAddress, safeApi string
+	var safeOperation uint8
 
     {{range .MethodArgs}}
     var {{.CLIVar}} {{.CLIType}}
@@ -1616,16 +1622,32 @@ func {{.HandlerName}}() *cobra.Command {
                 return fmt.Errorf("--keystore not specified (this should be a path to an Ethereum account keystore file)")
             }
 
-            if useSafe {
-                if safeAddress == "" {
-                    return fmt.Errorf("--safe-address not specified")
-                }
+			if rpc == "" {
+				return fmt.Errorf("--rpc not specified (this should be a URL to an Ethereum JSONRPC API)")
+			}
+
+            if safeAddress != "" {
                 if !common.IsHexAddress(safeAddress) {
-                    return fmt.Errorf("--safe-address is not a valid Ethereum address")
+                    return fmt.Errorf("--safe is not a valid Ethereum address")
                 }
-                if txServiceBaseUrl == "" {
-                    return fmt.Errorf("--tx-service-base-url not specified")
-                }
+                if safeApi == "" {
+					client, clientErr := NewClient(rpc)
+					if clientErr != nil {
+						return clientErr
+					}
+					chainIDCtx, cancelChainIDCtx := NewChainContext(timeout)
+					defer cancelChainIDCtx()
+					chainID, chainIDErr := client.ChainID(chainIDCtx)
+					if chainIDErr != nil {
+						return chainIDErr
+					}
+					safeApi = "https://safe-client.safe.global/v1/chains/" + chainID.String() + "/transactions/" + safeAddress + "/propose"
+					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
+				}
+
+				if OperationType(safeOperation).String() == "Unknown" {
+					return fmt.Errorf("--safe-operation must be 0 (Call) or 1 (DelegateCall)")
+				}
             }
 
             {{range .MethodArgs}}
@@ -1669,15 +1691,26 @@ func {{.HandlerName}}() *cobra.Command {
                 TransactOpts: *transactionOpts,
             }
 
-            if useSafe {
+            if safeAddress != "" {
                 // Generate transaction data
-                transactionData, err := session.{{.MethodName}}(
+				abi, err := {{$structName}}MetaData.GetAbi()
+                if err != nil {
+                    return fmt.Errorf("failed to get ABI: %v", err)
+                }
+
+				// Find the method in the ABI
+                method, exists := abi.Methods["{{.MethodName}}"]
+                if !exists {
+                    return fmt.Errorf("method {{.MethodName}} not found in ABI")
+                }
+
+                packedData, err := abi.Pack(method.Name,
                     {{range .MethodArgs}}
                     {{.CLIVar}},
                     {{- end}}
                 )
                 if err != nil {
-                    return fmt.Errorf("failed to generate transaction data: %v", err)
+                    return fmt.Errorf("failed to pack transaction data: %v", err)
                 }
 
                 // Create Safe proposal for transaction
@@ -1685,7 +1718,7 @@ func {{.HandlerName}}() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-                err = CreateSafeProposal(rpc, keyfile, password, common.HexToAddress(safeAddress), contractAddress, transactionData.Data(), value, txServiceBaseUrl)
+                err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, packedData, value, safeApi, OperationType(safeOperation))
                 if err != nil {
                     return fmt.Errorf("failed to create Safe proposal: %v", err)
                 }
@@ -1746,9 +1779,9 @@ func {{.HandlerName}}() *cobra.Command {
     cmd.Flags().BoolVar(&simulate, "simulate", false, "Simulate the transaction without sending it")
     cmd.Flags().UintVar(&timeout, "timeout", 60, "Timeout (in seconds) for interactions with the JSONRPC API")
 	cmd.Flags().StringVar(&contractAddressRaw, "contract", "", "Address of the contract to interact with")
-	cmd.Flags().BoolVar(&useSafe, "safe", false, "Create a Safe proposal instead of directly executing the transaction")
-    cmd.Flags().StringVar(&safeAddress, "safe-address", "", "Address of the Safe contract (required if --safe is set)")
-    cmd.Flags().StringVar(&txServiceBaseUrl, "tx-service-base-url", "", "Base URL for the Safe Transaction Service (required if --safe is set)")
+    cmd.Flags().StringVar(&safeAddress, "safe", "", "Address of the Safe contract")
+    cmd.Flags().StringVar(&safeApi, "safe-api", "", "Safe API for the Safe Transaction Service (optional)")
+	cmd.Flags().Uint8Var(&safeOperation, "safe-operation", 0, "Safe operation type: 0 (Call) or 1 (DelegateCall)")
 
     {{range .MethodArgs}}
     cmd.Flags().{{.Flag}}
