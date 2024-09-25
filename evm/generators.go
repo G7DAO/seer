@@ -822,6 +822,7 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 	templateFuncs := map[string]any{
 		"KebabCase":      strcase.ToKebab,
 		"ScreamingSnake": strcase.ToScreamingSnake,
+		"ToLowerCamel":   strcase.ToLowerCamel,
 	}
 
 	cliTemplate, cliTemplateParseErr := template.New("cli").Funcs(templateFuncs).Parse(CLICodeTemplate)
@@ -1697,14 +1698,8 @@ func {{.HandlerName}}() *cobra.Command {
                 if err != nil {
                     return fmt.Errorf("failed to get ABI: %v", err)
                 }
-
-				// Find the method in the ABI
-                method, exists := abi.Methods["{{.MethodName}}"]
-                if !exists {
-                    return fmt.Errorf("method {{.MethodName}} not found in ABI")
-                }
-
-                packedData, err := abi.Pack(method.Name,
+				// TODO: this is a workaround to match the original method name in the ABI, need to fix to work with every method name
+                packedData, err := abi.Pack("{{ToLowerCamel .MethodName}}",
                     {{range .MethodArgs}}
                     {{.CLIVar}},
                     {{- end}}
