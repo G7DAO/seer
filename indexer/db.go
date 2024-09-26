@@ -1113,10 +1113,10 @@ func (p *PostgreSQLpgx) UpdateAbiJobsStatus(blockchain string) error {
 
 	query := `
 		UPDATE abi_jobs 
-		SET historical_crawl_status = 'pickedup' 
+		SET historical_crawl_status = 'in_progress', moonworm_task_pickedup = true
 		WHERE chain = @chain
 		  AND historical_crawl_status = 'pending' 
-		  AND status = true 
+		  AND status = 'active' 
 		  AND deployment_block_number IS NOT NULL
 	`
 
@@ -1132,7 +1132,7 @@ func (p *PostgreSQLpgx) UpdateAbiJobsStatus(blockchain string) error {
 	return nil
 }
 
-func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, customersIds []string) ([]CustomerUpdates, map[string]AbiJobsDeployInfo, error) {
+func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, customersIds []string, onlyNotDobe bool) ([]CustomerUpdates, map[string]AbiJobsDeployInfo, error) {
 	pool := p.GetPool()
 
 	conn, err := pool.Acquire(context.Background())
@@ -1154,6 +1154,10 @@ func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, cus
 		FROM abi_jobs
 		WHERE chain = @chain AND ((abi::jsonb)->>'type' = 'function' or (abi::jsonb)->>'type' = 'event') and deployment_block_number is not null
 	`)
+
+	if onlyNotDobe {
+		queryBuilder.WriteString(" AND historical_crawl_status != 'done' ")
+	}
 
 	if len(addresses) > 0 {
 		queryBuilder.WriteString(" AND address = ANY(@addresses) ")
@@ -1257,7 +1261,7 @@ func (p *PostgreSQLpgx) UpdateAbisAsDone(ids []string) error {
 
 	query := `
 		UPDATE abi_jobs 
-		SET historical_crawl_status = 'done' 
+		SET historical_crawl_status = 'done', progress = 100
 		WHERE id = ANY($1)
 	`
 
@@ -1324,7 +1328,22 @@ func (p *PostgreSQLpgx) GetAbiJobsWithoutDeployBlocks(blockchain string) (map[st
 
 	/// get all addresses that not have deploy block number
 
-	rows, err := conn.Query(context.Background(), "SELECT id, chain, address FROM abi_jobs WHERE deployment_block_number is null and chain=$1 and (abi::jsonb)->>'type' in ('function', 'event') and (abi::jsonb)->>'stateMutability'!='view'", blockchain)
+	rows, err := conn.Query(context.Background(), `SELECT
+		id,
+		chain,
+		address
+	FROM
+		abi_jobs
+	WHERE
+		deployment_block_number is null
+		and chain = $1
+		and (
+			(abi :: jsonb) ->> 'type' = 'event'
+			or (
+				(abi :: jsonb) ->> 'type' = 'function'
+				and (abi :: jsonb) ->> 'stateMutability' != 'view'
+			)
+		)`, blockchain)
 	if err != nil {
 		log.Println("Error querying abi jobs from database", err)
 		return nil, err
@@ -1373,6 +1392,36 @@ func (p *PostgreSQLpgx) GetAbiJobsWithoutDeployBlocks(blockchain string) (map[st
 	}
 
 	return chainsAddresses, nil
+}
+
+func (p *PostgreSQLpgx) UpdateAbisProgress(ids []string, process int) error {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
+	if err != nil {
+		return err
+	}
+
+	defer conn.Release()
+
+	// Transform the ids to a slice of UUIDs
+	idsUUID := make([]uuid.UUID, len(ids))
+	for i, id := range ids {
+		idsUUID[i], err = uuid.Parse(id)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = conn.Exec(context.Background(), "UPDATE abi_jobs SET progress=$1 WHERE id=ANY($2)", process, idsUUID)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
 func (p *PostgreSQLpgx) UpdateAbiJobsDeployBlock(blockNumber uint64, ids []string) error {

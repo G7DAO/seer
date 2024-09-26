@@ -1,0 +1,16 @@
+[Unit]
+Description=Seer historical synchronizer service for Ethereum blockchain
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+WorkingDirectory=/home/ubuntu/seer
+EnvironmentFile=/home/ubuntu/seer-secrets/app.env
+Restart=on-failure
+RestartSec=15s
+ExecStart=/home/ubuntu/seer/seer historical-sync --auto --chain ethereum
+SyslogIdentifier=seer-historical-synchronizer-ethereum
+
+[Install]
+WantedBy=multi-user.target

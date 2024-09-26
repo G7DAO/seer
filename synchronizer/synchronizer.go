@@ -408,6 +408,8 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []string, customerIds []string, batchSize uint64, auto bool) error {
 	var useRPC bool
 	var isCycleFinished bool
+	var updateDeadline time.Time
+	var initialStartBlock uint64
 
 	// Initialize start block if 0
 	if d.startBlock == 0 {
@@ -428,7 +430,7 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 	}
 
 	// Retrieve customer updates and deployment blocks
-	customerUpdates, addressesAbisInfo, err := indexer.DBConnection.SelectAbiJobs(d.blockchain, addresses, customerIds)
+	customerUpdates, addressesAbisInfo, err := indexer.DBConnection.SelectAbiJobs(d.blockchain, addresses, customerIds, auto)
 	if err != nil {
 		return fmt.Errorf("error selecting ABI jobs: %w", err)
 	}
@@ -437,9 +439,9 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 	// Filter out blocks more
 	for address, abisInfo := range addressesAbisInfo {
-		fmt.Printf("Address %s, block %d\n", address, abisInfo.DeployedBlockNumber)
+		log.Printf("Address %s has deployed block %d\n", address, abisInfo.DeployedBlockNumber)
 		if abisInfo.DeployedBlockNumber > d.startBlock {
-			fmt.Printf("Deleting address %s\n", address, abisInfo.DeployedBlockNumber)
+			log.Printf("Finished crawling for address %s at block %d\n", address, abisInfo.DeployedBlockNumber)
 			delete(addressesAbisInfo, address)
 		}
 	}
@@ -459,6 +461,8 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		return fmt.Errorf("error getting customers: %w", err)
 	}
 
+	updateDeadline = time.Now()
+
 	// Main processing loop
 	for {
 		for address, abisInfo := range addressesAbisInfo {
@@ -475,6 +479,28 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 				// drop the address
 				delete(addressesAbisInfo, address)
 			}
+
+			if auto {
+				// Check if the deadline for the update has passed
+				if updateDeadline.Add(1 * time.Minute).Before(time.Now()) {
+					fmt.Println("Update proggres for the addresses")
+					for _, abisInfo := range addressesAbisInfo {
+						ids := abisInfo.IDs
+
+						// calculate progress as a percentage between 0 and 100
+
+						progress := 100 - int(100*(d.startBlock-abisInfo.DeployedBlockNumber)/(d.startBlock-initialStartBlock))
+
+						err := indexer.DBConnection.UpdateAbisProgress(ids, progress)
+						if err != nil {
+							continue
+						}
+
+					}
+					updateDeadline = time.Now()
+				}
+			}
+
 		}
 
 		if len(addressesAbisInfo) == 0 {
