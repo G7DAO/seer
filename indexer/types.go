@@ -65,7 +65,7 @@ type AbiJob struct {
 	Status                string
 	HistoricalCrawlStatus string
 	Progress              int
-	TaskPickedup          bool
+	MoonwormTaskPickedup  bool
 	Abi                   string
 	AbiType               string
 	CreatedAt             time.Time

@@ -464,6 +464,8 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		for address, abisInfo := range addressesAbisInfo {
 			if abisInfo.DeployedBlockNumber > d.startBlock {
 
+				log.Printf("Finished crawling for address %s at block %d\n", address, abisInfo.DeployedBlockNumber)
+
 				// update the status of the address for the customer to done
 				err := indexer.DBConnection.UpdateAbisAsDone(abisInfo.IDs)
 				if err != nil {
@@ -509,27 +511,7 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 		// Read raw data from storage or via RPC
 		var rawData bytes.Buffer
-		if useRPC {
-			// protoMessage, _, _, err := seer_blockchain.CrawlEntireBlocks(d.Client, big.NewInt(int64(d.endBlock)), big.NewInt(int64(d.startBlock)), false, 5)
-			// if err != nil {
-			// 	return fmt.Errorf("error reading events via RPC: %w", err)
-			// }
-
-			// blocksBatch, err := d.Client.ProcessBlocksToBatch(protoMessage)
-			// if err != nil {
-			// 	return fmt.Errorf("error processing blocks to batch: %w", err)
-			// }
-
-			// dataBytes, err := proto.Marshal(blocksBatch)
-			// if err != nil {
-			// 	return fmt.Errorf("error marshaling protoMessage: %w", err)
-			// }
-
-			// rawData = *bytes.NewBuffer(dataBytes)
-
-			// Read transactions and events from the blockchain
-
-		} else {
+		if !useRPC {
 			rawData, err = d.StorageInstance.Read(path)
 			if err != nil {
 				return fmt.Errorf("error reading events from storage: %w", err)
@@ -678,7 +660,6 @@ func (d *Synchronizer) processRPCCustomerUpdate(
 	var blocksCache map[uint64]common.BlockWithTransactions
 
 	if len(transactionAbis) != 0 {
-		fmt.Printf("Getting transactions for customer %s\n", update.CustomerID)
 		transactions, blocksCache, err = d.Client.GetTransactionsLabels(d.endBlock, d.startBlock, transactionAbis, d.threads)
 
 		if err != nil {
@@ -690,8 +671,6 @@ func (d *Synchronizer) processRPCCustomerUpdate(
 	} else {
 		transactions = make([]indexer.TransactionLabel, 0)
 	}
-
-	fmt.Printf("Transactions length: %d\n", len(transactions))
 
 	// Events
 
@@ -713,8 +692,6 @@ func (d *Synchronizer) processRPCCustomerUpdate(
 	} else {
 		events = make([]indexer.EventLabel, 0)
 	}
-
-	fmt.Printf("Events length: %d\n", len(events))
 
 	err = customer.Pgx.WriteLabes(d.blockchain, transactions, events)
 

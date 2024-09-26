@@ -480,7 +480,7 @@ func (p *PostgreSQLpgx) ReadABIJobs(blockchain string) ([]AbiJob, error) {
 
 	defer conn.Release()
 
-	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, task_pickedup, abi, (abi::jsonb)->>'type' as abiType, created_at, updated_at, deployment_block_number FROM abi_jobs where chain=$1 and (abi::jsonb)->>'type' is not null", blockchain)
+	rows, err := conn.Query(context.Background(), "SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, '[' || abi || ']' as abi, (abi::jsonb)->>'type' as abiType, created_at, updated_at, deployment_block_number FROM abi_jobs where chain=$1 and (abi::jsonb)->>'type' is not null", blockchain)
 
 	if err != nil {
 		return nil, err
@@ -1149,10 +1149,10 @@ func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, cus
 
 	queryBuilder.WriteString(`
 		SELECT id, address, user_id, customer_id, abi_selector, chain, abi_name, status, 
-		       historical_crawl_status, progress, moonworm_task_pickedup as task_pickedup, '[' || abi || ']' as abi, 
-		       (abi::jsonb)->>'type' AS abiType, created_at, updated_at, 1 as deployment_block_number
+		       historical_crawl_status, progress, moonworm_task_pickedup, '[' || abi || ']' as abi, 
+		       (abi::jsonb)->>'type' AS abiType, created_at, updated_at, deployment_block_number
 		FROM abi_jobs
-		WHERE chain = @chain AND ((abi::jsonb)->>'type' = 'function' or (abi::jsonb)->>'type' = 'event')
+		WHERE chain = @chain AND ((abi::jsonb)->>'type' = 'function' or (abi::jsonb)->>'type' = 'event') and deployment_block_number is not null
 	`)
 
 	if len(addresses) > 0 {
@@ -1311,7 +1311,7 @@ func (p *PostgreSQLpgx) FindBatchPath(blockchain string, blockNumber uint64) (st
 
 }
 
-func (p *PostgreSQLpgx) GetAbiJobsWithoutDeployBlocks() (map[string]map[string][]string, error) {
+func (p *PostgreSQLpgx) GetAbiJobsWithoutDeployBlocks(blockchain string) (map[string]map[string][]string, error) {
 	pool := p.GetPool()
 
 	conn, err := pool.Acquire(context.Background())
@@ -1324,8 +1324,7 @@ func (p *PostgreSQLpgx) GetAbiJobsWithoutDeployBlocks() (map[string]map[string][
 
 	/// get all addresses that not have deploy block number
 
-	rows, err := conn.Query(context.Background(), "SELECT id, chain, address FROM abi_jobs WHERE deployment_block_number is null")
-
+	rows, err := conn.Query(context.Background(), "SELECT id, chain, address FROM abi_jobs WHERE deployment_block_number is null and chain=$1 and (abi::jsonb)->>'type' in ('function', 'event') and (abi::jsonb)->>'stateMutability'!='view'", blockchain)
 	if err != nil {
 		log.Println("Error querying abi jobs from database", err)
 		return nil, err
@@ -1464,8 +1463,7 @@ func (p *PostgreSQLpgx) CreateJobsFromAbi(chain string, address string, abiFile 
 			log.Println("Error decoding address:", err, address)
 			continue
 		}
-		_, err = conn.Exec(context.Background(), "INSERT INTO abi_jobs (id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), now()) ON CONFLICT DO NOTHING", jobID, addressBytes, userID, customerID, selector, chain, abiJob["name"], "true", "pending", 0, false, abiJobJson)
-		//_, err = conn.Exec(context.Background(), "INSERT INTO abi_jobs (id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, task_pickedup, abi, deployment_block_number, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())", jobID, addressBytes, userID, customerID, selector, chain, abiJob["name"], "true", "pending", 0, false, abiJobJson, deployBlock)
+		_, err = conn.Exec(context.Background(), "INSERT INTO abi_jobs (id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, deployment_block_number, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())", jobID, addressBytes, userID, customerID, selector, chain, abiJob["name"], "true", "pending", 0, false, abiJobJson, deployBlock)
 
 		if err != nil {
 			return err

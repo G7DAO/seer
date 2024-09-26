@@ -792,7 +792,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			deploymentBlocksErr := seer_blockchain.DeployBlocksLookUpAndUpdate()
+			deploymentBlocksErr := seer_blockchain.DeployBlocksLookUpAndUpdate(chain)
 			if deploymentBlocksErr != nil {
 				return deploymentBlocksErr
 			}
@@ -800,6 +800,8 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 			return nil
 		},
 	}
+
+	deploymentBlocksCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
 
 	var jobChain, address, abiFile, customerId, userId string
 	var deployBlock uint64

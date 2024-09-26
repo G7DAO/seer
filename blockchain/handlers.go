@@ -151,11 +151,11 @@ func DecodeTransactionInputData(contractABI *abi.ABI, data []byte) {
 	fmt.Printf("Method inputs: %v\n", inputsMap)
 }
 
-func DeployBlocksLookUpAndUpdate() error {
+func DeployBlocksLookUpAndUpdate(blockchain string) error {
 
 	// get all abi jobs without deployed block
 
-	chainsAddresses, err := indexer.DBConnection.GetAbiJobsWithoutDeployBlocks()
+	chainsAddresses, err := indexer.DBConnection.GetAbiJobsWithoutDeployBlocks(blockchain)
 
 	if err != nil {
 		log.Printf("Failed to get abi jobs without deployed blocks: %v", err)
