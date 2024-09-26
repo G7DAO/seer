@@ -1468,7 +1468,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().UintVar(&timeout, "timeout", 60, "Timeout (in seconds) for interactions with the JSONRPC API")
 	cmd.Flags().StringVar(&safeAddress, "safe", "", "Address of the Safe contract")
 	cmd.Flags().StringVar(&safeApi, "safe-api", "", "Safe API for the Safe Transaction Service (optional)")
-	cmd.Flags().StringVar(&safeCreateCall, "safe-create-call", "", "Address of the ImmutableCreate2Factory contract (optional)")
+	cmd.Flags().StringVar(&safeCreateCall, "safe-create-call", "", "Address of the CreateCall contract (optional)")
 	cmd.Flags().Uint8Var(&safeOperation, "safe-operation", 1, "Safe operation type: 0 (Call) or 1 (DelegateCall) - default is 1")
 	
 	{{range .DeployHandler.MethodArgs}}
