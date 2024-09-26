@@ -1128,12 +1128,12 @@ func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress com
 		return fmt.Errorf("failed to get ABI: %v", err)
 	}
 
-	safeCreate2TxData, err := abi.Pack("performCreate2", value, deployBytecode, salt)
+	safeCreateCallTxData, err := abi.Pack("performCreate2", value, deployBytecode, salt)
 	if err != nil {
 		return fmt.Errorf("failed to pack performCreate2 transaction: %v", err)
 	}
 
-	return CreateSafeProposal(client, key, safeAddress, safeAddress, safeCreate2TxData, value, txServiceBaseUrl, OperationType(safeOperation))
+	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreateCallTxData, value, txServiceBaseUrl, OperationType(safeOperation))
 }
 
 func GenerateProperSalt(from common.Address) ([32]byte, error) {
@@ -1306,7 +1306,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var gasLimit uint64
 	var simulate bool
 	var timeout uint
-	var safeAddress, safeApi, safeCreate2 string
+	var safeAddress, safeApi, safeCreateCall string
 	var safeOperation uint8
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
@@ -1344,12 +1344,12 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
 				}
 
-				if safeCreate2 == "" {
-					fmt.Println("--safe-create2 not specified, using default (0x0000000000FFe8B47B3e2130213B802212439497)")
-					safeCreate2 = "0x0000000000FFe8B47B3e2130213B802212439497"
+				if safeCreateCall == "" {
+					fmt.Println("--safe-create-call not specified, using default (0x7cbB62EaA69F79e6873cD1ecB2392971036cFAa4)")
+					safeCreateCall = "0x7cbB62EaA69F79e6873cD1ecB2392971036cFAa4"
 				}
-				if !common.IsHexAddress(safeCreate2) {
-					return fmt.Errorf("--safe-create2 is not a valid Ethereum address")
+				if !common.IsHexAddress(safeCreateCall) {
+					return fmt.Errorf("--safe-create-call is not a valid Ethereum address")
 				}
 
 				if OperationType(safeOperation).String() == "Unknown" {
@@ -1404,7 +1404,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreate2), value, safeApi, deployBytecode, OperationType(safeOperation))
+				err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, OperationType(safeOperation))
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
@@ -1468,8 +1468,8 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().UintVar(&timeout, "timeout", 60, "Timeout (in seconds) for interactions with the JSONRPC API")
 	cmd.Flags().StringVar(&safeAddress, "safe", "", "Address of the Safe contract")
 	cmd.Flags().StringVar(&safeApi, "safe-api", "", "Safe API for the Safe Transaction Service (optional)")
-	cmd.Flags().StringVar(&safeCreate2, "safe-create2", "", "Address of the ImmutableCreate2Factory contract (optional)")
-	cmd.Flags().Uint8Var(&safeOperation, "safe-operation", 0, "Safe operation type: 0 (Call) or 1 (DelegateCall)")
+	cmd.Flags().StringVar(&safeCreateCall, "safe-create-call", "", "Address of the ImmutableCreate2Factory contract (optional)")
+	cmd.Flags().Uint8Var(&safeOperation, "safe-operation", 1, "Safe operation type: 0 (Call) or 1 (DelegateCall) - default is 1")
 	
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
