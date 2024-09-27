@@ -1409,7 +1409,6 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
 
-				cmd.Println("Safe proposal for deployment created successfully")
 				return nil
 			}
 
@@ -1722,7 +1721,6 @@ func {{.HandlerName}}() *cobra.Command {
                     return fmt.Errorf("failed to create Safe proposal: %v", err)
                 }
 
-                cmd.Println("Safe proposal for transaction created successfully")
                 return nil
             }
 
