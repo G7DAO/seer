@@ -405,7 +405,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	return isEnd, nil
 }
 
-func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []string, customerIds []string, batchSize uint64, auto bool) error {
+func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []string, customerIds []string, batchSize uint64, autoJobs bool) error {
 	var useRPC bool
 	var isCycleFinished bool
 	var updateDeadline time.Time
@@ -423,14 +423,14 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 	}
 
 	// Automatically update ABI jobs as active if auto mode is enabled
-	if auto {
+	if autoJobs {
 		if err := indexer.DBConnection.UpdateAbiJobsStatus(d.blockchain); err != nil {
 			return fmt.Errorf("error updating ABI: %w", err)
 		}
 	}
 
 	// Retrieve customer updates and deployment blocks
-	customerUpdates, addressesAbisInfo, err := indexer.DBConnection.SelectAbiJobs(d.blockchain, addresses, customerIds, auto)
+	customerUpdates, addressesAbisInfo, err := indexer.DBConnection.SelectAbiJobs(d.blockchain, addresses, customerIds, autoJobs)
 	if err != nil {
 		return fmt.Errorf("error selecting ABI jobs: %w", err)
 	}
@@ -438,6 +438,7 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 	fmt.Printf("Found %d customer updates\n", len(customerUpdates))
 
 	// Filter out blocks more
+	// TODO: Maybe autoJobs only
 	for address, abisInfo := range addressesAbisInfo {
 		log.Printf("Address %s has deployed block %d\n", address, abisInfo.DeployedBlockNumber)
 		if abisInfo.DeployedBlockNumber > d.startBlock {
@@ -465,26 +466,27 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 	// Main processing loop
 	for {
-		for address, abisInfo := range addressesAbisInfo {
-			if abisInfo.DeployedBlockNumber > d.startBlock {
 
-				log.Printf("Finished crawling for address %s at block %d\n", address, abisInfo.DeployedBlockNumber)
+		if autoJobs {
 
-				// update the status of the address for the customer to done
-				err := indexer.DBConnection.UpdateAbisAsDone(abisInfo.IDs)
-				if err != nil {
-					return err
+			for address, abisInfo := range addressesAbisInfo {
+				if abisInfo.DeployedBlockNumber > d.startBlock {
+
+					log.Printf("Finished crawling for address %s at block %d\n", address, abisInfo.DeployedBlockNumber)
+
+					// update the status of the address for the customer to done
+					err := indexer.DBConnection.UpdateAbisAsDone(abisInfo.IDs)
+					if err != nil {
+						return err
+					}
+
+					// drop the address
+					delete(addressesAbisInfo, address)
 				}
 
-				// drop the address
-				delete(addressesAbisInfo, address)
-			}
-
-			if auto {
 				// Check if the deadline for the update has passed
 				if updateDeadline.Add(1 * time.Minute).Before(time.Now()) {
-					fmt.Println("Update proggres for the addresses")
-					for _, abisInfo := range addressesAbisInfo {
+					for address, abisInfo := range addressesAbisInfo {
 						ids := abisInfo.IDs
 
 						// calculate progress as a percentage between 0 and 100
@@ -496,8 +498,11 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 							continue
 						}
 
+						log.Printf("Updated progress for address %s to %d%%\n", address, progress)
+
 					}
 					updateDeadline = time.Now()
+
 				}
 			}
 
@@ -518,6 +523,8 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 			}
 
 			if path == "" {
+				log.Printf("No batch path found for block %d\n", d.startBlock)
+				log.Println("Switching to RPC mode")
 				useRPC = true
 			} else {
 				d.endBlock = firstBlockOfChunk
