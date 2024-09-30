@@ -782,6 +782,8 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 			// - golang.org/x/term
 			// - github.com/moonstream-to/seer/bindings/GnosisSafe
 			// - github.com/moonstream-to/seer/bindings/CreateCall
+			// - github.com/ethereum/go-ethereum/common/math
+			// - github.com/ethereum/go-ethereum/crypto
 			if t.Tok == token.IMPORT {
 				t.Specs = append(
 					t.Specs,
@@ -913,8 +915,7 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 
 		code = string(generatedCode)
 	}
-	codeImportsFixed := strings.ReplaceAll(code, "github.com/quan8/go-ethereum", "github.com/ethereum/go-ethereum")
-	return codeImportsFixed, nil
+	return code, nil
 }
 
 // This template is used to generate the skeleton of the CLI, along with all utility methods that can be
@@ -1073,16 +1074,16 @@ func Create{{.StructName}}Command() *cobra.Command {
 	return cmd
 }
 
-// OperationType represents the type of operation for a Safe transaction
-type OperationType uint8
+// SafeOperationType represents the type of operation for a Safe transaction
+type SafeOperationType uint8
 
 const (
-	Call         OperationType = 0
-	DelegateCall OperationType = 1
+	Call         SafeOperationType = 0
+	DelegateCall SafeOperationType = 1
 )
 
-// String returns the string representation of the OperationType
-func (o OperationType) String() string {
+// String returns the string representation of the SafeOperationType
+func (o SafeOperationType) String() string {
 	switch o {
 	case Call:
 		return "Call"
@@ -1098,7 +1099,7 @@ type SafeTransactionData struct {
 	To             string        ` + "`" + `json:"to"` + "`" + `
 	Value          string        ` + "`" + `json:"value"` + "`" + `
 	Data           string        ` + "`" + `json:"data"` + "`" + `
-	Operation      OperationType ` + "`" + `json:"operation"` + "`" + `
+	Operation      SafeOperationType ` + "`" + `json:"operation"` + "`" + `
 	SafeTxGas      uint64        ` + "`" + `json:"safeTxGas"` + "`" + `
 	BaseGas        uint64        ` + "`" + `json:"baseGas"` + "`" + `
 	GasPrice       string        ` + "`" + `json:"gasPrice"` + "`" + `
@@ -1116,7 +1117,7 @@ const (
 )
 
 
-func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, txServiceBaseUrl string, deployBytecode []byte, safeOperation OperationType) error {
+func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, txServiceBaseUrl string, deployBytecode []byte, safeOperationType SafeOperationType) error {
 	// Generate salt
 	salt, err := GenerateProperSalt(safeAddress)
 	if err != nil {
@@ -1133,7 +1134,7 @@ func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress com
 		return fmt.Errorf("failed to pack performCreate2 transaction: %v", err)
 	}
 
-	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreateCallTxData, value, txServiceBaseUrl, OperationType(safeOperation))
+	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreateCallTxData, value, txServiceBaseUrl, SafeOperationType(safeOperationType))
 }
 
 func GenerateProperSalt(from common.Address) ([32]byte, error) {
@@ -1151,7 +1152,7 @@ func GenerateProperSalt(from common.Address) ([32]byte, error) {
 	return salt, nil
 }
 
-func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, to common.Address, data []byte, value *big.Int, txServiceBaseUrl string, safeOperation OperationType) error {
+func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, to common.Address, data []byte, value *big.Int, txServiceBaseUrl string, safeOperationType SafeOperationType) error {
 	chainID, err := client.ChainID(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to get chain ID: %v", err)
@@ -1173,7 +1174,7 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 		To:             to.Hex(),
 		Value:          value.String(),
 		Data:           common.Bytes2Hex(data),
-		Operation:      safeOperation,
+		Operation:      safeOperationType,
 		SafeTxGas:      0,
 		BaseGas:        0,
 		GasPrice:       "0",
@@ -1307,7 +1308,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var simulate bool
 	var timeout uint
 	var safeAddress, safeApi, safeCreateCall string
-	var safeOperation uint8
+	var safeOperationType uint8
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
 	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
@@ -1340,7 +1341,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					if chainIDErr != nil {
 						return chainIDErr
 					}
-					safeApi = "https://safe-client.safe.global/v1/chains/" + chainID.String() + "/transactions/" + safeAddress + "/propose"
+					safeApi = fmt.Sprintf("https://safe-client.safe.global/v1/chains/%s/transactions/%s/propose", chainID.String(), safeAddress)
 					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
 				}
 
@@ -1352,7 +1353,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					return fmt.Errorf("--safe-create-call is not a valid Ethereum address")
 				}
 
-				if OperationType(safeOperation).String() == "Unknown" {
+				if SafeOperationType(safeOperationType).String() == "Unknown" {
 					return fmt.Errorf("--safe-operation must be 0 (Call) or 1 (DelegateCall)")
 				}
 			}
@@ -1404,7 +1405,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, OperationType(safeOperation))
+				err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType))
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
@@ -1468,7 +1469,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().StringVar(&safeAddress, "safe", "", "Address of the Safe contract")
 	cmd.Flags().StringVar(&safeApi, "safe-api", "", "Safe API for the Safe Transaction Service (optional)")
 	cmd.Flags().StringVar(&safeCreateCall, "safe-create-call", "", "Address of the CreateCall contract (optional)")
-	cmd.Flags().Uint8Var(&safeOperation, "safe-operation", 1, "Safe operation type: 0 (Call) or 1 (DelegateCall) - default is 1")
+	cmd.Flags().Uint8Var(&safeOperationType, "safe-operation", 1, "Safe operation type: 0 (Call) or 1 (DelegateCall) - default is 1")
 	
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
@@ -1604,7 +1605,7 @@ func {{.HandlerName}}() *cobra.Command {
     var timeout uint
     var contractAddress common.Address
     var safeAddress, safeApi string
-	var safeOperation uint8
+	var safeOperationType uint8
 
     {{range .MethodArgs}}
     var {{.CLIVar}} {{.CLIType}}
@@ -1649,7 +1650,7 @@ func {{.HandlerName}}() *cobra.Command {
 					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
 				}
 
-				if OperationType(safeOperation).String() == "Unknown" {
+				if SafeOperationType(safeOperationType).String() == "Unknown" {
 					return fmt.Errorf("--safe-operation must be 0 (Call) or 1 (DelegateCall)")
 				}
             }
@@ -1716,7 +1717,7 @@ func {{.HandlerName}}() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-                err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, packedData, value, safeApi, OperationType(safeOperation))
+                err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, packedData, value, safeApi, SafeOperationType(safeOperationType))
                 if err != nil {
                     return fmt.Errorf("failed to create Safe proposal: %v", err)
                 }
@@ -1778,7 +1779,7 @@ func {{.HandlerName}}() *cobra.Command {
 	cmd.Flags().StringVar(&contractAddressRaw, "contract", "", "Address of the contract to interact with")
     cmd.Flags().StringVar(&safeAddress, "safe", "", "Address of the Safe contract")
     cmd.Flags().StringVar(&safeApi, "safe-api", "", "Safe API for the Safe Transaction Service (optional)")
-	cmd.Flags().Uint8Var(&safeOperation, "safe-operation", 0, "Safe operation type: 0 (Call) or 1 (DelegateCall)")
+	cmd.Flags().Uint8Var(&safeOperationType, "safe-operation", 0, "Safe operation type: 0 (Call) or 1 (DelegateCall)")
 
     {{range .MethodArgs}}
     cmd.Flags().{{.Flag}}
