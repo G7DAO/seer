@@ -120,6 +120,12 @@ Commands which submit transactions
   transfer-from        Execute the TransferFrom method on a OwnableERC721 contract
   transfer-ownership   Execute the TransferOwnership method on a OwnableERC721 contract
 
+Commands which propose transactions to Safe
+  safe                 Safe address to propose transactions to
+  safe-api             Override default Safe API URL (default "https://safe-client.safe.global/v1/chains/${CHAIN_ID}/transactions/${SAFE_ADDRESS}/propose")
+  safe-operation       Type of operation to propose: 0 (Call) or 1 (DelegateCall) (default 0 for deployment and 1 for function calls)
+  safe-create-call     Address of the contract to deploy if the operation is a deployment (default "0x7cbB62EaA69F79e6873cD1ecB2392971036cFAa4")
+
 Additional Commands:
   completion           Generate the autocompletion script for the specified shell
   help                 Help about any command
