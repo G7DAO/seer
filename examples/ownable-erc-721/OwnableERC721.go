@@ -8,7 +8,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/rand"
 	"errors"
 	"math/big"
 	"net/http"
@@ -23,8 +22,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
-	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/quan8/go-ethereum/common/math"
+	"github.com/quan8/go-ethereum/crypto"
 
 	// Reference imports to suppress errors if they are not otherwise used.
 	"encoding/hex"
@@ -1309,8 +1308,9 @@ func CreateOwnableERC721DeploymentCommand() *cobra.Command {
 	var gasLimit uint64
 	var simulate bool
 	var timeout uint
-	var safeAddress, safeApi, safeCreateCall string
+	var safeAddress, safeApi, safeCreateCall, safeSaltRaw string
 	var safeOperationType uint8
+	var safeSalt [32]byte
 
 	var name_0 string
 
@@ -1361,6 +1361,11 @@ func CreateOwnableERC721DeploymentCommand() *cobra.Command {
 				if SafeOperationType(safeOperationType).String() == "Unknown" {
 					return fmt.Errorf("--safe-operation must be 0 (Call) or 1 (DelegateCall)")
 				}
+
+				if safeSaltRaw == "" {
+					return fmt.Errorf("--safe-salt not specified")
+				}
+				safeSalt = common.Hex2Bytes(safeSaltRaw)
 			}
 
 			if ownerRaw == "" {
@@ -1413,7 +1418,7 @@ func CreateOwnableERC721DeploymentCommand() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType))
+				err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), safeSalt)
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
@@ -1477,6 +1482,7 @@ func CreateOwnableERC721DeploymentCommand() *cobra.Command {
 	cmd.Flags().StringVar(&safeApi, "safe-api", "", "Safe API for the Safe Transaction Service (optional)")
 	cmd.Flags().StringVar(&safeCreateCall, "safe-create-call", "", "Address of the CreateCall contract (optional)")
 	cmd.Flags().Uint8Var(&safeOperationType, "safe-operation", 1, "Safe operation type: 0 (Call) or 1 (DelegateCall) - default is 1")
+	cmd.Flags().StringVar(&safeSaltRaw, "safe-salt", "", "Salt to use for the Safe transaction")
 
 	cmd.Flags().StringVar(&name_0, "name-0", "", "name-0 argument")
 	cmd.Flags().StringVar(&symbol, "symbol", "", "symbol argument")
@@ -2219,7 +2225,7 @@ func CreateApproveCommand() *cobra.Command {
 					if chainIDErr != nil {
 						return chainIDErr
 					}
-					safeApi = "https://safe-client.safe.global/v1/chains/" + chainID.String() + "/transactions/" + safeAddress + "/propose"
+					safeApi = fmt.Sprintf("https://safe-client.safe.global/v1/chains/%s/transactions/%s/propose", chainID.String(), safeAddress)
 					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
 				}
 
@@ -2416,7 +2422,7 @@ func CreateMintCommand() *cobra.Command {
 					if chainIDErr != nil {
 						return chainIDErr
 					}
-					safeApi = "https://safe-client.safe.global/v1/chains/" + chainID.String() + "/transactions/" + safeAddress + "/propose"
+					safeApi = fmt.Sprintf("https://safe-client.safe.global/v1/chains/%s/transactions/%s/propose", chainID.String(), safeAddress)
 					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
 				}
 
@@ -2608,7 +2614,7 @@ func CreateRenounceOwnershipCommand() *cobra.Command {
 					if chainIDErr != nil {
 						return chainIDErr
 					}
-					safeApi = "https://safe-client.safe.global/v1/chains/" + chainID.String() + "/transactions/" + safeAddress + "/propose"
+					safeApi = fmt.Sprintf("https://safe-client.safe.global/v1/chains/%s/transactions/%s/propose", chainID.String(), safeAddress)
 					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
 				}
 
@@ -2783,7 +2789,7 @@ func CreateSafeTransferFromCommand() *cobra.Command {
 					if chainIDErr != nil {
 						return chainIDErr
 					}
-					safeApi = "https://safe-client.safe.global/v1/chains/" + chainID.String() + "/transactions/" + safeAddress + "/propose"
+					safeApi = fmt.Sprintf("https://safe-client.safe.global/v1/chains/%s/transactions/%s/propose", chainID.String(), safeAddress)
 					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
 				}
 
@@ -2994,7 +3000,7 @@ func CreateSafeTransferFrom0Command() *cobra.Command {
 					if chainIDErr != nil {
 						return chainIDErr
 					}
-					safeApi = "https://safe-client.safe.global/v1/chains/" + chainID.String() + "/transactions/" + safeAddress + "/propose"
+					safeApi = fmt.Sprintf("https://safe-client.safe.global/v1/chains/%s/transactions/%s/propose", chainID.String(), safeAddress)
 					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
 				}
 
@@ -3214,7 +3220,7 @@ func CreateSetApprovalForAllCommand() *cobra.Command {
 					if chainIDErr != nil {
 						return chainIDErr
 					}
-					safeApi = "https://safe-client.safe.global/v1/chains/" + chainID.String() + "/transactions/" + safeAddress + "/propose"
+					safeApi = fmt.Sprintf("https://safe-client.safe.global/v1/chains/%s/transactions/%s/propose", chainID.String(), safeAddress)
 					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
 				}
 
@@ -3417,7 +3423,7 @@ func CreateTransferFromCommand() *cobra.Command {
 					if chainIDErr != nil {
 						return chainIDErr
 					}
-					safeApi = "https://safe-client.safe.global/v1/chains/" + chainID.String() + "/transactions/" + safeAddress + "/propose"
+					safeApi = fmt.Sprintf("https://safe-client.safe.global/v1/chains/%s/transactions/%s/propose", chainID.String(), safeAddress)
 					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
 				}
 
@@ -3622,7 +3628,7 @@ func CreateTransferOwnershipCommand() *cobra.Command {
 					if chainIDErr != nil {
 						return chainIDErr
 					}
-					safeApi = "https://safe-client.safe.global/v1/chains/" + chainID.String() + "/transactions/" + safeAddress + "/propose"
+					safeApi = fmt.Sprintf("https://safe-client.safe.global/v1/chains/%s/transactions/%s/propose", chainID.String(), safeAddress)
 					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
 				}
 
@@ -3995,13 +4001,7 @@ const (
 	NativeTokenAddress = "0x0000000000000000000000000000000000000000"
 )
 
-func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, txServiceBaseUrl string, deployBytecode []byte, safeOperationType SafeOperationType) error {
-	// Generate salt
-	salt, err := GenerateProperSalt(safeAddress)
-	if err != nil {
-		return fmt.Errorf("failed to generate salt: %v", err)
-	}
-
+func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, safeApi string, deployBytecode []byte, safeOperationType SafeOperationType, salt [32]byte) error {
 	abi, err := CreateCall.CreateCallMetaData.GetAbi()
 	if err != nil {
 		return fmt.Errorf("failed to get ABI: %v", err)
@@ -4012,25 +4012,10 @@ func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress com
 		return fmt.Errorf("failed to pack performCreate2 transaction: %v", err)
 	}
 
-	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreateCallTxData, value, txServiceBaseUrl, SafeOperationType(safeOperationType))
+	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreateCallTxData, value, safeApi, SafeOperationType(safeOperationType))
 }
 
-func GenerateProperSalt(from common.Address) ([32]byte, error) {
-	var salt [32]byte
-
-	// Copy the 'from' address to the first 20 bytes of the salt
-	copy(salt[:20], from[:])
-
-	// Generate random bytes for the remaining 12 bytes
-	_, err := rand.Read(salt[20:])
-	if err != nil {
-		return [32]byte{}, fmt.Errorf("failed to generate random bytes: %w", err)
-	}
-
-	return salt, nil
-}
-
-func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, to common.Address, data []byte, value *big.Int, txServiceBaseUrl string, safeOperationType SafeOperationType) error {
+func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, to common.Address, data []byte, value *big.Int, safeApi string, safeOperationType SafeOperationType) error {
 	chainID, err := client.ChainID(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to get chain ID: %v", err)
@@ -4094,7 +4079,7 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 		"safeTxHash":     safeTxHash.Hex(),
 		"sender":         key.Address.Hex(),
 		"signature":      senderSignature,
-		"origin":         fmt.Sprintf("{\"url\":\"%s\",\"name\":\"TokenSender Deployment\"}", txServiceBaseUrl),
+		"origin":         fmt.Sprintf("{\"url\":\"%s\",\"name\":\"TokenSender Deployment\"}", safeApi),
 	}
 
 	// Marshal the request body to JSON
@@ -4104,7 +4089,7 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 	}
 
 	// Send the request to the Safe Transaction Service
-	req, err := http.NewRequest("POST", txServiceBaseUrl, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequest("POST", safeApi, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %v", err)
 	}

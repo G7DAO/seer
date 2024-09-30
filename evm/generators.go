@@ -1117,13 +1117,7 @@ const (
 )
 
 
-func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, txServiceBaseUrl string, deployBytecode []byte, safeOperationType SafeOperationType) error {
-	// Generate salt
-	salt, err := GenerateProperSalt(safeAddress)
-	if err != nil {
-		return fmt.Errorf("failed to generate salt: %v", err)
-	}
-
+func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, safeApi string, deployBytecode []byte, safeOperationType SafeOperationType, salt [32]byte) error {
 	abi, err := CreateCall.CreateCallMetaData.GetAbi()
 	if err != nil {
 		return fmt.Errorf("failed to get ABI: %v", err)
@@ -1134,25 +1128,10 @@ func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress com
 		return fmt.Errorf("failed to pack performCreate2 transaction: %v", err)
 	}
 
-	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreateCallTxData, value, txServiceBaseUrl, SafeOperationType(safeOperationType))
+	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreateCallTxData, value, safeApi, SafeOperationType(safeOperationType))
 }
 
-func GenerateProperSalt(from common.Address) ([32]byte, error) {
-	var salt [32]byte
-
-	// Copy the 'from' address to the first 20 bytes of the salt
-	copy(salt[:20], from[:])
-
-	// Generate random bytes for the remaining 12 bytes
-	_, err := rand.Read(salt[20:])
-	if err != nil {
-		return [32]byte{}, fmt.Errorf("failed to generate random bytes: %w", err)
-	}
-
-	return salt, nil
-}
-
-func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, to common.Address, data []byte, value *big.Int, txServiceBaseUrl string, safeOperationType SafeOperationType) error {
+func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, to common.Address, data []byte, value *big.Int, safeApi string, safeOperationType SafeOperationType) error {
 	chainID, err := client.ChainID(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to get chain ID: %v", err)
@@ -1216,7 +1195,7 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 		"safeTxHash":     safeTxHash.Hex(),
 		"sender":         key.Address.Hex(),
 		"signature":      senderSignature,
-		"origin":         fmt.Sprintf("{\"url\":\"%s\",\"name\":\"TokenSender Deployment\"}", txServiceBaseUrl),
+		"origin":         fmt.Sprintf("{\"url\":\"%s\",\"name\":\"TokenSender Deployment\"}", safeApi),
 	}
 
 	// Marshal the request body to JSON
@@ -1226,7 +1205,7 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 	}
 
 	// Send the request to the Safe Transaction Service
-	req, err := http.NewRequest("POST", txServiceBaseUrl, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequest("POST", safeApi, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %v", err)
 	}
@@ -1307,8 +1286,10 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var gasLimit uint64
 	var simulate bool
 	var timeout uint
-	var safeAddress, safeApi, safeCreateCall string
+	var safeAddress, safeApi, safeCreateCall, safeSaltRaw string
 	var safeOperationType uint8
+	var safeSalt [32]byte
+
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
 	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
@@ -1356,6 +1337,11 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				if SafeOperationType(safeOperationType).String() == "Unknown" {
 					return fmt.Errorf("--safe-operation must be 0 (Call) or 1 (DelegateCall)")
 				}
+
+				if safeSaltRaw == "" {
+					return fmt.Errorf("--safe-salt not specified")
+				}
+				safeSalt = common.Hex2Bytes(safeSaltRaw)
 			}
 
 			{{range .DeployHandler.MethodArgs}}
@@ -1405,7 +1391,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType))
+				err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), safeSalt)
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
@@ -1470,6 +1456,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().StringVar(&safeApi, "safe-api", "", "Safe API for the Safe Transaction Service (optional)")
 	cmd.Flags().StringVar(&safeCreateCall, "safe-create-call", "", "Address of the CreateCall contract (optional)")
 	cmd.Flags().Uint8Var(&safeOperationType, "safe-operation", 1, "Safe operation type: 0 (Call) or 1 (DelegateCall) - default is 1")
+	cmd.Flags().StringVar(&safeSaltRaw, "safe-salt", "", "Salt to use for the Safe transaction")
 	
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
