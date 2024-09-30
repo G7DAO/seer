@@ -1646,7 +1646,7 @@ func {{.HandlerName}}() *cobra.Command {
 					if chainIDErr != nil {
 						return chainIDErr
 					}
-					safeApi = "https://safe-client.safe.global/v1/chains/" + chainID.String() + "/transactions/" + safeAddress + "/propose"
+					safeApi = fmt.Sprintf("https://safe-client.safe.global/v1/chains/%s/transactions/%s/propose", chainID.String(), safeAddress)
 					fmt.Println("--safe-api not specified, using default (", safeApi, ")")
 				}
 
