@@ -799,6 +799,8 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"golang.org/x/term"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/moonstream-to/seer/bindings/GnosisSafe"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/moonstream-to/seer/bindings/CreateCall"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/ethereum/go-ethereum/common/math"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/ethereum/go-ethereum/crypto"`}},
 				)
 			}
 			return true
@@ -1117,7 +1119,7 @@ const (
 )
 
 
-func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, safeApi string, deployBytecode []byte, safeOperationType SafeOperationType, salt [32]byte) error {
+func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, safeApi string, deployBytecode []byte, safeOperationType SafeOperationType, salt []byte) error {
 	abi, err := CreateCall.CreateCallMetaData.GetAbi()
 	if err != nil {
 		return fmt.Errorf("failed to get ABI: %v", err)
@@ -1288,7 +1290,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var timeout uint
 	var safeAddress, safeApi, safeCreateCall, safeSaltRaw string
 	var safeOperationType uint8
-	var safeSalt [32]byte
+	var safeSalt []byte
 
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
