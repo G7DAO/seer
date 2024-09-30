@@ -101,6 +101,13 @@ type QueryFilter struct {
 	Topics    [][]string `json:"topics"`
 }
 
+type BlockWithTransactions struct {
+	BlockNumber    uint64
+	BlockHash      string
+	BlockTimestamp uint64
+	Transactions   map[string]TransactionJson
+}
+
 // ReadJsonBlocks reads blocks from a JSON file
 func ReadJsonBlocks() []*BlockJson {
 	file, err := os.Open("data/blocks_go.json")

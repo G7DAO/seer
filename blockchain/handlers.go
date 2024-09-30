@@ -2,13 +2,16 @@ package blockchain
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/moonstream-to/seer/blockchain/arbitrum_one"
 	"github.com/moonstream-to/seer/blockchain/arbitrum_sepolia"
 	"github.com/moonstream-to/seer/blockchain/b3"
@@ -93,9 +96,12 @@ type BlockchainClient interface {
 	FetchAsProtoBlocksWithEvents(*big.Int, *big.Int, bool, int) ([]proto.Message, []indexer.BlockIndex, uint64, error)
 	ProcessBlocksToBatch([]proto.Message) (proto.Message, error)
 	DecodeProtoEntireBlockToJson(*bytes.Buffer) (*seer_common.BlocksBatchJson, error)
-	DecodeProtoEntireBlockToLabels(*bytes.Buffer, map[string]map[string]map[string]string) ([]indexer.EventLabel, []indexer.TransactionLabel, error)
-	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error)
+	DecodeProtoEntireBlockToLabels(*bytes.Buffer, map[string]map[string]*indexer.AbiEntry, int) ([]indexer.EventLabel, []indexer.TransactionLabel, error)
+	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]*indexer.AbiEntry) ([]indexer.TransactionLabel, error)
 	ChainType() string
+	GetCode(context.Context, common.Address, uint64) ([]byte, error)
+	GetTransactionsLabels(uint64, uint64, map[string]map[string]*indexer.AbiEntry, int) ([]indexer.TransactionLabel, map[uint64]seer_common.BlockWithTransactions, error)
+	GetEventsLabels(uint64, uint64, map[string]map[string]*indexer.AbiEntry, map[uint64]seer_common.BlockWithTransactions) ([]indexer.EventLabel, error)
 }
 
 func GetLatestBlockNumberWithRetry(client BlockchainClient, retryAttempts int, retryWaitTime time.Duration) (*big.Int, error) {
@@ -143,4 +149,128 @@ func DecodeTransactionInputData(contractABI *abi.ABI, data []byte) {
 	}
 	fmt.Printf("Method Name: %s\n", method.Name)
 	fmt.Printf("Method inputs: %v\n", inputsMap)
+}
+
+func DeployBlocksLookUpAndUpdate(blockchain string) error {
+
+	// get all abi jobs without deployed block
+
+	chainsAddresses, err := indexer.DBConnection.GetAbiJobsWithoutDeployBlocks(blockchain)
+
+	if err != nil {
+		log.Printf("Failed to get abi jobs without deployed blocks: %v", err)
+		return err
+	}
+
+	if len(chainsAddresses) == 0 {
+		log.Printf("No abi jobs without deployed blocks")
+		return nil
+	}
+
+	for chain, addresses := range chainsAddresses {
+
+		var wg sync.WaitGroup
+
+		sem := make(chan struct{}, 5)  // Semaphore to control
+		errChan := make(chan error, 1) // Buffered channel for error handling
+
+		log.Printf("Processing chain: %s with amount of addresses: %d\n", chain, len(addresses))
+
+		for address, ids := range addresses {
+
+			wg.Add(1)
+			go func(address string, chain string, ids []string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				client, err := NewClient(chain, BlockchainURLs[chain], 4)
+
+				if err != nil {
+					errChan <- err
+					return
+				}
+
+				// get all abi jobs without deployed block
+				deployedBlock, err := FindDeployedBlock(client, address)
+
+				if err != nil {
+					errChan <- err
+					return
+				}
+
+				log.Printf("Deployed block: %d for address: %s in chain: %s\n", deployedBlock, address, chain)
+
+				if deployedBlock != 0 {
+					// update abi job with deployed block
+					err := indexer.DBConnection.UpdateAbiJobsDeployBlock(deployedBlock, ids)
+					if err != nil {
+						errChan <- err
+						return
+					}
+				}
+
+			}(address, chain, ids)
+
+		}
+
+		go func() {
+			wg.Wait()
+			close(errChan)
+		}()
+
+		for err := range errChan {
+			if err != nil {
+				log.Printf("Failed to get deployed block: %v", err)
+				return err
+			}
+		}
+
+	}
+
+	return nil
+
+}
+
+func FindDeployedBlock(client BlockchainClient, address string) (uint64, error) {
+
+	// Binary search by get code
+
+	ctx := context.Background()
+
+	// with timeout
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+
+	defer cancel()
+
+	latestBlockNumber, err := client.GetLatestBlockNumber()
+
+	if err != nil {
+		return 0, err
+	}
+
+	var left uint64 = 1
+	var right uint64 = latestBlockNumber.Uint64()
+	var code []byte
+
+	for left < right {
+		mid := (left + right) / 2
+
+		code, err = client.GetCode(ctx, common.HexToAddress(address), mid)
+
+		if err != nil {
+			log.Printf("Failed to get code: %v", err)
+			return 0, err
+		}
+
+		if len(code) == 0 {
+			left = mid + 1
+		} else {
+			right = mid
+		}
+
+	}
+
+	return left, nil
 }

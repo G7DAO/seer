@@ -1,0 +1,9 @@
+[Unit]
+Description=Runs seer historical synchronizer on b3
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=10m
+
+[Install]
+WantedBy=timers.target

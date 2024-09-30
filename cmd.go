@@ -46,7 +46,8 @@ func CreateRootCommand() *cobra.Command {
 	synchronizerCmd := CreateSynchronizerCommand()
 	abiCmd := CreateAbiCommand()
 	dbCmd := CreateDatabaseOperationCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd)
+	historicalSyncCmd := CreateHistoricalSyncCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd, historicalSyncCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -243,6 +244,11 @@ func CreateCrawlerCommand() *cobra.Command {
 				return crawlerErr
 			}
 
+			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			if blockchainErr != nil {
+				return blockchainErr
+			}
+
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -289,7 +295,7 @@ func CreateCrawlerCommand() *cobra.Command {
 
 func CreateSynchronizerCommand() *cobra.Command {
 	var startBlock, endBlock, batchSize uint64
-	var timeout int
+	var timeout, threads int
 	var chain, baseDir, customerDbUriFlag string
 
 	synchronizerCmd := &cobra.Command{
@@ -316,6 +322,11 @@ func CreateSynchronizerCommand() *cobra.Command {
 				return syncErr
 			}
 
+			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			if blockchainErr != nil {
+				return blockchainErr
+			}
+
 			if chain == "" {
 				return fmt.Errorf("blockchain is required via --chain")
 			}
@@ -325,7 +336,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			indexer.InitDBConnection()
 
-			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout)
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout, threads)
 			if synchonizerErr != nil {
 				return synchonizerErr
 			}
@@ -354,6 +365,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 	synchronizerCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
 	synchronizerCmd.Flags().Uint64Var(&batchSize, "batch-size", 100, "The number of blocks to crawl in each batch (default: 100)")
 	synchronizerCmd.Flags().StringVar(&customerDbUriFlag, "customer-db-uri", "", "Set customer database URI for development. This workflow bypass fetching customer IDs and its database URL connection strings from mdb-v3-controller API")
+	synchronizerCmd.Flags().IntVar(&threads, "threads", 5, "Number of go-routines for concurrent decoding")
 
 	return synchronizerCmd
 }
@@ -698,7 +710,7 @@ func CreateAbiEnsureSelectorsCommand() *cobra.Command {
 
 			indexer.InitDBConnection()
 
-			updateErr := indexer.DBConnection.EnsureCorrectSelectors(chain, WriteToDB, outFilePath)
+			updateErr := indexer.DBConnection.EnsureCorrectSelectors(chain, WriteToDB, outFilePath, []string{})
 			if updateErr != nil {
 				return updateErr
 			}
@@ -762,9 +774,171 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 
 	indexCommand.AddCommand(cleanCommand)
 
+	deploymentBlocksCommand := &cobra.Command{
+		Use:   "deployment-blocks",
+		Short: "Get deployment blocks from address in abi jobs",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			if blockchainErr != nil {
+				return blockchainErr
+			}
+			indexer.InitDBConnection()
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+
+			deploymentBlocksErr := seer_blockchain.DeployBlocksLookUpAndUpdate(chain)
+			if deploymentBlocksErr != nil {
+				return deploymentBlocksErr
+			}
+
+			return nil
+		},
+	}
+
+	deploymentBlocksCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+
+	var jobChain, address, abiFile, customerId, userId string
+	var deployBlock uint64
+
+	createJobsCommand := &cobra.Command{
+		Use:   "create-jobs",
+		Short: "Create jobs for ABI",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			indexer.InitDBConnection()
+
+			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			if blockchainErr != nil {
+				return blockchainErr
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+
+			// check if the chain is supported
+			if _, ok := seer_blockchain.BlockchainURLs[jobChain]; !ok {
+				return fmt.Errorf("chain %s is not supported", jobChain)
+			}
+
+			client, clientErr := seer_blockchain.NewClient(jobChain, seer_blockchain.BlockchainURLs[jobChain], 30)
+			if clientErr != nil {
+				return clientErr
+			}
+
+			// detect deploy block
+			if deployBlock == 0 {
+				fmt.Println("Deploy block is not provided, trying to find it from chain")
+				deployBlockFromChain, deployErr := seer_blockchain.FindDeployedBlock(client, address)
+
+				if deployErr != nil {
+					return deployErr
+				}
+				deployBlock = deployBlockFromChain
+			}
+
+			createJobsErr := indexer.DBConnection.CreateJobsFromAbi(jobChain, address, abiFile, customerId, userId, deployBlock)
+			if createJobsErr != nil {
+				return createJobsErr
+			}
+
+			return nil
+		},
+	}
+
+	createJobsCommand.Flags().StringVar(&jobChain, "jobChain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	createJobsCommand.Flags().StringVar(&address, "address", "", "The address to create jobs for")
+	createJobsCommand.Flags().StringVar(&abiFile, "abi-file", "", "The path to the ABI file")
+	createJobsCommand.Flags().StringVar(&customerId, "customer-id", "", "The customer ID to create jobs for (default: '')")
+	createJobsCommand.Flags().StringVar(&userId, "user-id", "00000000-0000-0000-0000-000000000000", "The user ID to create jobs for (default: '00000000-0000-0000-0000-000000000000')")
+	createJobsCommand.Flags().Uint64Var(&deployBlock, "deploy-block", 0, "The block number to deploy contract (default: 0)")
+
+	indexCommand.AddCommand(deploymentBlocksCommand)
+	indexCommand.AddCommand(createJobsCommand)
 	databaseCmd.AddCommand(indexCommand)
 
 	return databaseCmd
+}
+
+func CreateHistoricalSyncCommand() *cobra.Command {
+
+	var chain, baseDir, customerDbUriFlag string
+	var addresses, customerIds []string
+	var startBlock, endBlock, batchSize uint64
+	var timeout, threads int
+	var auto bool
+
+	historicalSyncCmd := &cobra.Command{
+		Use:   "historical-sync",
+		Short: "Decode the historical data from various blockchains",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
+			syncErr := synchronizer.CheckVariablesForSynchronizer()
+			if syncErr != nil {
+				return syncErr
+			}
+
+			if chain == "" {
+				return fmt.Errorf("blockchain is required via --chain")
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			indexer.InitDBConnection()
+
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout, threads)
+			if synchonizerErr != nil {
+				return synchonizerErr
+			}
+
+			err := newSynchronizer.HistoricalSyncRef(customerDbUriFlag, addresses, customerIds, batchSize, auto)
+
+			if err != nil {
+				return err
+			}
+
+			return nil
+		},
+	}
+
+	historicalSyncCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	historicalSyncCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	historicalSyncCmd.Flags().Uint64Var(&startBlock, "start-block", 0, "The block number to start decoding from (default: latest block)")
+	historicalSyncCmd.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end decoding at (default: latest block)")
+	historicalSyncCmd.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
+	historicalSyncCmd.Flags().Uint64Var(&batchSize, "batch-size", 100, "The number of blocks to crawl in each batch (default: 100)")
+	historicalSyncCmd.Flags().StringVar(&customerDbUriFlag, "customer-db-uri", "", "Set customer database URI for development. This workflow bypass fetching customer IDs and its database URL connection strings from mdb-v3-controller API")
+	historicalSyncCmd.Flags().StringSliceVar(&customerIds, "customer-ids", []string{}, "The list of customer IDs to sync")
+	historicalSyncCmd.Flags().StringSliceVar(&addresses, "addresses", []string{}, "The list of addresses to sync")
+	historicalSyncCmd.Flags().BoolVar(&auto, "auto", false, "Set this flag to sync all unfinished historical crawl from the database (default: false)")
+	historicalSyncCmd.Flags().IntVar(&threads, "threads", 5, "Number of go-routines for concurrent crawling (default: 5)")
+
+	return historicalSyncCmd
 }
 
 func CreateStarknetParseCommand() *cobra.Command {
