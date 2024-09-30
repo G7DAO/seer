@@ -594,10 +594,9 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
             json_object_agg(
                 abi_selector,
                 json_build_object(
-                    'abi',
-                    ('[' || abi || ']')::jsonb,
-                    'abi_name',
-                    abi_name
+                    'abi', '[' || abi || ']',
+                    'abi_name', abi_name,
+					'abi_type', abi_type 
                 )
             ) AS abis_per_address
         FROM
@@ -1132,7 +1131,7 @@ func (p *PostgreSQLpgx) UpdateAbiJobsStatus(blockchain string) error {
 	return nil
 }
 
-func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, customersIds []string, onlyNotDobe bool) ([]CustomerUpdates, map[string]AbiJobsDeployInfo, error) {
+func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, customersIds []string, autoJobs bool) ([]CustomerUpdates, map[string]AbiJobsDeployInfo, error) {
 	pool := p.GetPool()
 
 	conn, err := pool.Acquire(context.Background())
@@ -1155,7 +1154,7 @@ func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, cus
 		WHERE chain = @chain AND ((abi::jsonb)->>'type' = 'function' or (abi::jsonb)->>'type' = 'event') and deployment_block_number is not null
 	`)
 
-	if onlyNotDobe {
+	if autoJobs {
 		queryBuilder.WriteString(" AND historical_crawl_status != 'done' ")
 	}
 

@@ -127,9 +127,9 @@ type AbiJobsDeployInfo struct {
 }
 
 type AbiEntry struct {
-	AbiJSON string
+	AbiJSON string `json:"abi"`
 	Abi     *abi.ABI
-	AbiName string
-	AbiType string
+	AbiName string `json:"abi_name"`
+	AbiType string `json:"abi_type"`
 	Once    sync.Once
 }
