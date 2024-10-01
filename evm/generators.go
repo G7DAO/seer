@@ -1290,6 +1290,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var timeout uint
 	var safeAddress, safeApi, safeCreateCall, safeSaltRaw string
 	var safeOperationType uint8
+	var salt [32]byte
 
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
@@ -1340,7 +1341,21 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				}
 
 				if safeSaltRaw == "" {
-					return fmt.Errorf("--safe-salt not specified")
+					fmt.Println("--safe-salt not specified, generating random salt")
+					_, err := rand.Read(salt[:])
+					if err != nil {
+						return fmt.Errorf("failed to generate random salt: %v", err)
+					}
+					// prompt user to accept random salt
+					fmt.Println("Generated salt:", common.Bytes2Hex(salt[:]))
+					fmt.Println("Please check the salt and confirm (y/n)")
+					var confirm string
+					fmt.Scanln(&confirm)
+					if confirm != "y" {
+						return fmt.Errorf("salt not accepted, please specify a valid salt")
+					}
+				} else {
+					copy(salt[:], safeSaltRaw)
 				}
 			}
 
@@ -1391,8 +1406,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				var salt [32]byte
-				copy(salt[:], safeSaltRaw)
+				
 				err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), salt)
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
