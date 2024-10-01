@@ -581,6 +581,18 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		d.startBlock = d.endBlock - 1
 
 		if isCycleFinished || d.startBlock == 0 {
+			if autoJobs {
+				for address, abisInfo := range addressesAbisInfo {
+
+					log.Printf("Finished crawling for address %s at block %d\n", address, abisInfo.DeployedBlockNumber)
+
+					// update the status of the address for the customer to done
+					err := indexer.DBConnection.UpdateAbisAsDone(abisInfo.IDs)
+					if err != nil {
+						return err
+					}
+				}
+			}
 			log.Println("Finished processing all customer updates")
 			break
 		}
