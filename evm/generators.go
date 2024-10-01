@@ -1351,7 +1351,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					fmt.Println("Please check the salt and confirm (y/n)")
 					var confirm string
 					fmt.Scanln(&confirm)
-					if confirm != "y" {
+					if confirm != "y" && confirm != "Y" && confirm != "\n" && confirm != "" {
 						return fmt.Errorf("salt not accepted, please specify a valid salt")
 					}
 				} else {
