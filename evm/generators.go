@@ -1119,7 +1119,7 @@ const (
 )
 
 
-func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, safeApi string, deployBytecode []byte, safeOperationType SafeOperationType, salt []byte) error {
+func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, safeApi string, deployBytecode []byte, safeOperationType SafeOperationType, salt [32]byte) error {
 	abi, err := CreateCall.CreateCallMetaData.GetAbi()
 	if err != nil {
 		return fmt.Errorf("failed to get ABI: %v", err)
@@ -1290,7 +1290,6 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var timeout uint
 	var safeAddress, safeApi, safeCreateCall, safeSaltRaw string
 	var safeOperationType uint8
-	var safeSalt []byte
 
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
@@ -1343,7 +1342,6 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				if safeSaltRaw == "" {
 					return fmt.Errorf("--safe-salt not specified")
 				}
-				safeSalt = common.Hex2Bytes(safeSaltRaw)
 			}
 
 			{{range .DeployHandler.MethodArgs}}
@@ -1393,7 +1391,9 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), safeSalt)
+				var salt [32]byte
+				copy(salt[:], safeSaltRaw)
+				err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), salt)
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
@@ -1687,26 +1687,22 @@ func {{.HandlerName}}() *cobra.Command {
 
             if safeAddress != "" {
                 // Generate transaction data
-				abi, err := {{$structName}}MetaData.GetAbi()
-                if err != nil {
-                    return fmt.Errorf("failed to get ABI: %v", err)
-                }
-				// TODO: this is a workaround to match the original method name in the ABI, need to fix to work with every method name
-                packedData, err := abi.Pack("{{ToLowerCamel .MethodName}}",
-                    {{range .MethodArgs}}
-                    {{.CLIVar}},
-                    {{- end}}
-                )
-                if err != nil {
-                    return fmt.Errorf("failed to pack transaction data: %v", err)
-                }
+				transaction, err := session.{{.MethodName}}(
+                {{range .MethodArgs}}
+                {{.CLIVar}},
+                {{- end}}
+				)
 
+				if err != nil {
+					return err
+				}
+              
                 // Create Safe proposal for transaction
 				value := transactionOpts.Value
 				if value == nil {
 					value = big.NewInt(0)
 				}
-                err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, packedData, value, safeApi, SafeOperationType(safeOperationType))
+                err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction.Data(), value, safeApi, SafeOperationType(safeOperationType))
                 if err != nil {
                     return fmt.Errorf("failed to create Safe proposal: %v", err)
                 }

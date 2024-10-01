@@ -2287,18 +2287,14 @@ func CreateApproveCommand() *cobra.Command {
 
 			if safeAddress != "" {
 				// Generate transaction data
-				abi, err := OwnableERC721MetaData.GetAbi()
-				if err != nil {
-					return fmt.Errorf("failed to get ABI: %v", err)
-				}
-				// TODO: this is a workaround to match the original method name in the ABI, need to fix to work with every method name
-				packedData, err := abi.Pack("approve",
+				transaction, err := session.Approve(
 
 					to0,
 					tokenId,
 				)
+
 				if err != nil {
-					return fmt.Errorf("failed to pack transaction data: %v", err)
+					return err
 				}
 
 				// Create Safe proposal for transaction
@@ -2306,7 +2302,7 @@ func CreateApproveCommand() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, packedData, value, safeApi, SafeOperationType(safeOperationType))
+				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction.Data(), value, safeApi, SafeOperationType(safeOperationType))
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
@@ -2484,18 +2480,14 @@ func CreateMintCommand() *cobra.Command {
 
 			if safeAddress != "" {
 				// Generate transaction data
-				abi, err := OwnableERC721MetaData.GetAbi()
-				if err != nil {
-					return fmt.Errorf("failed to get ABI: %v", err)
-				}
-				// TODO: this is a workaround to match the original method name in the ABI, need to fix to work with every method name
-				packedData, err := abi.Pack("mint",
+				transaction, err := session.Mint(
 
 					to0,
 					tokenId,
 				)
+
 				if err != nil {
-					return fmt.Errorf("failed to pack transaction data: %v", err)
+					return err
 				}
 
 				// Create Safe proposal for transaction
@@ -2503,7 +2495,7 @@ func CreateMintCommand() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, packedData, value, safeApi, SafeOperationType(safeOperationType))
+				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction.Data(), value, safeApi, SafeOperationType(safeOperationType))
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
@@ -2663,14 +2655,10 @@ func CreateRenounceOwnershipCommand() *cobra.Command {
 
 			if safeAddress != "" {
 				// Generate transaction data
-				abi, err := OwnableERC721MetaData.GetAbi()
+				transaction, err := session.RenounceOwnership()
+
 				if err != nil {
-					return fmt.Errorf("failed to get ABI: %v", err)
-				}
-				// TODO: this is a workaround to match the original method name in the ABI, need to fix to work with every method name
-				packedData, err := abi.Pack("renounceOwnership")
-				if err != nil {
-					return fmt.Errorf("failed to pack transaction data: %v", err)
+					return err
 				}
 
 				// Create Safe proposal for transaction
@@ -2678,7 +2666,7 @@ func CreateRenounceOwnershipCommand() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, packedData, value, safeApi, SafeOperationType(safeOperationType))
+				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction.Data(), value, safeApi, SafeOperationType(safeOperationType))
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
@@ -2858,19 +2846,15 @@ func CreateSafeTransferFromCommand() *cobra.Command {
 
 			if safeAddress != "" {
 				// Generate transaction data
-				abi, err := OwnableERC721MetaData.GetAbi()
-				if err != nil {
-					return fmt.Errorf("failed to get ABI: %v", err)
-				}
-				// TODO: this is a workaround to match the original method name in the ABI, need to fix to work with every method name
-				packedData, err := abi.Pack("safeTransferFrom",
+				transaction, err := session.SafeTransferFrom(
 
 					from0,
 					to0,
 					tokenId,
 				)
+
 				if err != nil {
-					return fmt.Errorf("failed to pack transaction data: %v", err)
+					return err
 				}
 
 				// Create Safe proposal for transaction
@@ -2878,7 +2862,7 @@ func CreateSafeTransferFromCommand() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, packedData, value, safeApi, SafeOperationType(safeOperationType))
+				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction.Data(), value, safeApi, SafeOperationType(safeOperationType))
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
@@ -3079,20 +3063,16 @@ func CreateSafeTransferFrom0Command() *cobra.Command {
 
 			if safeAddress != "" {
 				// Generate transaction data
-				abi, err := OwnableERC721MetaData.GetAbi()
-				if err != nil {
-					return fmt.Errorf("failed to get ABI: %v", err)
-				}
-				// TODO: this is a workaround to match the original method name in the ABI, need to fix to work with every method name
-				packedData, err := abi.Pack("safeTransferFrom0",
+				transaction, err := session.SafeTransferFrom0(
 
 					from0,
 					to0,
 					tokenId,
 					data,
 				)
+
 				if err != nil {
-					return fmt.Errorf("failed to pack transaction data: %v", err)
+					return err
 				}
 
 				// Create Safe proposal for transaction
@@ -3100,7 +3080,7 @@ func CreateSafeTransferFrom0Command() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, packedData, value, safeApi, SafeOperationType(safeOperationType))
+				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction.Data(), value, safeApi, SafeOperationType(safeOperationType))
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
@@ -3286,18 +3266,14 @@ func CreateSetApprovalForAllCommand() *cobra.Command {
 
 			if safeAddress != "" {
 				// Generate transaction data
-				abi, err := OwnableERC721MetaData.GetAbi()
-				if err != nil {
-					return fmt.Errorf("failed to get ABI: %v", err)
-				}
-				// TODO: this is a workaround to match the original method name in the ABI, need to fix to work with every method name
-				packedData, err := abi.Pack("setApprovalForAll",
+				transaction, err := session.SetApprovalForAll(
 
 					operator,
 					approved,
 				)
+
 				if err != nil {
-					return fmt.Errorf("failed to pack transaction data: %v", err)
+					return err
 				}
 
 				// Create Safe proposal for transaction
@@ -3305,7 +3281,7 @@ func CreateSetApprovalForAllCommand() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, packedData, value, safeApi, SafeOperationType(safeOperationType))
+				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction.Data(), value, safeApi, SafeOperationType(safeOperationType))
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
@@ -3492,19 +3468,15 @@ func CreateTransferFromCommand() *cobra.Command {
 
 			if safeAddress != "" {
 				// Generate transaction data
-				abi, err := OwnableERC721MetaData.GetAbi()
-				if err != nil {
-					return fmt.Errorf("failed to get ABI: %v", err)
-				}
-				// TODO: this is a workaround to match the original method name in the ABI, need to fix to work with every method name
-				packedData, err := abi.Pack("transferFrom",
+				transaction, err := session.TransferFrom(
 
 					from0,
 					to0,
 					tokenId,
 				)
+
 				if err != nil {
-					return fmt.Errorf("failed to pack transaction data: %v", err)
+					return err
 				}
 
 				// Create Safe proposal for transaction
@@ -3512,7 +3484,7 @@ func CreateTransferFromCommand() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, packedData, value, safeApi, SafeOperationType(safeOperationType))
+				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction.Data(), value, safeApi, SafeOperationType(safeOperationType))
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
@@ -3684,17 +3656,13 @@ func CreateTransferOwnershipCommand() *cobra.Command {
 
 			if safeAddress != "" {
 				// Generate transaction data
-				abi, err := OwnableERC721MetaData.GetAbi()
-				if err != nil {
-					return fmt.Errorf("failed to get ABI: %v", err)
-				}
-				// TODO: this is a workaround to match the original method name in the ABI, need to fix to work with every method name
-				packedData, err := abi.Pack("transferOwnership",
+				transaction, err := session.TransferOwnership(
 
 					newOwner,
 				)
+
 				if err != nil {
-					return fmt.Errorf("failed to pack transaction data: %v", err)
+					return err
 				}
 
 				// Create Safe proposal for transaction
@@ -3702,7 +3670,7 @@ func CreateTransferOwnershipCommand() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, packedData, value, safeApi, SafeOperationType(safeOperationType))
+				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction.Data(), value, safeApi, SafeOperationType(safeOperationType))
 				if err != nil {
 					return fmt.Errorf("failed to create Safe proposal: %v", err)
 				}
