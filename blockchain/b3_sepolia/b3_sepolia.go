@@ -71,25 +71,16 @@ func (c *Client) GetLatestBlockNumber() (*big.Int, error) {
 	return blockNumber, nil
 }
 
-// BlockByNumber returns the block with the given number.
+// GetBlockByNumber returns the block with the given number.
 func (c *Client) GetBlockByNumber(ctx context.Context, number *big.Int, withTransactions bool) (*seer_common.BlockJson, error) {
-
-	var rawResponse json.RawMessage // Use RawMessage to capture the entire JSON response
-	err := c.rpcClient.CallContext(ctx, &rawResponse, "eth_getBlockByNumber", "0x"+number.Text(16), withTransactions)
+	var block *seer_common.BlockJson
+	err := c.rpcClient.CallContext(ctx, &block, "eth_getBlockByNumber", fmt.Sprintf("0x%x", number), withTransactions)
 	if err != nil {
-		fmt.Println("Error calling eth_getBlockByNumber: ", err)
+		fmt.Println("Error calling eth_getBlockByNumber:", err)
 		return nil, err
 	}
 
-	var response_json map[string]interface{}
-
-	err = json.Unmarshal(rawResponse, &response_json)
-
-	delete(response_json, "transactions")
-
-	var block *seer_common.BlockJson
-	err = c.rpcClient.CallContext(ctx, &block, "eth_getBlockByNumber", "0x"+number.Text(16), true) // true to include transactions
-	return block, err
+	return block, nil
 }
 
 // BlockByHash returns the block with the given hash.
