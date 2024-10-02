@@ -1159,3 +1159,53 @@ func CreateEVMGenerateCommand() *cobra.Command {
 
 	return evmGenerateCmd
 }
+
+func CreateGenerateCmd() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:   "generate",
+		Short: "A tool for generating Go bindings, crawlers, and other code",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	evmCmd := CreateEVMCommand()
+	starknetCmd := CreateStarknetCommand()
+
+	rootCmd.AddCommand(evmCmd, starknetCmd)
+
+	return rootCmd
+}
+
+func CreateGenerateBlockchainCmd() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:   "blockchain",
+		Short: "Generate blockchain definitions and scripts",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	return rootCmd
+}
+
+
+func CreateDefinitionsCommand() *cobra.Command {
+
+	var rpc string
+
+	definitionsCmd := &cobra.Command{
+		Use:   "definitions",
+		Short: "Generate definitions for various blockchains",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+
+	}
+
+	definitionsGenerateCmd := 
+
+	return definitionsCmd
+}
