@@ -238,12 +238,6 @@ func FindDeployedBlock(client BlockchainClient, address string) (uint64, error) 
 
 	ctx := context.Background()
 
-	// with timeout
-
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-
-	defer cancel()
-
 	latestBlockNumber, err := client.GetLatestBlockNumber()
 
 	if err != nil {
@@ -256,6 +250,12 @@ func FindDeployedBlock(client BlockchainClient, address string) (uint64, error) 
 
 	for left < right {
 		mid := (left + right) / 2
+
+		// with timeout
+
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+
+		defer cancel()
 
 		code, err = client.GetCode(ctx, common.HexToAddress(address), mid)
 
