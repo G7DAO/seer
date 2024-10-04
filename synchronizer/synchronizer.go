@@ -14,7 +14,6 @@ import (
 	"time"
 
 	seer_blockchain "github.com/moonstream-to/seer/blockchain"
-	"github.com/moonstream-to/seer/blockchain/common"
 	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/indexer"
 	"github.com/moonstream-to/seer/storage"
@@ -406,7 +405,6 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 }
 
 func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []string, customerIds []string, batchSize uint64, autoJobs bool) error {
-	var useRPC bool
 	var isCycleFinished bool
 	var updateDeadline time.Time
 	var initialStartBlock uint64
@@ -515,40 +513,27 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		// Determine the processing strategy (RPC or storage)
 		var path string
 		var firstBlockOfChunk uint64
-		if !useRPC {
 
+		for {
 			path, firstBlockOfChunk, _, err = indexer.DBConnection.FindBatchPath(d.blockchain, d.startBlock)
 			if err != nil {
 				return fmt.Errorf("error finding batch path: %w", err)
 			}
 
-			if path == "" {
-				log.Printf("No batch path found for block %d\n", d.startBlock)
-				log.Println("Switching to RPC mode")
-				useRPC = true
-			} else {
+			if path != "" {
 				d.endBlock = firstBlockOfChunk
-			}
-		}
-
-		if useRPC {
-			// Calculate the end block
-			if d.startBlock > batchSize {
-				d.endBlock = d.startBlock - batchSize
-			} else {
-				d.endBlock = 1 // Prevent underflow by setting endBlock to 1 if startBlock < batchSize
+				break
 			}
 
-			fmt.Printf("Start block is %d, end block is %d\n", d.startBlock, d.endBlock)
+			log.Printf("No batch path found for block %d, retrying...\n", d.startBlock)
+			time.Sleep(30 * time.Second) // Wait for 5 seconds before retrying (adjust the duration as needed)
 		}
 
 		// Read raw data from storage or via RPC
 		var rawData bytes.Buffer
-		if !useRPC {
-			rawData, err = d.StorageInstance.Read(path)
-			if err != nil {
-				return fmt.Errorf("error reading events from storage: %w", err)
-			}
+		rawData, err = d.StorageInstance.Read(path)
+		if err != nil {
+			return fmt.Errorf("error reading events from storage: %w", err)
 		}
 
 		log.Printf("Processing %d customer updates for block range %d-%d", len(customerUpdates), d.startBlock, d.endBlock)
@@ -560,11 +545,8 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 		for _, update := range customerUpdates {
 			wg.Add(1)
-			if useRPC {
-				go d.processRPCCustomerUpdate(update, customerDBConnections, sem, errChan, &wg)
-			} else {
-				go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, sem, errChan, &wg)
-			}
+			go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, sem, errChan, &wg)
+
 		}
 
 		wg.Wait()
@@ -637,108 +619,6 @@ func (d *Synchronizer) processProtoCustomerUpdate(
 	}
 
 	err = customer.Pgx.WriteLabes(d.blockchain, decodedTransactions, decodedEvents)
-
-	if err != nil {
-		errChan <- fmt.Errorf("error writing labels for customer %s: %w", update.CustomerID, err)
-		<-sem // Release semaphore
-		return
-	}
-
-	<-sem // Release semaphore
-}
-
-func (d *Synchronizer) processRPCCustomerUpdate(
-	update indexer.CustomerUpdates,
-	customerDBConnections map[string]CustomerDBConnection,
-	sem chan struct{},
-	errChan chan error,
-	wg *sync.WaitGroup,
-) {
-	// Decode input raw proto data using ABIs
-	// Write decoded data to the user Database
-
-	defer wg.Done()
-	sem <- struct{}{} // Acquire semaphore
-
-	customer, exists := customerDBConnections[update.CustomerID]
-	if !exists {
-		errChan <- fmt.Errorf("no DB connection for customer %s", update.CustomerID)
-		<-sem // Release semaphore
-		return
-	}
-
-	conn, err := customer.Pgx.GetPool().Acquire(context.Background())
-	if err != nil {
-		errChan <- fmt.Errorf("error acquiring connection for customer %s: %w", update.CustomerID, err)
-		<-sem // Release semaphore
-		return
-	}
-	defer conn.Release()
-
-	// split abis by the type of the task
-
-	eventAbis := make(map[string]map[string]*indexer.AbiEntry)
-	transactionAbis := make(map[string]map[string]*indexer.AbiEntry)
-
-	for address, selectorMap := range update.Abis {
-
-		for selector, abiInfo := range selectorMap {
-
-			if abiInfo.AbiType == "event" {
-				if _, ok := eventAbis[address]; !ok {
-					eventAbis[address] = make(map[string]*indexer.AbiEntry)
-				}
-				eventAbis[address][selector] = abiInfo
-			} else {
-				if _, ok := transactionAbis[address]; !ok {
-					transactionAbis[address] = make(map[string]*indexer.AbiEntry)
-				}
-				transactionAbis[address][selector] = abiInfo
-			}
-		}
-
-	}
-
-	// Transactions
-
-	var transactions []indexer.TransactionLabel
-	var blocksCache map[uint64]common.BlockWithTransactions
-
-	if len(transactionAbis) != 0 {
-		transactions, blocksCache, err = d.Client.GetTransactionsLabels(d.endBlock, d.startBlock, transactionAbis, d.threads)
-
-		if err != nil {
-			log.Println("Error getting transactions for customer", update.CustomerID, ":", err)
-			errChan <- fmt.Errorf("error getting transactions for customer %s: %w", update.CustomerID, err)
-			<-sem // Release semaphore
-			return
-		}
-	} else {
-		transactions = make([]indexer.TransactionLabel, 0)
-	}
-
-	// Events
-
-	var events []indexer.EventLabel
-
-	if len(eventAbis) != 0 {
-
-		events, err = d.Client.GetEventsLabels(d.endBlock, d.startBlock, eventAbis, blocksCache)
-
-		if err != nil {
-
-			log.Println("Error getting events for customer", update.CustomerID, ":", err)
-
-			errChan <- fmt.Errorf("error getting events for customer %s: %w", update.CustomerID, err)
-			<-sem // Release semaphore
-			return
-
-		}
-	} else {
-		events = make([]indexer.EventLabel, 0)
-	}
-
-	err = customer.Pgx.WriteLabes(d.blockchain, transactions, events)
 
 	if err != nil {
 		errChan <- fmt.Errorf("error writing labels for customer %s: %w", update.CustomerID, err)
