@@ -8,7 +8,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
+	eth_common "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -57,33 +57,31 @@ func (c *Client) GetBlockByNumber(ctx context.Context, number *big.Int, withTran
 		return nil, err
 	}
 
-	var response_json map[string]interface{}
-
-	err = json.Unmarshal(rawResponse, &response_json)
-	if err != nil {
-		fmt.Println("Error unmarshalling response: ", err)
+	var block BlockJson
+	if err := json.Unmarshal(rawResponse, &block); err != nil {
+		fmt.Println("Error unmarshalling block response: ", err)
 		return nil, err
 	}
 
-	return &block, nil // Return a pointer to the block
+	return &block, nil
 }
 
 // BlockByHash returns the block with the given hash.
-func (c *Client) BlockByHash(ctx context.Context, hash common.Hash) (BlockJson, error) {
+func (c *Client) BlockByHash(ctx context.Context, hash eth_common.Hash) (BlockJson, error) {
 	var block BlockJson
 	err := c.rpcClient.CallContext(ctx, &block, "eth_getBlockByHash", hash, true) // true to include transactions
 	return block, err
 }
 
 // TransactionReceipt returns the receipt of a transaction by transaction hash.
-func (c *Client) TransactionReceipt(ctx context.Context, hash common.Hash) (*types.Receipt, error) {
+func (c *Client) TransactionReceipt(ctx context.Context, hash eth_common.Hash) (*types.Receipt, error) {
 	var receipt *types.Receipt
 	err := c.rpcClient.CallContext(ctx, &receipt, "eth_getTransactionReceipt", hash)
 	return receipt, err
 }
 
 // Get bytecode of a contract by address.
-func (c *Client) GetCode(ctx context.Context, address common.Address, blockNumber uint64) ([]byte, error) {
+func (c *Client) GetCode(ctx context.Context, address eth_common.Address, blockNumber uint64) ([]byte, error) {
 	var code hexutil.Bytes
 	if blockNumber == 0 {
 		latestBlockNumber, err := c.GetLatestBlockNumber()

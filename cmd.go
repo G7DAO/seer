@@ -1160,52 +1160,63 @@ func CreateEVMGenerateCommand() *cobra.Command {
 	return evmGenerateCmd
 }
 
-func CreateGenerateCmd() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:   "generate",
-		Short: "A tool for generating Go bindings, crawlers, and other code",
-		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
-		},
-	}
+// func CreateGenerateCmd() *cobra.Command {
+// 	rootCmd := &cobra.Command{
+// 		Use:   "generate",
+// 		Short: "A tool for generating Go bindings, crawlers, and other code",
+// 		Run: func(cmd *cobra.Command, args []string) {
+// 			cmd.Help()
+// 		},
+// 	}
 
-	evmCmd := CreateEVMCommand()
-	starknetCmd := CreateStarknetCommand()
+// 	evmCmd := CreateEVMCommand()
+// 	starknetCmd := CreateStarknetCommand()
 
-	rootCmd.AddCommand(evmCmd, starknetCmd)
+// 	rootCmd.AddCommand(evmCmd, starknetCmd)
 
-	return rootCmd
-}
+// 	return rootCmd
+// }
 
-func CreateGenerateBlockchainCmd() *cobra.Command {
-	rootCmd := &cobra.Command{
-		Use:   "blockchain",
-		Short: "Generate blockchain definitions and scripts",
-		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
-		},
-	}
+// func CreateGenerateBlockchainCmd() *cobra.Command {
+// 	rootCmd := &cobra.Command{
+// 		Use:   "blockchain",
+// 		Short: "Generate blockchain definitions and scripts",
+// 		Run: func(cmd *cobra.Command, args []string) {
+// 			cmd.Help()
+// 		},
+// 	}
 
-	return rootCmd
-}
+// 	return rootCmd
+// }
 
+// func CreateDefinitionsCommand() *cobra.Command {
 
-func CreateDefinitionsCommand() *cobra.Command {
+// 	var rpc string
 
-	var rpc string
+// 	definitionsCmd := &cobra.Command{
+// 		Use:   "definitions",
+// 		Short: "Generate definitions for various blockchains",
+// 		PreRunE: func(cmd *cobra.Command, args []string) error {
 
-	definitionsCmd := &cobra.Command{
-		Use:   "definitions",
-		Short: "Generate definitions for various blockchains",
-		PreRunE: func(cmd *cobra.Command, args []string) error {
+// 			crawlerErr := crawler.CheckVariablesForCrawler()
+// 			if crawlerErr != nil {
+// 				return crawlerErr
+// 			}
 
-			return nil
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
+// 		},
+// 		RunE: func(cmd *cobra.Command, args []string) error {
+// 			// make predefined list of rpc calls
+// 			rpcCalls := map[string]string{
+// 				"eth_getLatestBlockNumber": nil,
+// 				"eth_chainId": nil,
+// 				"eth_getLogs": nil,
+// 			}
 
-	}
+// 			client, clientErr := seer_blockchain.NewClient("ethereum", crawler.BlockchainURLs["ethereum"], 30)
 
-	definitionsGenerateCmd := 
+// 	}
 
-	return definitionsCmd
-}
+// 	definitionsGenerateCmd :=
+
+// 	return definitionsCmd
+// }
