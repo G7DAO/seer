@@ -1133,6 +1133,16 @@ func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress com
 	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreateCallTxData, value, safeApi, SafeOperationType(safeOperationType))
 }
 
+func PredictDeploymentAddressSafe(from common.Address, salt [32]byte, deployBytecode []byte) (common.Address, error) {
+	// Calculate the hash of the init code (deployment bytecode)
+	initCodeHash := crypto.Keccak256(deployBytecode)
+
+	// Calculate the CREATE2 address
+	deployedAddress := crypto.CreateAddress2(from, salt, initCodeHash)
+
+	return deployedAddress, nil
+}
+
 func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, to common.Address, data []byte, value *big.Int, safeApi string, safeOperationType SafeOperationType) error {
 	chainID, err := client.ChainID(context.Background())
 	if err != nil {
@@ -1291,6 +1301,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var safeAddress, safeApi, safeCreateCall, safeSaltRaw string
 	var safeOperationType uint8
 	var salt [32]byte
+	var predictAddress bool
 
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
@@ -1407,9 +1418,24 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					value = big.NewInt(0)
 				}
 				
-				err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), salt)
-				if err != nil {
-					return fmt.Errorf("failed to create Safe proposal: %v", err)
+				if predictAddress {
+					fmt.Println("Predicting deployment address...")
+					from := common.HexToAddress(safeAddress) 
+					if safeOperationType == 0 {
+						from = common.HexToAddress(safeCreateCall)
+					}
+					deploymentAddress, err := PredictDeploymentAddressSafe(from, salt, deployBytecode)
+					if err != nil {
+						return fmt.Errorf("failed to predict deployment address: %v", err)
+					}
+					fmt.Println("Predicted deployment address:", deploymentAddress.Hex())
+					return nil
+				} else {
+					fmt.Println("Creating Safe proposal...")
+					err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), salt)
+					if err != nil {
+						return fmt.Errorf("failed to create Safe proposal: %v", err)
+					}
 				}
 
 				return nil
@@ -1473,6 +1499,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().StringVar(&safeCreateCall, "safe-create-call", "", "Address of the CreateCall contract (optional)")
 	cmd.Flags().Uint8Var(&safeOperationType, "safe-operation", 1, "Safe operation type: 0 (Call) or 1 (DelegateCall) - default is 1")
 	cmd.Flags().StringVar(&safeSaltRaw, "safe-salt", "", "Salt to use for the Safe transaction")
+	cmd.Flags().BoolVar(&predictAddress, "safe-predict-address", false, "Predict the deployment address (only works for Safe transactions)")
 	
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
