@@ -1629,7 +1629,7 @@ func {{.HandlerName}}() *cobra.Command {
 var TransactMethodCommandsTemplate string = `{{$structName := .StructName}}
 {{range .TransactHandlers}}
 func {{.HandlerName}}() *cobra.Command {
-    var keyfile, nonce, password, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, rpc, contractAddressRaw string
+    var keyfile, nonce, password, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, rpc, contractAddressRaw, safeFunction string
     var gasLimit uint64
     var simulate bool
     var timeout uint
@@ -1727,11 +1727,22 @@ func {{.HandlerName}}() *cobra.Command {
             }
 
             if safeAddress != "" {
-                // Generate transaction data
-				transaction, err := session.{{.MethodName}}(
-                {{range .MethodArgs}}
-                {{.CLIVar}},
-                {{- end}}
+				abi, err := {{$structName}}MetaData.GetAbi()
+				if err != nil {
+					return fmt.Errorf("failed to get ABI: %v", err)
+				}
+				
+                // Generate transaction data (override method name if safe function is specified)
+				methodName := "{{ToLowerCamel .MethodName}}"
+				if safeFunction != "" {
+					methodName = safeFunction
+				}
+
+				transaction, err := abi.Pack(
+					methodName,
+					{{- range .MethodArgs}}
+					{{.CLIVar}},
+					{{- end}}
 				)
 
 				if err != nil {
@@ -1743,7 +1754,7 @@ func {{.HandlerName}}() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-                err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction.Data(), value, safeApi, SafeOperationType(safeOperationType))
+                err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction, value, safeApi, SafeOperationType(safeOperationType))
                 if err != nil {
                     return fmt.Errorf("failed to create Safe proposal: %v", err)
                 }
@@ -1806,6 +1817,7 @@ func {{.HandlerName}}() *cobra.Command {
     cmd.Flags().StringVar(&safeAddress, "safe", "", "Address of the Safe contract")
     cmd.Flags().StringVar(&safeApi, "safe-api", "", "Safe API for the Safe Transaction Service (optional)")
 	cmd.Flags().Uint8Var(&safeOperationType, "safe-operation", 0, "Safe operation type: 0 (Call) or 1 (DelegateCall)")
+	cmd.Flags().StringVar(&safeFunction, "safe-function", "", "Safe function overrider to use for the transaction (optional)")
 
     {{range .MethodArgs}}
     cmd.Flags().{{.Flag}}
