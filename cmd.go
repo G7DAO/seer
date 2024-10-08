@@ -16,14 +16,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	seer_blockchain "github.com/moonstream-to/seer/blockchain"
-	"github.com/moonstream-to/seer/crawler"
-	"github.com/moonstream-to/seer/evm"
-	"github.com/moonstream-to/seer/indexer"
-	"github.com/moonstream-to/seer/starknet"
-	"github.com/moonstream-to/seer/storage"
-	"github.com/moonstream-to/seer/synchronizer"
-	"github.com/moonstream-to/seer/version"
+	seer_blockchain "github.com/G7DAO/seer/blockchain"
+	"github.com/G7DAO/seer/crawler"
+	"github.com/G7DAO/seer/evm"
+	"github.com/G7DAO/seer/indexer"
+	"github.com/G7DAO/seer/starknet"
+	"github.com/G7DAO/seer/storage"
+	"github.com/G7DAO/seer/synchronizer"
+	"github.com/G7DAO/seer/version"
 )
 
 func CreateRootCommand() *cobra.Command {

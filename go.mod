@@ -1,4 +1,4 @@
-module github.com/moonstream-to/seer
+module github.com/G7DAO/seer
 
 go 1.22.0
 

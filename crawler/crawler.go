@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	seer_blockchain "github.com/moonstream-to/seer/blockchain"
-	"github.com/moonstream-to/seer/indexer"
-	"github.com/moonstream-to/seer/storage"
+	seer_blockchain "github.com/G7DAO/seer/blockchain"
+	"github.com/G7DAO/seer/indexer"
+	"github.com/G7DAO/seer/storage"
 	"google.golang.org/protobuf/proto"
 )
 

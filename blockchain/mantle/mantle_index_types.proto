@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = "github.com/moonstream-to/seer/blockchain/mantle";
+option go_package = "github.com/G7DAO/seer/blockchain/mantle";
 
 
 message MantleTransactionAccessList {
