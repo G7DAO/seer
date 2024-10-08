@@ -856,15 +856,70 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 		},
 	}
 
-	createJobsCommand.Flags().StringVar(&jobChain, "jobChain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	createJobsCommand.Flags().StringVar(&jobChain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
 	createJobsCommand.Flags().StringVar(&address, "address", "", "The address to create jobs for")
 	createJobsCommand.Flags().StringVar(&abiFile, "abi-file", "", "The path to the ABI file")
 	createJobsCommand.Flags().StringVar(&customerId, "customer-id", "", "The customer ID to create jobs for (default: '')")
 	createJobsCommand.Flags().StringVar(&userId, "user-id", "00000000-0000-0000-0000-000000000000", "The user ID to create jobs for (default: '00000000-0000-0000-0000-000000000000')")
 	createJobsCommand.Flags().Uint64Var(&deployBlock, "deploy-block", 0, "The block number to deploy contract (default: 0)")
 
+	var jobIds, jobAddresses, jobCustomerIds []string
+
+	deleteJobsCommand := &cobra.Command{
+		Use:   "delete-jobs",
+		Short: "Delete existing jobs",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			indexer.InitDBConnection()
+
+			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			if blockchainErr != nil {
+				return blockchainErr
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			abiJobs, selectJobsErr := indexer.DBConnection.SelectAbiJobs(jobChain, jobAddresses, jobCustomerIds, false, false, []string{})
+			if selectJobsErr != nil {
+				return fmt.Errorf("error selecting ABI jobs: %w", selectJobsErr)
+			}
+
+			var jobIds []string
+			abiJobChains := make(map[string]int)
+			for _, abiJob := range abiJobs {
+				jobIds = append(jobIds, abiJob.ID)
+				if _, ok := abiJobChains[abiJob.Chain]; !ok {
+					abiJobChains[abiJob.Chain] = 0
+				}
+				abiJobChains[abiJob.Chain]++
+			}
+			fmt.Printf("Found %d total:\n", len(jobIds))
+			for k, v := range abiJobChains {
+				fmt.Printf("- %s - %d jobs\n", k, v)
+			}
+
+			deleteJobsErr := indexer.DBConnection.DeleteJobs(jobIds)
+			if deleteJobsErr != nil {
+				return deleteJobsErr
+			}
+
+			return nil
+		},
+	}
+
+	deleteJobsCommand.Flags().StringVar(&jobChain, "chain", "", "The blockchain to crawl")
+	deleteJobsCommand.Flags().StringSliceVar(&jobIds, "job-ids", []string{}, "The list of job UUIDs separated by coma")
+	deleteJobsCommand.Flags().StringSliceVar(&jobAddresses, "addresses", []string{}, "The list of addresses created jobs for separated by coma")
+	deleteJobsCommand.Flags().StringSliceVar(&jobCustomerIds, "customer-ids", []string{}, "The list of customer IDs created jobs for separated by coma")
+
 	indexCommand.AddCommand(deploymentBlocksCommand)
 	indexCommand.AddCommand(createJobsCommand)
+	indexCommand.AddCommand(deleteJobsCommand)
 	databaseCmd.AddCommand(indexCommand)
 
 	return databaseCmd
