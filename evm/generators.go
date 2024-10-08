@@ -1119,7 +1119,7 @@ const (
 )
 
 
-func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, safeApi string, deployBytecode []byte, safeOperationType SafeOperationType, salt [32]byte) error {
+func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, safeApi string, deployBytecode []byte, safeOperationType SafeOperationType, salt [32]byte, safeNonce uint64) error {
 	abi, err := CreateCall.CreateCallMetaData.GetAbi()
 	if err != nil {
 		return fmt.Errorf("failed to get ABI: %v", err)
@@ -1130,7 +1130,7 @@ func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress com
 		return fmt.Errorf("failed to pack performCreate2 transaction: %v", err)
 	}
 
-	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreateCallTxData, value, safeApi, SafeOperationType(safeOperationType))
+	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreateCallTxData, value, safeApi, SafeOperationType(safeOperationType), safeNonce)
 }
 
 func PredictDeploymentAddressSafe(from common.Address, salt [32]byte, deployBytecode []byte) (common.Address, error) {
@@ -1143,7 +1143,7 @@ func PredictDeploymentAddressSafe(from common.Address, salt [32]byte, deployByte
 	return deployedAddress, nil
 }
 
-func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, to common.Address, data []byte, value *big.Int, safeApi string, safeOperationType SafeOperationType) error {
+func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, to common.Address, data []byte, value *big.Int, safeApi string, safeOperationType SafeOperationType, safeNonce uint64) error {
 	chainID, err := client.ChainID(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to get chain ID: %v", err)
@@ -1155,10 +1155,16 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 		return fmt.Errorf("failed to create GnosisSafe instance: %v", err)
 	}
 
-	// Fetch the current nonce from the Safe contract
-	nonce, err := safeInstance.Nonce(&bind.CallOpts{})
-	if err != nil {
-		return fmt.Errorf("failed to fetch nonce from Safe contract: %v", err)
+	nonce := safeNonce
+	if safeNonce == 0 {
+		// Fetch the current nonce from the Safe contract
+		fetchedNonce, err := safeInstance.Nonce(&bind.CallOpts{})
+		if err != nil {
+			return fmt.Errorf("failed to fetch nonce from Safe contract: %v", err)
+		}
+		nonce = fetchedNonce.Uint64()
+	} else {
+		nonce = safeNonce
 	}
 
 	safeTransactionData := SafeTransactionData{
@@ -1171,7 +1177,7 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 		GasPrice:       "0",
 		GasToken:       NativeTokenAddress,
 		RefundReceiver: NativeTokenAddress, 
-		Nonce:          nonce.Uint64(),
+		Nonce:          nonce,
 	}
 
 	// Calculate SafeTxHash
@@ -1302,7 +1308,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var safeOperationType uint8
 	var salt [32]byte
 	var predictAddress bool
-
+	var safeNonce uint64
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
 	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
@@ -1432,7 +1438,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					return nil
 				} else {
 					fmt.Println("Creating Safe proposal...")
-					err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), salt)
+					err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), salt, safeNonce)
 					if err != nil {
 						return fmt.Errorf("failed to create Safe proposal: %v", err)
 					}
@@ -1500,6 +1506,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().Uint8Var(&safeOperationType, "safe-operation", 1, "Safe operation type: 0 (Call) or 1 (DelegateCall) - default is 1")
 	cmd.Flags().StringVar(&safeSaltRaw, "safe-salt", "", "Salt to use for the Safe transaction")
 	cmd.Flags().BoolVar(&predictAddress, "safe-predict-address", false, "Predict the deployment address (only works for Safe transactions)")
+	cmd.Flags().Uint64Var(&safeNonce, "safe-nonce", 0, "Safe nonce overrider for the transaction (optional)")
 	
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
@@ -1636,6 +1643,7 @@ func {{.HandlerName}}() *cobra.Command {
     var contractAddress common.Address
     var safeAddress, safeApi string
 	var safeOperationType uint8
+	var safeNonce uint64
 
     {{range .MethodArgs}}
     var {{.CLIVar}} {{.CLIType}}
@@ -1754,7 +1762,8 @@ func {{.HandlerName}}() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-                err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction, value, safeApi, SafeOperationType(safeOperationType))
+
+				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction, value, safeApi, SafeOperationType(safeOperationType), safeNonce)
                 if err != nil {
                     return fmt.Errorf("failed to create Safe proposal: %v", err)
                 }
@@ -1818,6 +1827,7 @@ func {{.HandlerName}}() *cobra.Command {
     cmd.Flags().StringVar(&safeApi, "safe-api", "", "Safe API for the Safe Transaction Service (optional)")
 	cmd.Flags().Uint8Var(&safeOperationType, "safe-operation", 0, "Safe operation type: 0 (Call) or 1 (DelegateCall)")
 	cmd.Flags().StringVar(&safeFunction, "safe-function", "", "Safe function overrider to use for the transaction (optional)")
+	cmd.Flags().Uint64Var(&safeNonce, "safe-nonce", 0, "Safe nonce overrider for the transaction (optional)")
 
     {{range .MethodArgs}}
     cmd.Flags().{{.Flag}}
