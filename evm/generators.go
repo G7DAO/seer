@@ -1380,7 +1380,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
-					_, ok := safeNonce.SetString(safeNonceRaw, 10)
+					_, ok := safeNonce.SetString(safeNonceRaw, 0)
 					if !ok {
 						return fmt.Errorf("--safe-nonce is not a valid big integer")
 					}
@@ -1708,7 +1708,7 @@ func {{.HandlerName}}() *cobra.Command {
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
-					_, ok := safeNonce.SetString(safeNonceRaw, 10)
+					_, ok := safeNonce.SetString(safeNonceRaw, 0)
 					if !ok {
 						return fmt.Errorf("--safe-nonce is not a valid big integer")
 					}

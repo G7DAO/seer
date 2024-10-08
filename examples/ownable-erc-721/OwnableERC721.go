@@ -1389,7 +1389,7 @@ func CreateOwnableERC721DeploymentCommand() *cobra.Command {
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
-					_, ok := safeNonce.SetString(safeNonceRaw, 10)
+					_, ok := safeNonce.SetString(safeNonceRaw, 0)
 					if !ok {
 						return fmt.Errorf("--safe-nonce is not a valid big integer")
 					}
@@ -2285,7 +2285,7 @@ func CreateApproveCommand() *cobra.Command {
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
-					_, ok := safeNonce.SetString(safeNonceRaw, 10)
+					_, ok := safeNonce.SetString(safeNonceRaw, 0)
 					if !ok {
 						return fmt.Errorf("--safe-nonce is not a valid big integer")
 					}
@@ -2503,7 +2503,7 @@ func CreateMintCommand() *cobra.Command {
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
-					_, ok := safeNonce.SetString(safeNonceRaw, 10)
+					_, ok := safeNonce.SetString(safeNonceRaw, 0)
 					if !ok {
 						return fmt.Errorf("--safe-nonce is not a valid big integer")
 					}
@@ -2716,7 +2716,7 @@ func CreateRenounceOwnershipCommand() *cobra.Command {
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
-					_, ok := safeNonce.SetString(safeNonceRaw, 10)
+					_, ok := safeNonce.SetString(safeNonceRaw, 0)
 					if !ok {
 						return fmt.Errorf("--safe-nonce is not a valid big integer")
 					}
@@ -2914,7 +2914,7 @@ func CreateSafeTransferFromCommand() *cobra.Command {
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
-					_, ok := safeNonce.SetString(safeNonceRaw, 10)
+					_, ok := safeNonce.SetString(safeNonceRaw, 0)
 					if !ok {
 						return fmt.Errorf("--safe-nonce is not a valid big integer")
 					}
@@ -3146,7 +3146,7 @@ func CreateSafeTransferFrom0Command() *cobra.Command {
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
-					_, ok := safeNonce.SetString(safeNonceRaw, 10)
+					_, ok := safeNonce.SetString(safeNonceRaw, 0)
 					if !ok {
 						return fmt.Errorf("--safe-nonce is not a valid big integer")
 					}
@@ -3387,7 +3387,7 @@ func CreateSetApprovalForAllCommand() *cobra.Command {
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
-					_, ok := safeNonce.SetString(safeNonceRaw, 10)
+					_, ok := safeNonce.SetString(safeNonceRaw, 0)
 					if !ok {
 						return fmt.Errorf("--safe-nonce is not a valid big integer")
 					}
@@ -3611,7 +3611,7 @@ func CreateTransferFromCommand() *cobra.Command {
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
-					_, ok := safeNonce.SetString(safeNonceRaw, 10)
+					_, ok := safeNonce.SetString(safeNonceRaw, 0)
 					if !ok {
 						return fmt.Errorf("--safe-nonce is not a valid big integer")
 					}
@@ -3837,7 +3837,7 @@ func CreateTransferOwnershipCommand() *cobra.Command {
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
-					_, ok := safeNonce.SetString(safeNonceRaw, 10)
+					_, ok := safeNonce.SetString(safeNonceRaw, 0)
 					if !ok {
 						return fmt.Errorf("--safe-nonce is not a valid big integer")
 					}
