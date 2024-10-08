@@ -13,11 +13,11 @@ import (
 	"sync"
 	"time"
 
-	seer_blockchain "github.com/moonstream-to/seer/blockchain"
-	"github.com/moonstream-to/seer/blockchain/common"
-	"github.com/moonstream-to/seer/crawler"
-	"github.com/moonstream-to/seer/indexer"
-	"github.com/moonstream-to/seer/storage"
+	seer_blockchain "github.com/G7DAO/seer/blockchain"
+	"github.com/G7DAO/seer/blockchain/common"
+	"github.com/G7DAO/seer/crawler"
+	"github.com/G7DAO/seer/indexer"
+	"github.com/G7DAO/seer/storage"
 )
 
 type Synchronizer struct {
