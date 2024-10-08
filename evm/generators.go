@@ -1376,7 +1376,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				}
 
 				if safeNonceRaw == "" {
-					fmt.Println("--safe-nonce not specified, using default (0)")
+					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
@@ -1704,7 +1704,7 @@ func {{.HandlerName}}() *cobra.Command {
 				}
 
 				if safeNonceRaw == "" {
-					fmt.Println("--safe-nonce not specified, using default (0)")
+					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
