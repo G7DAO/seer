@@ -5,8 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html/template"
+	"io/ioutil"
 	"log"
 	"math/big"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -81,6 +85,23 @@ func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 	} else {
 		return nil, errors.New("unsupported chain type")
 	}
+}
+
+func CommonClient(url string) (*seer_common.EvmClient, error) {
+	client, err := seer_common.NewClient(url, 4)
+	return client, err
+}
+
+type ChainInfo struct {
+	ChainType string                 `json:"chainType"` // L1 or L2
+	ChainID   *big.Int               `json:"chainID"`   // Chain ID
+	Block     *seer_common.BlockJson `json:"block"`
+}
+
+type BlockchainTemplateData struct {
+	BlockchainName      string
+	BlockchainNameLower string
+	IsSideChain         bool
 }
 
 type BlockData struct {
@@ -273,4 +294,208 @@ func FindDeployedBlock(client BlockchainClient, address string) (uint64, error) 
 	}
 
 	return left, nil
+}
+
+func CollectChainInfo(client seer_common.EvmClient) (*ChainInfo, error) {
+	ctx := context.Background()
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+
+	defer cancel()
+
+	var chainInfo ChainInfo
+
+	// Get chain id
+	chainID, err := client.GetChainID(ctx)
+
+	if err != nil {
+		log.Printf("Failed to get chain id: %v", err)
+		return nil, err
+	}
+
+	chainInfo.ChainID = chainID
+
+	// Get latest block number
+	latestBlockNumber, err := client.GetLatestBlockNumber()
+
+	if err != nil {
+		log.Printf("Failed to get latest block number: %v", err)
+		return nil, err
+	}
+
+	// Get block by number
+
+	ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+
+	defer cancel()
+
+	block, err := client.GetBlockByNumber(ctx, latestBlockNumber, true)
+
+	if err != nil {
+		log.Printf("Failed to get block by number: %v", err)
+		return nil, err
+	}
+
+	chainInfo.Block = block
+
+	// Initialize a score
+	l2Score := 0
+
+	// Method 1: Check for L2-specific fields
+
+	// Check for L2-specific fields
+	if block.L1BlockNumber != "" {
+		l2Score++
+	}
+	if block.SendRoot != "" {
+		l2Score++
+	}
+
+	// difficulty
+	difficulty := block.Difficulty
+
+	if difficulty != "" {
+		// convert to big int
+		difficultyBigInt, ok := new(big.Int).SetString(difficulty, 0)
+		if !ok {
+			log.Printf("Failed to convert difficulty to big int")
+		} else {
+			if difficultyBigInt.Cmp(big.NewInt(0)) == 0 {
+				l2Score++
+			}
+		}
+	}
+
+	if l2Score >= 1 {
+		chainInfo.ChainType = "L2"
+	} else {
+		chainInfo.ChainType = "L1"
+	}
+
+	return &chainInfo, nil
+
+}
+
+func GenerateProtoFile(chainName string, goPackage string, isL2 bool, outputPath string) error {
+	tmplData := seer_common.ProtoTemplateData{
+		GoPackage: goPackage,
+		ChainName: chainName,
+		IsL2:      isL2,
+	}
+
+	// Read the template file
+	tmplContent, err := ioutil.ReadFile("base.proto.tmpl")
+	if err != nil {
+		return fmt.Errorf("failed to read template file: %v", err)
+	}
+
+	// Parse the template
+	tmpl, err := template.New("proto").Parse(string(tmplContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %v", err)
+	}
+
+	// Execute the template with data
+	var output bytes.Buffer
+	err = tmpl.Execute(&output, tmplData)
+	if err != nil {
+		return fmt.Errorf("failed to execute template: %v", err)
+	}
+
+	// Write the output to the specified path
+	err = ioutil.WriteFile(outputPath, output.Bytes(), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write proto file: %v", err)
+	}
+
+	fmt.Printf("Protobuf definitions generated successfully at %s.\n", outputPath)
+	return nil
+}
+
+func ProtoKeys(msg proto.Message) []string {
+	m := make([]string, 0)
+	messageReflect := msg.ProtoReflect()
+	fields := messageReflect.Descriptor().Fields()
+	for i := 0; i < fields.Len(); i++ {
+		fieldDesc := fields.Get(i)
+		fieldName := string(fieldDesc.Name())
+		m = append(m, fieldName)
+
+	}
+	return m
+}
+
+func GenerateModelsFiles(chainName string, isL2 bool, modelsPath string) error {
+
+	var data BlockchainTemplateData
+
+	data.BlockchainName = chainName
+	data.BlockchainNameLower = strings.ToLower(chainName)
+	data.IsSideChain = isL2
+
+	// create chain directory if not exists
+
+	if _, err := ioutil.ReadDir(fmt.Sprintf("%s/%s", modelsPath, data.BlockchainNameLower)); err != nil {
+		if os.IsNotExist(err) {
+			err := os.Mkdir(modelsPath, 0755)
+			if err != nil {
+				return fmt.Errorf("failed to create directory: %v", err)
+			}
+		}
+	}
+
+	templateIndexFile := fmt.Sprintf("%s/models_indexes.go.tmpl", modelsPath)
+	templateLabelsFile := fmt.Sprintf("%s/models_labels.go.tmpl", modelsPath)
+
+	// Read the template file
+	tmplIndexContent, err := ioutil.ReadFile(templateIndexFile)
+	if err != nil {
+		return fmt.Errorf("failed to read template file: %v", err)
+	}
+
+	tmplLabelsContent, err := ioutil.ReadFile(templateLabelsFile)
+	if err != nil {
+		return fmt.Errorf("failed to read template file: %v", err)
+	}
+
+	// Parse the template
+	tmplIndex, err := template.New("indexes").Parse(string(tmplIndexContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %v", err)
+	}
+
+	tmplLabels, err := template.New("labels").Parse(string(tmplLabelsContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %v", err)
+	}
+
+	// Execute the template with data
+	var outputIndex bytes.Buffer
+	err = tmplIndex.Execute(&outputIndex, data)
+	if err != nil {
+		return fmt.Errorf("failed to execute template: %v", err)
+	}
+
+	var outputLabels bytes.Buffer
+	err = tmplLabels.Execute(&outputLabels, data)
+	if err != nil {
+		return fmt.Errorf("failed to execute template: %v", err)
+	}
+
+	outputPath := fmt.Sprintf("%s/%s/%s_indexes.go", modelsPath, data.BlockchainNameLower, data.BlockchainNameLower)
+
+	// Write the output to the specified path
+	err = ioutil.WriteFile(outputPath, outputIndex.Bytes(), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write models file: %v", err)
+	}
+
+	outputPath = fmt.Sprintf("%s/%s/%s_labels.go", modelsPath, data.BlockchainNameLower, data.BlockchainNameLower)
+	err = ioutil.WriteFile(outputPath, outputLabels.Bytes(), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write models file: %v", err)
+	}
+
+	fmt.Printf("Models generated successfully at %s.\n", outputPath)
+	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/moonstream-to/seer/blockchain"
 	seer_blockchain "github.com/moonstream-to/seer/blockchain"
 	"github.com/moonstream-to/seer/crawler"
 	"github.com/moonstream-to/seer/evm"
@@ -137,12 +139,6 @@ func CreateBlockchainCommand() *cobra.Command {
 	return blockchainCmd
 }
 
-type BlockchainTemplateData struct {
-	BlockchainName      string
-	BlockchainNameLower string
-	IsSideChain         bool
-}
-
 func CreateBlockchainGenerateCommand() *cobra.Command {
 	var blockchainNameLower string
 	var sideChain bool
@@ -181,7 +177,7 @@ func CreateBlockchainGenerateCommand() *cobra.Command {
 			defer outputFile.Close()
 
 			// Execute template and write to output file
-			data := BlockchainTemplateData{
+			data := blockchain.BlockchainTemplateData{
 				BlockchainName:      blockchainName,
 				BlockchainNameLower: blockchainNameLower,
 				IsSideChain:         sideChain,
@@ -1160,63 +1156,184 @@ func CreateEVMGenerateCommand() *cobra.Command {
 	return evmGenerateCmd
 }
 
-// func CreateGenerateCmd() *cobra.Command {
-// 	rootCmd := &cobra.Command{
-// 		Use:   "generate",
-// 		Short: "A tool for generating Go bindings, crawlers, and other code",
-// 		Run: func(cmd *cobra.Command, args []string) {
-// 			cmd.Help()
-// 		},
-// 	}
+func CreateGenerateCmd() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:   "generate",
+		Short: "A tool for generating Go bindings, crawlers, and other code",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
 
-// 	evmCmd := CreateEVMCommand()
-// 	starknetCmd := CreateStarknetCommand()
+	evmCmd := CreateEVMCommand()
+	starknetCmd := CreateStarknetCommand()
 
-// 	rootCmd.AddCommand(evmCmd, starknetCmd)
+	rootCmd.AddCommand(evmCmd, starknetCmd)
 
-// 	return rootCmd
-// }
+	return rootCmd
+}
 
-// func CreateGenerateBlockchainCmd() *cobra.Command {
-// 	rootCmd := &cobra.Command{
-// 		Use:   "blockchain",
-// 		Short: "Generate blockchain definitions and scripts",
-// 		Run: func(cmd *cobra.Command, args []string) {
-// 			cmd.Help()
-// 		},
-// 	}
+func CreateGenerateBlockchainCmd() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:   "blockchain",
+		Short: "Generate blockchain definitions and scripts",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
 
-// 	return rootCmd
-// }
+	definitionsCmd := CreateDefinitionsCommand()
 
-// func CreateDefinitionsCommand() *cobra.Command {
+	rootCmd.AddCommand(definitionsCmd)
 
-// 	var rpc string
+	return rootCmd
+}
 
-// 	definitionsCmd := &cobra.Command{
-// 		Use:   "definitions",
-// 		Short: "Generate definitions for various blockchains",
-// 		PreRunE: func(cmd *cobra.Command, args []string) error {
+func CreateDefinitionsCommand() *cobra.Command {
 
-// 			crawlerErr := crawler.CheckVariablesForCrawler()
-// 			if crawlerErr != nil {
-// 				return crawlerErr
-// 			}
+	var rpc, chainName, outputPath string
+	var defenitions, models, clientInteraface, migrations, full, createSubscriptionType bool
 
-// 		},
-// 		RunE: func(cmd *cobra.Command, args []string) error {
-// 			// make predefined list of rpc calls
-// 			rpcCalls := map[string]string{
-// 				"eth_getLatestBlockNumber": nil,
-// 				"eth_chainId": nil,
-// 				"eth_getLogs": nil,
-// 			}
+	definitionsCmd := &cobra.Command{
+		Use:   "chain",
+		Short: "Generate definitions for various blockchains",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := blockchain.CommonClient(rpc)
+			if err != nil {
+				log.Printf("Failed to create client: %s", err)
+				return err
+			}
 
-// 			client, clientErr := seer_blockchain.NewClient("ethereum", crawler.BlockchainURLs["ethereum"], 30)
+			chainInfo, err := blockchain.CollectChainInfo(*client)
+			if err != nil {
+				log.Printf("Failed to collect chain info: %s", err)
+				return err
+			}
 
-// 	}
+			var sideChain bool
 
-// 	definitionsGenerateCmd :=
+			if chainInfo.ChainType == "L2" {
+				sideChain = true
+			}
 
-// 	return definitionsCmd
-// }
+			// Execute template and write to output file
+			data := blockchain.BlockchainTemplateData{
+				BlockchainName:      chainName,
+				BlockchainNameLower: strings.ToLower(chainName),
+				IsSideChain:         sideChain,
+			}
+
+			defaultPath := fmt.Sprintf("./blockchain/%s/%s.proto", strings.ToLower(chainName), strings.ToLower(chainName))
+
+			if outputPath == "" {
+				outputPath = defaultPath
+			}
+
+			goPackage := fmt.Sprintf("github.com/moonstream-to/seer/blockchain/%s", strings.ToLower(chainName))
+			isL2 := (chainInfo.ChainType == "L2")
+
+			if defenitions || full {
+				outputPath := fmt.Sprintf("%s.proto", strings.ToLower(chainName))
+
+				err = blockchain.GenerateProtoFile(chainName, goPackage, isL2, outputPath)
+				if err != nil {
+					return err
+				}
+			}
+
+			if models || full {
+
+				modelsPath := fmt.Sprintf("./moonstreamdb-v3/moonstreamdbv3/blockchain")
+
+				// read the proto file and generate the models
+
+				err = blockchain.GenerateModelsFiles(chainName, isL2, modelsPath)
+				if err != nil {
+					return err
+				}
+
+			}
+
+			if clientInteraface || full {
+
+				dirPath := filepath.Join(".", "blockchain", data.BlockchainNameLower)
+				blockchainNameFilePath := filepath.Join(dirPath, fmt.Sprintf("%s.go", data.BlockchainNameLower))
+
+				var blockchainName string
+				blockchainNameList := strings.Split(data.BlockchainNameLower, "-")
+				for _, w := range blockchainNameList {
+					blockchainName += strings.Title(w)
+				}
+
+				// Read and parse the template file
+				tmpl, parseErr := template.ParseFiles("blockchain/blockchain.go.tmpl")
+				if parseErr != nil {
+					return parseErr
+				}
+
+				// Create output file
+				if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
+					mkdirErr := os.Mkdir(dirPath, 0775)
+					if mkdirErr != nil {
+						return mkdirErr
+					}
+				}
+
+				outputFile, createErr := os.Create(blockchainNameFilePath)
+				if createErr != nil {
+					return createErr
+				}
+				defer outputFile.Close()
+
+				execErr := tmpl.Execute(outputFile, data)
+				if execErr != nil {
+					return execErr
+				}
+
+				log.Printf("Blockchain file generated successfully: %s", blockchainNameFilePath)
+
+				log.Printf("Generating client interfaces for %s", chainName)
+			}
+
+			if migrations || full {
+
+				// Change directory to moonstreamdb-v3 for alembic
+				err = os.Chdir("./moonstreamdb-v3")
+				if err != nil {
+					return fmt.Errorf("Failed to change directory: %w", err)
+				}
+
+				// Execute Alembic revision --autogenerate
+				cmd := exec.Command("alembic", "revision", "--autogenerate")
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+
+				log.Printf("Generating migrations for %s", chainName)
+
+				if err := cmd.Run(); err != nil {
+					return fmt.Errorf("Failed to generate Alembic revision: %w", err)
+				}
+
+				log.Println("Alembic revision generated successfully.")
+			}
+
+			if createSubscriptionType {
+				log.Printf("Generating subscription type for %s", chainName)
+			}
+
+			return nil
+		},
+	}
+
+	definitionsCmd.Flags().StringVar(&rpc, "rpc", "", "The RPC URL for the blockchain")
+	definitionsCmd.Flags().StringVar(&chainName, "chain", "", "The name of the blockchain")
+	definitionsCmd.Flags().StringVar(&outputPath, "output", "", "The path to the output file")
+	definitionsCmd.Flags().BoolVar(&defenitions, "definitions", false, "Generate definitions")
+	definitionsCmd.Flags().BoolVar(&models, "models", false, "Generate models")
+	definitionsCmd.Flags().BoolVar(&clientInteraface, "interfaces", false, "Generate interfaces")
+	definitionsCmd.Flags().BoolVar(&migrations, "migrations", false, "Generate migrations")
+	definitionsCmd.Flags().BoolVar(&full, "full", false, "Generate all")
+	definitionsCmd.Flags().BoolVar(&createSubscriptionType, "subscription", false, "Generate subscription type")
+
+	return definitionsCmd
+}
