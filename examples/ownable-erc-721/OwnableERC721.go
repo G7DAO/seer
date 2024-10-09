@@ -1385,7 +1385,7 @@ func CreateOwnableERC721DeploymentCommand() *cobra.Command {
 				}
 
 				if safeNonceRaw == "" {
-					fmt.Println("--safe-nonce not specified, using default (0)")
+					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
@@ -2281,7 +2281,7 @@ func CreateApproveCommand() *cobra.Command {
 				}
 
 				if safeNonceRaw == "" {
-					fmt.Println("--safe-nonce not specified, using default (0)")
+					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
@@ -2499,7 +2499,7 @@ func CreateMintCommand() *cobra.Command {
 				}
 
 				if safeNonceRaw == "" {
-					fmt.Println("--safe-nonce not specified, using default (0)")
+					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
@@ -2712,7 +2712,7 @@ func CreateRenounceOwnershipCommand() *cobra.Command {
 				}
 
 				if safeNonceRaw == "" {
-					fmt.Println("--safe-nonce not specified, using default (0)")
+					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
@@ -2910,7 +2910,7 @@ func CreateSafeTransferFromCommand() *cobra.Command {
 				}
 
 				if safeNonceRaw == "" {
-					fmt.Println("--safe-nonce not specified, using default (0)")
+					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
@@ -3142,7 +3142,7 @@ func CreateSafeTransferFrom0Command() *cobra.Command {
 				}
 
 				if safeNonceRaw == "" {
-					fmt.Println("--safe-nonce not specified, using default (0)")
+					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
@@ -3383,7 +3383,7 @@ func CreateSetApprovalForAllCommand() *cobra.Command {
 				}
 
 				if safeNonceRaw == "" {
-					fmt.Println("--safe-nonce not specified, using default (0)")
+					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
@@ -3607,7 +3607,7 @@ func CreateTransferFromCommand() *cobra.Command {
 				}
 
 				if safeNonceRaw == "" {
-					fmt.Println("--safe-nonce not specified, using default (0)")
+					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
@@ -3833,7 +3833,7 @@ func CreateTransferOwnershipCommand() *cobra.Command {
 				}
 
 				if safeNonceRaw == "" {
-					fmt.Println("--safe-nonce not specified, using default (0)")
+					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
 					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
@@ -4254,7 +4254,7 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 	}
 
 	nonce := safeNonce
-	if safeNonce == nil {
+	if safeNonce == big.NewInt(0) {
 		// Fetch the current nonce from the Safe contract
 		fetchedNonce, err := safeInstance.Nonce(&bind.CallOpts{})
 		if err != nil {
