@@ -18,9 +18,9 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/G7DAO/seer/version"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/iancoleman/strcase"
-	"github.com/moonstream-to/seer/version"
 	"golang.org/x/tools/imports"
 )
 
@@ -780,8 +780,8 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 			// - github.com/ethereum/go-ethereum/accounts/keystore
 			// - github.com/ethereum/go-ethereum/ethclient
 			// - golang.org/x/term
-			// - github.com/moonstream-to/seer/bindings/GnosisSafe
-			// - github.com/moonstream-to/seer/bindings/CreateCall
+			// - github.com/G7DAO/seer/bindings/GnosisSafe
+			// - github.com/G7DAO/seer/bindings/CreateCall
 			// - github.com/ethereum/go-ethereum/common/math
 			// - github.com/ethereum/go-ethereum/crypto
 			if t.Tok == token.IMPORT {
@@ -797,8 +797,8 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/ethereum/go-ethereum/accounts/keystore"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/ethereum/go-ethereum/ethclient"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"golang.org/x/term"`}},
-					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/moonstream-to/seer/bindings/GnosisSafe"`}},
-					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/moonstream-to/seer/bindings/CreateCall"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/G7DAO/seer/bindings/GnosisSafe"`}},
+					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/G7DAO/seer/bindings/CreateCall"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/ethereum/go-ethereum/common/math"`}},
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/ethereum/go-ethereum/crypto"`}},
 				)
@@ -1107,7 +1107,7 @@ type SafeTransactionData struct {
 	GasPrice       string        ` + "`" + `json:"gasPrice"` + "`" + `
 	GasToken       string        ` + "`" + `json:"gasToken"` + "`" + `
 	RefundReceiver string        ` + "`" + `json:"refundReceiver"` + "`" + `
-	Nonce          uint64        ` + "`" + `json:"nonce"` + "`" + `
+	Nonce          *big.Int      ` + "`" + `json:"nonce"` + "`" + `
 	SafeTxHash     string        ` + "`" + `json:"safeTxHash"` + "`" + `
 	Sender         string        ` + "`" + `json:"sender"` + "`" + `
 	Signature      string        ` + "`" + `json:"signature"` + "`" + `
@@ -1119,7 +1119,7 @@ const (
 )
 
 
-func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, safeApi string, deployBytecode []byte, safeOperationType SafeOperationType, salt [32]byte) error {
+func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, safeApi string, deployBytecode []byte, safeOperationType SafeOperationType, salt [32]byte, safeNonce *big.Int) error {
 	abi, err := CreateCall.CreateCallMetaData.GetAbi()
 	if err != nil {
 		return fmt.Errorf("failed to get ABI: %v", err)
@@ -1130,7 +1130,7 @@ func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress com
 		return fmt.Errorf("failed to pack performCreate2 transaction: %v", err)
 	}
 
-	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreateCallTxData, value, safeApi, SafeOperationType(safeOperationType))
+	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreateCallTxData, value, safeApi, SafeOperationType(safeOperationType), safeNonce)
 }
 
 func PredictDeploymentAddressSafe(from common.Address, salt [32]byte, deployBytecode []byte) (common.Address, error) {
@@ -1143,7 +1143,7 @@ func PredictDeploymentAddressSafe(from common.Address, salt [32]byte, deployByte
 	return deployedAddress, nil
 }
 
-func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, to common.Address, data []byte, value *big.Int, safeApi string, safeOperationType SafeOperationType) error {
+func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, to common.Address, data []byte, value *big.Int, safeApi string, safeOperationType SafeOperationType, safeNonce *big.Int) error {
 	chainID, err := client.ChainID(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to get chain ID: %v", err)
@@ -1155,10 +1155,16 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 		return fmt.Errorf("failed to create GnosisSafe instance: %v", err)
 	}
 
-	// Fetch the current nonce from the Safe contract
-	nonce, err := safeInstance.Nonce(&bind.CallOpts{})
-	if err != nil {
-		return fmt.Errorf("failed to fetch nonce from Safe contract: %v", err)
+	nonce := safeNonce
+	if safeNonce == big.NewInt(0) {
+		// Fetch the current nonce from the Safe contract
+		fetchedNonce, err := safeInstance.Nonce(&bind.CallOpts{})
+		if err != nil {
+			return fmt.Errorf("failed to fetch nonce from Safe contract: %v", err)
+		}
+		nonce = fetchedNonce
+	} else {
+		nonce = safeNonce
 	}
 
 	safeTransactionData := SafeTransactionData{
@@ -1171,7 +1177,7 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 		GasPrice:       "0",
 		GasToken:       NativeTokenAddress,
 		RefundReceiver: NativeTokenAddress, 
-		Nonce:          nonce.Uint64(),
+		Nonce:          nonce,
 	}
 
 	// Calculate SafeTxHash
@@ -1298,11 +1304,11 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var gasLimit uint64
 	var simulate bool
 	var timeout uint
-	var safeAddress, safeApi, safeCreateCall, safeSaltRaw string
+	var safeAddress, safeApi, safeCreateCall, safeSaltRaw, safeNonceRaw string
 	var safeOperationType uint8
 	var salt [32]byte
 	var predictAddress bool
-
+	var safeNonce *big.Int
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
 	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
@@ -1368,6 +1374,17 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				} else {
 					copy(salt[:], safeSaltRaw)
 				}
+
+				if safeNonceRaw == "" {
+					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
+					safeNonce = big.NewInt(0)
+				} else {
+					safeNonce = new(big.Int)
+					_, ok := safeNonce.SetString(safeNonceRaw, 0)
+					if !ok {
+						return fmt.Errorf("--safe-nonce is not a valid big integer")
+					}
+				}
 			}
 
 			{{range .DeployHandler.MethodArgs}}
@@ -1432,7 +1449,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					return nil
 				} else {
 					fmt.Println("Creating Safe proposal...")
-					err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), salt)
+					err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), salt, safeNonce)
 					if err != nil {
 						return fmt.Errorf("failed to create Safe proposal: %v", err)
 					}
@@ -1500,6 +1517,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().Uint8Var(&safeOperationType, "safe-operation", 1, "Safe operation type: 0 (Call) or 1 (DelegateCall) - default is 1")
 	cmd.Flags().StringVar(&safeSaltRaw, "safe-salt", "", "Salt to use for the Safe transaction")
 	cmd.Flags().BoolVar(&predictAddress, "safe-predict-address", false, "Predict the deployment address (only works for Safe transactions)")
+	cmd.Flags().StringVar(&safeNonceRaw, "safe-nonce", "", "Safe nonce overrider for the transaction (optional)")
 	
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
@@ -1629,13 +1647,14 @@ func {{.HandlerName}}() *cobra.Command {
 var TransactMethodCommandsTemplate string = `{{$structName := .StructName}}
 {{range .TransactHandlers}}
 func {{.HandlerName}}() *cobra.Command {
-    var keyfile, nonce, password, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, rpc, contractAddressRaw string
+    var keyfile, nonce, password, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, rpc, contractAddressRaw, safeFunction, safeNonceRaw string
     var gasLimit uint64
     var simulate bool
     var timeout uint
     var contractAddress common.Address
     var safeAddress, safeApi string
 	var safeOperationType uint8
+	var safeNonce *big.Int
 
     {{range .MethodArgs}}
     var {{.CLIVar}} {{.CLIType}}
@@ -1683,6 +1702,17 @@ func {{.HandlerName}}() *cobra.Command {
 				if SafeOperationType(safeOperationType).String() == "Unknown" {
 					return fmt.Errorf("--safe-operation must be 0 (Call) or 1 (DelegateCall)")
 				}
+
+				if safeNonceRaw == "" {
+					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
+					safeNonce = big.NewInt(0)
+				} else {
+					safeNonce = new(big.Int)
+					_, ok := safeNonce.SetString(safeNonceRaw, 0)
+					if !ok {
+						return fmt.Errorf("--safe-nonce is not a valid big integer")
+					}
+				}
             }
 
             {{range .MethodArgs}}
@@ -1727,11 +1757,22 @@ func {{.HandlerName}}() *cobra.Command {
             }
 
             if safeAddress != "" {
-                // Generate transaction data
-				transaction, err := session.{{.MethodName}}(
-                {{range .MethodArgs}}
-                {{.CLIVar}},
-                {{- end}}
+				abi, err := {{$structName}}MetaData.GetAbi()
+				if err != nil {
+					return fmt.Errorf("failed to get ABI: %v", err)
+				}
+				
+                // Generate transaction data (override method name if safe function is specified)
+				methodName := "{{ToLowerCamel .MethodName}}"
+				if safeFunction != "" {
+					methodName = safeFunction
+				}
+
+				transaction, err := abi.Pack(
+					methodName,
+					{{- range .MethodArgs}}
+					{{.CLIVar}},
+					{{- end}}
 				)
 
 				if err != nil {
@@ -1743,7 +1784,8 @@ func {{.HandlerName}}() *cobra.Command {
 				if value == nil {
 					value = big.NewInt(0)
 				}
-                err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction.Data(), value, safeApi, SafeOperationType(safeOperationType))
+
+				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction, value, safeApi, SafeOperationType(safeOperationType), safeNonce)
                 if err != nil {
                     return fmt.Errorf("failed to create Safe proposal: %v", err)
                 }
@@ -1806,6 +1848,8 @@ func {{.HandlerName}}() *cobra.Command {
     cmd.Flags().StringVar(&safeAddress, "safe", "", "Address of the Safe contract")
     cmd.Flags().StringVar(&safeApi, "safe-api", "", "Safe API for the Safe Transaction Service (optional)")
 	cmd.Flags().Uint8Var(&safeOperationType, "safe-operation", 0, "Safe operation type: 0 (Call) or 1 (DelegateCall)")
+	cmd.Flags().StringVar(&safeFunction, "safe-function", "", "Safe function overrider to use for the transaction (optional)")
+	cmd.Flags().StringVar(&safeNonceRaw, "safe-nonce", "", "Safe nonce overrider for the transaction (optional)")
 
     {{range .MethodArgs}}
     cmd.Flags().{{.Flag}}
@@ -1819,7 +1863,7 @@ func {{.HandlerName}}() *cobra.Command {
 // This is the Go template used to create header information at the top of the generated code.
 // At a bare minimum, the header specifies the version of seer that was used to generate the code.
 // This template should be applied to a EVMHeaderParameters struct.
-var HeaderTemplate string = `// This file was generated by seer: https://github.com/moonstream-to/seer.
+var HeaderTemplate string = `// This file was generated by seer: https://github.com/G7DAO/seer.
 // seer version: {{.Version}}
 // seer command: seer evm generate{{if .PackageName}} --package {{.PackageName}}{{end}}{{if .CLI}} --cli{{end}}{{if .IncludeMain}} --includemain{{end}}{{if (ne .Foundry "")}} --foundry {{.Foundry}}{{end}}{{if (ne .ABI "")}} --abi {{.ABI}}{{end}}{{if (ne .Bytecode "")}} --bytecode {{.Bytecode}}{{end}} --struct {{.StructName}}{{if (ne .OutputFile "")}} --output {{.OutputFile}}{{end}}{{if .NoFormat}} --noformat{{end}}
 `
