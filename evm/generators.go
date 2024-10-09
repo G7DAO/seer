@@ -1156,7 +1156,7 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 	}
 
 	nonce := safeNonce
-	if safeNonce == nil {
+	if safeNonce == big.NewInt(0) {
 		// Fetch the current nonce from the Safe contract
 		fetchedNonce, err := safeInstance.Nonce(&bind.CallOpts{})
 		if err != nil {
