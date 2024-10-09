@@ -1210,6 +1210,78 @@ func (p *PostgreSQLpgx) SelectAbiJobs(blockchain string, addresses []string, cus
 	return abiJobs, nil
 }
 
+func GetJobIds(abiJobs []AbiJob, isSilent bool) []string {
+	var jobIds []string
+	abiJobChains := make(map[string]int)
+	for _, abiJob := range abiJobs {
+		jobIds = append(jobIds, abiJob.ID)
+		if _, ok := abiJobChains[abiJob.Chain]; !ok {
+			abiJobChains[abiJob.Chain] = 0
+		}
+		abiJobChains[abiJob.Chain]++
+	}
+
+	if !isSilent {
+		fmt.Printf("Found %d total:\n", len(jobIds))
+		for k, v := range abiJobChains {
+			fmt.Printf("- %s - %d jobs\n", k, v)
+		}
+	}
+
+	return jobIds
+}
+
+func (p *PostgreSQLpgx) CopyAbiJobs(sourceCustomerId, destCustomerId string, abiJobs []AbiJob) error {
+	pool := p.GetPool()
+
+	ctx := context.Background()
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, prepErr := tx.Prepare(ctx, "insertAbiJob", `
+        INSERT INTO abi_jobs (id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, deployment_block_number, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())
+    `)
+	if prepErr != nil {
+		return err
+	}
+
+	for _, abiJob := range abiJobs {
+		jobID := uuid.New()
+
+		if len(abiJob.Abi) <= 2 || abiJob.Abi[0] != '[' || abiJob.Abi[len(abiJob.Abi)-1] != ']' {
+			log.Printf("Passed ABI job, incorrect format: %s", abiJob.Abi)
+			continue
+		}
+		abi := abiJob.Abi[1 : len(abiJob.Abi)-1]
+		abiBytes := []byte(abi)
+
+		_, execErr := tx.Exec(ctx, "insertAbiJob", jobID, abiJob.Address, abiJob.UserID, destCustomerId, abiJob.AbiSelector, abiJob.Chain, abiJob.AbiName, "true", "pending", 0, false, abiBytes, abiJob.DeploymentBlockNumber)
+		if execErr != nil {
+			return execErr
+		}
+	}
+
+	commitErr := tx.Commit(ctx)
+	if commitErr != nil {
+		return commitErr
+	}
+
+	log.Printf("Copied %d ABI jobs from customer %s to %s.", len(abiJobs), sourceCustomerId, destCustomerId)
+
+	return nil
+}
+
 func ConvertToCustomerUpdatedAndDeployBlockDicts(abiJobs []AbiJob) ([]CustomerUpdates, map[string]AbiJobsDeployInfo, error) {
 	if len(abiJobs) == 0 {
 		return []CustomerUpdates{}, map[string]AbiJobsDeployInfo{}, nil

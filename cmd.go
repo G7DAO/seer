@@ -823,15 +823,14 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 				return blockchainErr
 			}
 
-			return nil
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-
-			// check if the chain is supported
+			// Check if the chain is supported
 			if _, ok := seer_blockchain.BlockchainURLs[jobChain]; !ok {
 				return fmt.Errorf("chain %s is not supported", jobChain)
 			}
 
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
 			client, clientErr := seer_blockchain.NewClient(jobChain, seer_blockchain.BlockchainURLs[jobChain], 30)
 			if clientErr != nil {
 				return clientErr
@@ -857,7 +856,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 		},
 	}
 
-	createJobsCommand.Flags().StringVar(&jobChain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	createJobsCommand.Flags().StringVar(&jobChain, "chain", "", "The blockchain")
 	createJobsCommand.Flags().StringVar(&address, "address", "", "The address to create jobs for")
 	createJobsCommand.Flags().StringVar(&abiFile, "abi-file", "", "The path to the ABI file")
 	createJobsCommand.Flags().StringVar(&customerId, "customer-id", "", "The customer ID to create jobs for (default: '')")
@@ -891,19 +890,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 				return fmt.Errorf("error selecting ABI jobs: %w", selectJobsErr)
 			}
 
-			var jobIds []string
-			abiJobChains := make(map[string]int)
-			for _, abiJob := range abiJobs {
-				jobIds = append(jobIds, abiJob.ID)
-				if _, ok := abiJobChains[abiJob.Chain]; !ok {
-					abiJobChains[abiJob.Chain] = 0
-				}
-				abiJobChains[abiJob.Chain]++
-			}
-			fmt.Printf("Found %d total:\n", len(jobIds))
-			for k, v := range abiJobChains {
-				fmt.Printf("- %s - %d jobs\n", k, v)
-			}
+			jobIds := indexer.GetJobIds(abiJobs, false)
 
 			output := "no"
 			if silentFlag {
@@ -933,15 +920,86 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 		},
 	}
 
-	deleteJobsCommand.Flags().StringVar(&jobChain, "chain", "", "The blockchain to crawl")
+	deleteJobsCommand.Flags().StringVar(&jobChain, "chain", "", "The blockchain")
 	deleteJobsCommand.Flags().StringSliceVar(&jobIds, "job-ids", []string{}, "The list of job UUIDs separated by coma")
 	deleteJobsCommand.Flags().StringSliceVar(&jobAddresses, "addresses", []string{}, "The list of addresses created jobs for separated by coma")
 	deleteJobsCommand.Flags().StringSliceVar(&jobCustomerIds, "customer-ids", []string{}, "The list of customer IDs created jobs for separated by coma")
 	deleteJobsCommand.Flags().BoolVar(&silentFlag, "silent", false, "Set this flag to run command without prompt")
 
+	var sourceCustomerId, destCustomerId string
+
+	copyJobsCommand := &cobra.Command{
+		Use:   "copy-jobs",
+		Short: "Copy jobs between customers",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			indexer.InitDBConnection()
+
+			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			if blockchainErr != nil {
+				return blockchainErr
+			}
+
+			if sourceCustomerId == "" || destCustomerId == "" {
+				return fmt.Errorf("values for --source-customer-id and --dest-customer-id should be set")
+			}
+
+			// Check if the chain is supported
+			if _, ok := seer_blockchain.BlockchainURLs[jobChain]; !ok {
+				return fmt.Errorf("chain %s is not supported", jobChain)
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			abiJobs, selectJobsErr := indexer.DBConnection.SelectAbiJobs(jobChain, []string{}, []string{sourceCustomerId}, false, false, []string{})
+			if selectJobsErr != nil {
+				return fmt.Errorf("error selecting ABI jobs: %w", selectJobsErr)
+			}
+
+			indexer.GetJobIds(abiJobs, false)
+
+			output := "no"
+			if silentFlag {
+				output = "yes"
+			} else {
+				var promptErr error
+				output, promptErr = StringPrompt("Continue? (y/yes)")
+				if promptErr != nil {
+					return promptErr
+				}
+			}
+
+			switch output {
+			case "y":
+			case "yes":
+			default:
+				fmt.Println("Canceled")
+				return nil
+			}
+
+			copyErr := indexer.DBConnection.CopyAbiJobs(sourceCustomerId, destCustomerId, abiJobs)
+			if copyErr != nil {
+				return copyErr
+			}
+
+			return nil
+		},
+	}
+
+	copyJobsCommand.Flags().StringVar(&jobChain, "chain", "", "The blockchain to crawl")
+	copyJobsCommand.Flags().StringVar(&sourceCustomerId, "source-customer-id", "", "Source customer ID with jobs to copy")
+	copyJobsCommand.Flags().StringVar(&destCustomerId, "dest-customer-id", "", "Destination customer ID where to copy jobs")
+	copyJobsCommand.Flags().BoolVar(&silentFlag, "silent", false, "Set this flag to run command without prompt")
+
 	indexCommand.AddCommand(deploymentBlocksCommand)
 	indexCommand.AddCommand(createJobsCommand)
 	indexCommand.AddCommand(deleteJobsCommand)
+	indexCommand.AddCommand(copyJobsCommand)
 	databaseCmd.AddCommand(indexCommand)
 
 	return databaseCmd
