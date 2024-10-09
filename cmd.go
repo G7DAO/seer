@@ -49,7 +49,8 @@ func CreateRootCommand() *cobra.Command {
 	abiCmd := CreateAbiCommand()
 	dbCmd := CreateDatabaseOperationCommand()
 	historicalSyncCmd := CreateHistoricalSyncCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd, historicalSyncCmd)
+	genereateGenerateCmd := CreateGenerateCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd, historicalSyncCmd, genereateGenerateCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -1156,9 +1157,9 @@ func CreateEVMGenerateCommand() *cobra.Command {
 	return evmGenerateCmd
 }
 
-func CreateGenerateCmd() *cobra.Command {
+func CreateGenerateCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:   "generate",
+		Use:   "generates",
 		Short: "A tool for generating Go bindings, crawlers, and other code",
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Help()
@@ -1169,6 +1170,7 @@ func CreateGenerateCmd() *cobra.Command {
 	starknetCmd := CreateStarknetCommand()
 
 	rootCmd.AddCommand(evmCmd, starknetCmd)
+	rootCmd.AddCommand(CreateGenerateBlockchainCmd())
 
 	return rootCmd
 }
@@ -1210,6 +1212,27 @@ func CreateDefinitionsCommand() *cobra.Command {
 				return err
 			}
 
+			// dump chain info as json formated to the output file
+			if outputPath != "" {
+				file, err := os.Create(outputPath)
+				if err != nil {
+					log.Printf("Failed to create output file: %s", err)
+					return err
+				}
+				// dump chain info as json formated to the output file
+				jsonChainInfo, err := json.MarshalIndent(chainInfo, "", "  ")
+				if err != nil {
+					log.Printf("Failed to marshal chain info: %s", err)
+					return err
+				}
+				_, err = file.Write(jsonChainInfo)
+				if err != nil {
+					log.Printf("Failed to write chain info to the output file: %s", err)
+					return err
+				}
+				log.Printf("Chain info written to %s", outputPath)
+			}
+
 			var sideChain bool
 
 			if chainInfo.ChainType == "L2" {
@@ -1223,19 +1246,36 @@ func CreateDefinitionsCommand() *cobra.Command {
 				IsSideChain:         sideChain,
 			}
 
-			defaultPath := fmt.Sprintf("./blockchain/%s/%s.proto", strings.ToLower(chainName), strings.ToLower(chainName))
+			// defaultPath := fmt.Sprintf("./blockchain/%s/%s.proto", strings.ToLower(chainName), strings.ToLower(chainName))
 
-			if outputPath == "" {
-				outputPath = defaultPath
+			// if outputPath == "" {
+			// 	outputPath = defaultPath
+			// }
+
+			goPackage := fmt.Sprintf("github.com/moonstream-to/seer/blockchain/%s", strings.ToLower(data.BlockchainNameLower))
+
+			// check if the chain folder exists
+			if _, err := os.Stat(fmt.Sprintf("./blockchain/%s", data.BlockchainNameLower)); os.IsNotExist(err) {
+				err := os.Mkdir(fmt.Sprintf("./blockchain/%s", data.BlockchainNameLower), 0755)
+				if err != nil {
+					return err
+				}
 			}
 
-			goPackage := fmt.Sprintf("github.com/moonstream-to/seer/blockchain/%s", strings.ToLower(chainName))
-			isL2 := (chainInfo.ChainType == "L2")
-
 			if defenitions || full {
-				outputPath := fmt.Sprintf("%s.proto", strings.ToLower(chainName))
+				// chain folder
+				chainFolder := fmt.Sprintf("./blockchain/%s", data.BlockchainNameLower)
+				// check if the chain folder exists
+				if _, err := os.Stat(chainFolder); os.IsNotExist(err) {
+					err := os.Mkdir(chainFolder, 0755)
+					if err != nil {
+						return err
+					}
+				}
 
-				err = blockchain.GenerateProtoFile(chainName, goPackage, isL2, outputPath)
+				protoPath := fmt.Sprintf("%s/%s.proto", chainFolder, strings.ToLower(chainName))
+
+				err = blockchain.GenerateProtoFile(chainName, goPackage, data.IsSideChain, protoPath)
 				if err != nil {
 					return err
 				}
@@ -1243,11 +1283,11 @@ func CreateDefinitionsCommand() *cobra.Command {
 
 			if models || full {
 
-				modelsPath := fmt.Sprintf("./moonstreamdb-v3/moonstreamdbv3/blockchain")
+				modelsPath := "./moonstreamdb-v3/moonstreamdbv3/blockchain"
 
 				// read the proto file and generate the models
 
-				err = blockchain.GenerateModelsFiles(chainName, isL2, modelsPath)
+				err = blockchain.GenerateModelsFiles(chainName, data.IsSideChain, modelsPath)
 				if err != nil {
 					return err
 				}
@@ -1255,6 +1295,16 @@ func CreateDefinitionsCommand() *cobra.Command {
 			}
 
 			if clientInteraface || full {
+
+				// we need exucute that command protoc --go_out=. --go_opt=paths=source_relative $PROTO
+				protoFilePath := fmt.Sprintf("./blockchain/%s/%s.proto", strings.ToLower(chainName), strings.ToLower(chainName))
+
+				log.Printf("Generating Go code from proto: %s", protoFilePath)
+
+				// Execute protoc command
+				cmd := exec.Command("protoc", "--go_out=.", "--go_opt=paths=source_relative", protoFilePath)
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
 
 				dirPath := filepath.Join(".", "blockchain", data.BlockchainNameLower)
 				blockchainNameFilePath := filepath.Join(dirPath, fmt.Sprintf("%s.go", data.BlockchainNameLower))

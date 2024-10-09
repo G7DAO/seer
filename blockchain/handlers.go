@@ -384,7 +384,7 @@ func GenerateProtoFile(chainName string, goPackage string, isL2 bool, outputPath
 	}
 
 	// Read the template file
-	tmplContent, err := ioutil.ReadFile("base.proto.tmpl")
+	tmplContent, err := ioutil.ReadFile("./blockchain/common/evm_proto_template.proto.tmpl")
 	if err != nil {
 		return fmt.Errorf("failed to read template file: %v", err)
 	}
