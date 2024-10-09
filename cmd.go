@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -864,6 +865,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 	createJobsCommand.Flags().Uint64Var(&deployBlock, "deploy-block", 0, "The block number to deploy contract (default: 0)")
 
 	var jobIds, jobAddresses, jobCustomerIds []string
+	var silentFlag bool
 
 	deleteJobsCommand := &cobra.Command{
 		Use:   "delete-jobs",
@@ -903,6 +905,25 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 				fmt.Printf("- %s - %d jobs\n", k, v)
 			}
 
+			output := "no"
+			if silentFlag {
+				output = "yes"
+			} else {
+				var promptErr error
+				output, promptErr = StringPrompt("Continue? (y/yes)")
+				if promptErr != nil {
+					return promptErr
+				}
+			}
+
+			switch output {
+			case "y":
+			case "yes":
+			default:
+				fmt.Println("Canceled")
+				return nil
+			}
+
 			deleteJobsErr := indexer.DBConnection.DeleteJobs(jobIds)
 			if deleteJobsErr != nil {
 				return deleteJobsErr
@@ -916,6 +937,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 	deleteJobsCommand.Flags().StringSliceVar(&jobIds, "job-ids", []string{}, "The list of job UUIDs separated by coma")
 	deleteJobsCommand.Flags().StringSliceVar(&jobAddresses, "addresses", []string{}, "The list of addresses created jobs for separated by coma")
 	deleteJobsCommand.Flags().StringSliceVar(&jobCustomerIds, "customer-ids", []string{}, "The list of customer IDs created jobs for separated by coma")
+	deleteJobsCommand.Flags().BoolVar(&silentFlag, "silent", false, "Set this flag to run command without prompt")
 
 	indexCommand.AddCommand(deploymentBlocksCommand)
 	indexCommand.AddCommand(createJobsCommand)
@@ -1213,4 +1235,18 @@ func CreateEVMGenerateCommand() *cobra.Command {
 	evmGenerateCmd.Flags().StringToStringVar(&aliases, "alias", nil, "A map of identifier aliases (e.g. --alias name=somename)")
 
 	return evmGenerateCmd
+}
+
+func StringPrompt(label string) (string, error) {
+	var output string
+	r := bufio.NewReader(os.Stdin)
+
+	fmt.Fprint(os.Stderr, label+" ")
+	var readErr error
+	output, readErr = r.ReadString('\n')
+	if readErr != nil {
+		return "", readErr
+	}
+
+	return strings.TrimSpace(output), nil
 }
