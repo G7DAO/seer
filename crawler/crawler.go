@@ -220,7 +220,7 @@ func (c *Crawler) Start(threads int) {
 
 	// If Start block is not set, using last crawled block from indexes database
 	if c.startBlock == 0 {
-		latestIndexedBlock, latestErr := indexer.DBConnection.GetLatestDBBlockNumber(c.blockchain)
+		latestIndexedBlock, latestErr := indexer.DBConnection.GetLatestDBBlockNumber(c.blockchain, false)
 
 		// If there are no rows in result then set startBlock with shift
 		if latestErr != nil {

@@ -316,7 +316,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	}
 
 	// Get the latest block from the indexer db
-	indexedLatestBlock, idxLatestErr := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain)
+	indexedLatestBlock, idxLatestErr := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain, false)
 	if idxLatestErr != nil {
 		return isEnd, idxLatestErr
 	}
@@ -412,12 +412,18 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 	// Initialize start block if 0
 	if d.startBlock == 0 {
 		// Get the latest block from the indexer db
-		indexedLatestBlock, err := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain)
+		indexedLatestBlock, err := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain, false)
 		if err != nil {
 			return fmt.Errorf("error getting latest block number: %w", err)
 		}
 		d.startBlock = indexedLatestBlock
 		fmt.Printf("Start block is %d\n", d.startBlock)
+	}
+
+	earlyIndexedBlock, err := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain, true)
+
+	if err != nil {
+		return fmt.Errorf("error getting early indexer block: %w", err)
 	}
 
 	// Automatically update ABI jobs as active if auto mode is enabled
@@ -436,13 +442,25 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 	fmt.Printf("Found %d customer updates\n", len(customerUpdates))
 
 	// Filter out blocks more
-	// TODO: Maybe autoJobs only
-	for address, abisInfo := range addressesAbisInfo {
-		log.Printf("Address %s has deployed block %d\n", address, abisInfo.DeployedBlockNumber)
-		if abisInfo.DeployedBlockNumber > d.startBlock {
-			log.Printf("Finished crawling for address %s at block %d\n", address, abisInfo.DeployedBlockNumber)
-			delete(addressesAbisInfo, address)
+	if autoJobs {
+		for address, abisInfo := range addressesAbisInfo {
+			log.Printf("Address %s has deployed block %d\n", address, abisInfo.DeployedBlockNumber)
+
+			if abisInfo.DeployedBlockNumber > d.startBlock {
+				log.Printf("Finished crawling for address %s at block %d\n", address, abisInfo.DeployedBlockNumber)
+				delete(addressesAbisInfo, address)
+			}
+
+			if abisInfo.DeployedBlockNumber < earlyIndexedBlock {
+				log.Printf("Address %s has deployed block %d less than early indexed block %d\n", address, abisInfo.DeployedBlockNumber, earlyIndexedBlock)
+				delete(addressesAbisInfo, address)
+			}
 		}
+	}
+
+	if len(addressesAbisInfo) == 0 {
+		log.Println("No addresses to crawl")
+		return nil
 	}
 
 	// Get customer database connections
