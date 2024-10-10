@@ -1156,7 +1156,7 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 	}
 
 	nonce := safeNonce
-	if safeNonce == big.NewInt(0) {
+	if safeNonce == nil {
 		// Fetch the current nonce from the Safe contract
 		fetchedNonce, err := safeInstance.Nonce(&bind.CallOpts{})
 		if err != nil {
@@ -1377,7 +1377,6 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 
 				if safeNonceRaw == "" {
 					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
-					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
 					_, ok := safeNonce.SetString(safeNonceRaw, 0)
@@ -1705,7 +1704,6 @@ func {{.HandlerName}}() *cobra.Command {
 
 				if safeNonceRaw == "" {
 					fmt.Println("--safe-nonce not specified, fetching nonce from Safe contract")
-					safeNonce = big.NewInt(0)
 				} else {
 					safeNonce = new(big.Int)
 					_, ok := safeNonce.SetString(safeNonceRaw, 0)
