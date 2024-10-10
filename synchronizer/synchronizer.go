@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	seer_blockchain "github.com/moonstream-to/seer/blockchain"
-	"github.com/moonstream-to/seer/crawler"
-	"github.com/moonstream-to/seer/indexer"
-	"github.com/moonstream-to/seer/storage"
+	seer_blockchain "github.com/G7DAO/seer/blockchain"
+	"github.com/G7DAO/seer/crawler"
+	"github.com/G7DAO/seer/indexer"
+	"github.com/G7DAO/seer/storage"
 )
 
 type Synchronizer struct {
@@ -434,9 +434,13 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 	}
 
 	// Retrieve customer updates and deployment blocks
-	customerUpdates, addressesAbisInfo, err := indexer.DBConnection.SelectAbiJobs(d.blockchain, addresses, customerIds, autoJobs)
+	abiJobs, selectJobsErr := indexer.DBConnection.SelectAbiJobs(d.blockchain, addresses, customerIds, autoJobs, true, []string{"function", "event"})
+	if selectJobsErr != nil {
+		return fmt.Errorf("error selecting ABI jobs: %w", selectJobsErr)
+	}
+	customerUpdates, addressesAbisInfo, err := indexer.ConvertToCustomerUpdatedAndDeployBlockDicts(abiJobs)
 	if err != nil {
-		return fmt.Errorf("error selecting ABI jobs: %w", err)
+		return fmt.Errorf("error parsing ABI jobs: %w", err)
 	}
 
 	fmt.Printf("Found %d customer updates\n", len(customerUpdates))
