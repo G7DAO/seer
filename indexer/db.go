@@ -1249,8 +1249,8 @@ func (p *PostgreSQLpgx) CopyAbiJobs(sourceCustomerId, destCustomerId string, abi
 	defer tx.Rollback(ctx)
 
 	_, prepErr := tx.Prepare(ctx, "insertAbiJob", `
-        INSERT INTO abi_jobs (id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, deployment_block_number, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())
+        INSERT INTO abi_jobs (id, address, user_id, customer_id, abi_selector, chain, abi_name, status, historical_crawl_status, progress, moonworm_task_pickedup, abi, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), now())
     `)
 	if prepErr != nil {
 		return err
@@ -1266,7 +1266,7 @@ func (p *PostgreSQLpgx) CopyAbiJobs(sourceCustomerId, destCustomerId string, abi
 		abi := abiJob.Abi[1 : len(abiJob.Abi)-1]
 		abiBytes := []byte(abi)
 
-		_, execErr := tx.Exec(ctx, "insertAbiJob", jobID, abiJob.Address, abiJob.UserID, destCustomerId, abiJob.AbiSelector, abiJob.Chain, abiJob.AbiName, "true", "pending", 0, false, abiBytes, abiJob.DeploymentBlockNumber)
+		_, execErr := tx.Exec(ctx, "insertAbiJob", jobID, abiJob.Address, abiJob.UserID, destCustomerId, abiJob.AbiSelector, abiJob.Chain, abiJob.AbiName, "true", "pending", 0, false, abiBytes)
 		if execErr != nil {
 			return execErr
 		}
