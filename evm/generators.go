@@ -1126,7 +1126,7 @@ const (
 )
 
 
-func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, factoryAddress common.Address, value *big.Int, safeApi string, deployBytecode []byte, safeOperationType SafeOperationType, salt [32]byte, safeNonce *big.Int) error {
+func DeployWithSafe(client *ethclient.Client, key *keystore.Key, ledgerWallet accounts.Wallet, ledgerAccount accounts.Account, safeAddress common.Address, factoryAddress common.Address, value *big.Int, safeApi string, deployBytecode []byte, safeOperationType SafeOperationType, salt [32]byte, safeNonce *big.Int) error {
 	abi, err := CreateCall.CreateCallMetaData.GetAbi()
 	if err != nil {
 		return fmt.Errorf("failed to get ABI: %v", err)
@@ -1137,7 +1137,7 @@ func DeployWithSafe(client *ethclient.Client, key *keystore.Key, safeAddress com
 		return fmt.Errorf("failed to pack performCreate2 transaction: %v", err)
 	}
 
-	return CreateSafeProposal(client, key, safeAddress, factoryAddress, safeCreateCallTxData, value, safeApi, SafeOperationType(safeOperationType), safeNonce)
+	return CreateSafeProposal(client, key, ledgerWallet, ledgerAccount, safeAddress, factoryAddress, safeCreateCallTxData, value, safeApi, SafeOperationType(safeOperationType), safeNonce)
 }
 
 func PredictDeploymentAddressSafe(from common.Address, salt [32]byte, deployBytecode []byte) (common.Address, error) {
@@ -1150,7 +1150,7 @@ func PredictDeploymentAddressSafe(from common.Address, salt [32]byte, deployByte
 	return deployedAddress, nil
 }
 
-func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress common.Address, to common.Address, data []byte, value *big.Int, safeApi string, safeOperationType SafeOperationType, safeNonce *big.Int) error {
+func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, ledgerWallet accounts.Wallet, ledgerAccount accounts.Account, safeAddress common.Address, to common.Address, data []byte, value *big.Int, safeApi string, safeOperationType SafeOperationType, safeNonce *big.Int) error {
 	chainID, err := client.ChainID(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to get chain ID: %v", err)
@@ -1194,7 +1194,14 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 	}
 
 	// Sign the SafeTxHash
-	signature, err := crypto.Sign(safeTxHash.Bytes(), key.PrivateKey)
+	var signature []byte
+	if ledgerWallet != nil {	
+		// Sign the SafeTxHash
+		signature, err = ledgerWallet.SignData(ledgerAccount, "", safeTxHash.Bytes())
+	} else {
+		signature, err = crypto.Sign(safeTxHash.Bytes(), key.PrivateKey)
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to sign SafeTxHash: %v", err)
 	}
@@ -1204,6 +1211,13 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 
 	// Convert signature to hex
 	senderSignature := "0x" + common.Bytes2Hex(signature)
+
+	var from common.Address
+	if ledgerWallet != nil {
+		from = ledgerAccount.Address
+	} else {
+		from = key.Address
+	}
 
 	// Prepare the request body
 	requestBody := map[string]interface{}{
@@ -1218,7 +1232,7 @@ func CreateSafeProposal(client *ethclient.Client, key *keystore.Key, safeAddress
 		"refundReceiver": safeTransactionData.RefundReceiver,
 		"nonce":          fmt.Sprintf("%d", safeTransactionData.Nonce),
 		"safeTxHash":     safeTxHash.Hex(),
-		"sender":         key.Address.Hex(),
+		"sender":         from.Hex(),
 		"signature":      senderSignature,
 		"origin":         fmt.Sprintf("{\"url\":\"%s\",\"name\":\"TokenSender Deployment\"}", safeApi),
 	}
@@ -1300,6 +1314,39 @@ func CalculateSafeTxHash(safeAddress common.Address, txData SafeTransactionData,
 
 	return common.BytesToHash(typedDataHash), nil
 }
+
+func NewLedgerTransactor(path string, address string) (*bind.TransactOpts, accounts.Wallet, accounts.Account) {
+	ledger, err := usbwallet.NewLedgerHub()
+	if err != nil {
+		return nil, nil, accounts.Account{}
+	}
+
+	wallets := ledger.Wallets()
+	if len(wallets) == 0 {
+		return nil, nil, accounts.Account{}
+	}
+
+	wallet := wallets[0]
+	if err := wallet.Open(""); err != nil {
+		return nil, nil, accounts.Account{}
+	}
+
+	account := accounts.Account{Address: common.HexToAddress(address), URL: accounts.URL{Scheme: "ledger", Path: path}}
+
+	return bind.NewClefTransactor(wallet.(*external.ExternalSigner), account), wallet, account
+}
+
+func NewKeystoreTransactor(chainID *big.Int, keyfile string, password string) (*bind.TransactOpts, *keystore.Key, error) {
+	key, err := KeyFromFile(keyfile, password)
+	if err != nil {
+		return nil, nil, err
+	}
+	transactionOpts, err := bind.NewKeyedTransactorWithChainID(key.PrivateKey, chainID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return transactionOpts, key, nil
+}
 `
 
 // This template generates the handler for smart contract deployment. It is intended to be used with a
@@ -1317,6 +1364,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var predictAddress bool
 	var safeNonce *big.Int
 	var calldata bool
+	var ledgerPath, ledgerAddress string
 
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
@@ -1327,6 +1375,9 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 		Use:  "deploy",
 		Short: "Deploy a new {{.StructName}} contract",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if keyfile == "" && ledgerAddress == "" {
+				return fmt.Errorf("--keystore or --ledger not specified (this should be a path to an Ethereum account keystore file or an Ethereum address from Ledger)")
+			}
 
 			if !calldata {
 				if keyfile == "" {
@@ -1398,6 +1449,12 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				}
 			}
 
+			if ledgerAddress != "" {
+				if ledgerPath == "" {
+					fmt.Println("--ledger-path not specified, using default (m/44'/60'/0'/0/0)")
+				}
+			}
+
 			{{range .DeployHandler.MethodArgs}}
 			{{.PreRunE}}
 			{{- end}}
@@ -1426,11 +1483,6 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				return clientErr
 			}
 
-			key, keyErr := KeyFromFile(keyfile, password)
-			if keyErr != nil {
-				return keyErr
-			}
-
 			chainIDCtx, cancelChainIDCtx := NewChainContext(timeout)
 			defer cancelChainIDCtx()
 			chainID, chainIDErr := client.ChainID(chainIDCtx)
@@ -1438,7 +1490,19 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				return chainIDErr
 			}
 
-			transactionOpts, transactionOptsErr := bind.NewKeyedTransactorWithChainID(key.PrivateKey, chainID)
+			var transactionOpts *bind.TransactOpts
+			var transactionOptsErr error
+			var key *keystore.Key
+			var ledgerWallet accounts.Wallet
+			var ledgerAccount accounts.Account
+
+			if ledgerAddress != "" {
+				fmt.Println("--ledger specified, using Ledger hardware wallet")
+				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(ledgerPath, ledgerAddress)
+			} else {
+				transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
+			}
+
 			if transactionOptsErr != nil {
 				return transactionOptsErr
 			}
@@ -1466,7 +1530,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					return nil
 				} else {
 					fmt.Println("Creating Safe proposal...")
-					err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployCalldata, SafeOperationType(safeOperationType), salt, safeNonce)
+					err = DeployWithSafe(client, key, ledgerWallet, ledgerAccount, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), salt, safeNonce)
 					if err != nil {
 						return fmt.Errorf("failed to create Safe proposal: %v", err)
 					}
@@ -1535,6 +1599,8 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().BoolVar(&predictAddress, "safe-predict-address", false, "Predict the deployment address (only works for Safe transactions)")
 	cmd.Flags().StringVar(&safeNonceRaw, "safe-nonce", "", "Safe nonce overrider for the transaction (optional)")
 	cmd.Flags().BoolVar(&calldata, "calldata", false, "Set this flag if want to return the calldata instead of sending the transaction")
+	cmd.Flags().StringVar(&ledgerAddress, "ledger", "", "Ethereum address to use from Ledger")
+	cmd.Flags().StringVar(&ledgerPath, "ledger-path", "m/44'/60'/0'/0/0", "Ledger derivation path")
 	
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
@@ -1673,6 +1739,7 @@ func {{.HandlerName}}() *cobra.Command {
 	var safeOperationType uint8
 	var safeNonce *big.Int
 	var calldata bool
+	var ledgerPath, ledgerAddress string
 
     {{range .MethodArgs}}
     var {{.CLIVar}} {{.CLIType}}
@@ -1691,9 +1758,9 @@ func {{.HandlerName}}() *cobra.Command {
 				}
 				contractAddress = common.HexToAddress(contractAddressRaw)
 
-				if keyfile == "" {
-					return fmt.Errorf("--keystore not specified (this should be a path to an Ethereum account keystore file)")
-				}
+            if keyfile == "" && ledgerAddress == "" {
+				return fmt.Errorf("--keystore or --ledger not specified (this should be a path to an Ethereum account keystore file or an Ethereum address from Ledger)")
+			}
 
 				if rpc == "" {
 					return fmt.Errorf("--rpc not specified (this should be a URL to an Ethereum JSONRPC API)")
@@ -1733,6 +1800,12 @@ func {{.HandlerName}}() *cobra.Command {
 					}
 				}
             }
+
+			if ledgerAddress != "" {
+				if ledgerPath == "" {
+					fmt.Println("--ledger-path not specified, using default (m/44'/60'/0'/0/0)")
+				}
+			}
 
             {{range .MethodArgs}}
             {{.PreRunE}}
@@ -1774,11 +1847,6 @@ func {{.HandlerName}}() *cobra.Command {
                 return clientErr
             }
 
-            key, keyErr := KeyFromFile(keyfile, password)
-            if keyErr != nil {
-                return keyErr
-            }
-
             chainIDCtx, cancelChainIDCtx := NewChainContext(timeout)
             defer cancelChainIDCtx()
             chainID, chainIDErr := client.ChainID(chainIDCtx)
@@ -1786,8 +1854,18 @@ func {{.HandlerName}}() *cobra.Command {
                 return chainIDErr
             }
 
-            transactionOpts, transactionOptsErr := bind.NewKeyedTransactorWithChainID(key.PrivateKey, chainID)
-            if transactionOptsErr != nil {
+			var transactionOpts *bind.TransactOpts
+            var transactionOptsErr error
+			var key *keystore.Key
+			var ledgerWallet accounts.Wallet
+			var ledgerAccount accounts.Account
+			if ledgerAddress != "" {
+                transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(ledgerPath, ledgerAddress)
+            } else {
+                transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
+            }
+
+			if transactionOptsErr != nil {
                 return transactionOptsErr
             }
 
@@ -1810,7 +1888,7 @@ func {{.HandlerName}}() *cobra.Command {
 					value = big.NewInt(0)
 				}
 
-				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, txCalldata, value, safeApi, SafeOperationType(safeOperationType), safeNonce)
+				err = CreateSafeProposal(client, key, ledgerWallet, ledgerAccount, common.HexToAddress(safeAddress), contractAddress, transaction, value, safeApi, SafeOperationType(safeOperationType), safeNonce)
                 if err != nil {
                     return fmt.Errorf("failed to create Safe proposal: %v", err)
                 }
@@ -1876,6 +1954,8 @@ func {{.HandlerName}}() *cobra.Command {
 	cmd.Flags().StringVar(&safeFunction, "safe-function", "", "Safe function overrider to use for the transaction (optional)")
 	cmd.Flags().StringVar(&safeNonceRaw, "safe-nonce", "", "Safe nonce overrider for the transaction (optional)")
 	cmd.Flags().BoolVar(&calldata, "calldata", false, "Set this flag if want to return the calldata instead of sending the transaction")
+    cmd.Flags().StringVar(&ledgerAddress, "ledger", "", "Ethereum address to use from Ledger")
+    cmd.Flags().StringVar(&ledgerPath, "ledger-path", "m/44'/60'/0'/0/0", "Ledger derivation path")
 
     {{range .MethodArgs}}
     cmd.Flags().{{.Flag}}
