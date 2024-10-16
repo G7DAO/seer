@@ -1239,10 +1239,16 @@ func CreateDefinitionsCommand() *cobra.Command {
 				sideChain = true
 			}
 
+			var blockchainName string
+			blockchainNameList := strings.Split(chainName, "_")
+			for _, w := range blockchainNameList {
+				blockchainName += strings.Title(w)
+			}
+
 			// Execute template and write to output file
 			data := blockchain.BlockchainTemplateData{
-				BlockchainName:      chainName,
-				BlockchainNameLower: strings.ToLower(chainName),
+				BlockchainName:      blockchainName,
+				BlockchainNameLower: chainName,
 				IsSideChain:         sideChain,
 			}
 
@@ -1273,9 +1279,9 @@ func CreateDefinitionsCommand() *cobra.Command {
 					}
 				}
 
-				protoPath := fmt.Sprintf("%s/%s.proto", chainFolder, strings.ToLower(chainName))
+				protoPath := fmt.Sprintf("%s/%s.proto", chainFolder, data.BlockchainNameLower)
 
-				err = blockchain.GenerateProtoFile(chainName, goPackage, data.IsSideChain, protoPath)
+				err = blockchain.GenerateProtoFile(data.BlockchainName, goPackage, data.IsSideChain, protoPath)
 				if err != nil {
 					return err
 				}
@@ -1283,11 +1289,11 @@ func CreateDefinitionsCommand() *cobra.Command {
 
 			if models || full {
 
-				modelsPath := "./moonstreamdb-v3/moonstreamdbv3/blockchain"
+				modelsPath := "./moonstreamdb-v3/moonstreamdbv3"
 
 				// read the proto file and generate the models
 
-				err = blockchain.GenerateModelsFiles(chainName, data.IsSideChain, modelsPath)
+				err = blockchain.GenerateModelsFiles(data, modelsPath)
 				if err != nil {
 					return err
 				}
@@ -1297,7 +1303,7 @@ func CreateDefinitionsCommand() *cobra.Command {
 			if clientInteraface || full {
 
 				// we need exucute that command protoc --go_out=. --go_opt=paths=source_relative $PROTO
-				protoFilePath := fmt.Sprintf("./blockchain/%s/%s.proto", strings.ToLower(chainName), strings.ToLower(chainName))
+				protoFilePath := fmt.Sprintf("./blockchain/%s/%s.proto", data.BlockchainNameLower, data.BlockchainNameLower)
 
 				log.Printf("Generating Go code from proto: %s", protoFilePath)
 
@@ -1306,14 +1312,12 @@ func CreateDefinitionsCommand() *cobra.Command {
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 
+				if err := cmd.Run(); err != nil {
+					return fmt.Errorf("failed to execute protoc command: %w", err)
+				}
+
 				dirPath := filepath.Join(".", "blockchain", data.BlockchainNameLower)
 				blockchainNameFilePath := filepath.Join(dirPath, fmt.Sprintf("%s.go", data.BlockchainNameLower))
-
-				var blockchainName string
-				blockchainNameList := strings.Split(data.BlockchainNameLower, "-")
-				for _, w := range blockchainNameList {
-					blockchainName += strings.Title(w)
-				}
 
 				// Read and parse the template file
 				tmpl, parseErr := template.ParseFiles("blockchain/blockchain.go.tmpl")
@@ -1350,7 +1354,7 @@ func CreateDefinitionsCommand() *cobra.Command {
 				// Change directory to moonstreamdb-v3 for alembic
 				err = os.Chdir("./moonstreamdb-v3")
 				if err != nil {
-					return fmt.Errorf("Failed to change directory: %w", err)
+					return fmt.Errorf("failed to change directory: %w", err)
 				}
 
 				// Execute Alembic revision --autogenerate
@@ -1361,7 +1365,7 @@ func CreateDefinitionsCommand() *cobra.Command {
 				log.Printf("Generating migrations for %s", chainName)
 
 				if err := cmd.Run(); err != nil {
-					return fmt.Errorf("Failed to generate Alembic revision: %w", err)
+					return fmt.Errorf("failed to generate Alembic revision: %w", err)
 				}
 
 				log.Println("Alembic revision generated successfully.")

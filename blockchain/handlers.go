@@ -9,8 +9,6 @@ import (
 	"io/ioutil"
 	"log"
 	"math/big"
-	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -88,7 +86,7 @@ func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 }
 
 func CommonClient(url string) (*seer_common.EvmClient, error) {
-	client, err := seer_common.NewClient(url, 4)
+	client, err := seer_common.NewEvmClient(url, 4)
 	return client, err
 }
 
@@ -351,20 +349,26 @@ func CollectChainInfo(client seer_common.EvmClient) (*ChainInfo, error) {
 		l2Score++
 	}
 
-	// difficulty
-	difficulty := block.Difficulty
+	// fmt.Printf("L2 score: %d\n", l2Score)
 
-	if difficulty != "" {
-		// convert to big int
-		difficultyBigInt, ok := new(big.Int).SetString(difficulty, 0)
-		if !ok {
-			log.Printf("Failed to convert difficulty to big int")
-		} else {
-			if difficultyBigInt.Cmp(big.NewInt(0)) == 0 {
-				l2Score++
-			}
-		}
-	}
+	// // difficulty
+	// difficulty := block.Difficulty
+
+	// fmt.Printf("Difficulty: %s\n", difficulty)
+
+	// if difficulty != "" {
+	// 	// convert to big int
+	// 	difficultyBigInt, ok := new(big.Int).SetString(difficulty, 0)
+	// 	if !ok {
+	// 		log.Printf("Failed to convert difficulty to big int")
+	// 	} else {
+	// 		if difficultyBigInt.Cmp(big.NewInt(0)) == 0 {
+	// 			l2Score++
+	// 		}
+	// 	}
+	// }
+
+	// fmt.Printf("L2 score: %d\n", l2Score)
 
 	if l2Score >= 1 {
 		chainInfo.ChainType = "L2"
@@ -425,27 +429,20 @@ func ProtoKeys(msg proto.Message) []string {
 	return m
 }
 
-func GenerateModelsFiles(chainName string, isL2 bool, modelsPath string) error {
+func GenerateModelsFiles(data BlockchainTemplateData, modelsPath string) error {
 
-	var data BlockchainTemplateData
+	// Define the directory path
+	//dirPath := filepath.Join(modelsPath, data.BlockchainNameLower)
 
-	data.BlockchainName = chainName
-	data.BlockchainNameLower = strings.ToLower(chainName)
-	data.IsSideChain = isL2
-
-	// create chain directory if not exists
-
-	if _, err := ioutil.ReadDir(fmt.Sprintf("%s/%s", modelsPath, data.BlockchainNameLower)); err != nil {
-		if os.IsNotExist(err) {
-			err := os.Mkdir(modelsPath, 0755)
-			if err != nil {
-				return fmt.Errorf("failed to create directory: %v", err)
-			}
-		}
-	}
-
-	templateIndexFile := fmt.Sprintf("%s/models_indexes.go.tmpl", modelsPath)
-	templateLabelsFile := fmt.Sprintf("%s/models_labels.go.tmpl", modelsPath)
+	// Check if the directory exists
+	// if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+	// 	// Create the directory along with any necessary parents
+	// 	if err := os.MkdirAll(dirPath, 0755); err != nil {
+	// 		return fmt.Errorf("failed to create directory %s: %v", dirPath, err)
+	// 	}
+	// }
+	templateIndexFile := fmt.Sprintf("%s/models_indexes.py.tmpl", modelsPath)
+	templateLabelsFile := fmt.Sprintf("%s/models_labels.py.tmpl", modelsPath)
 
 	// Read the template file
 	tmplIndexContent, err := ioutil.ReadFile(templateIndexFile)
@@ -482,7 +479,7 @@ func GenerateModelsFiles(chainName string, isL2 bool, modelsPath string) error {
 		return fmt.Errorf("failed to execute template: %v", err)
 	}
 
-	outputPath := fmt.Sprintf("%s/%s/%s_indexes.go", modelsPath, data.BlockchainNameLower, data.BlockchainNameLower)
+	outputPath := fmt.Sprintf("%s/models_indexes/%s_indexes.py", modelsPath, data.BlockchainNameLower)
 
 	// Write the output to the specified path
 	err = ioutil.WriteFile(outputPath, outputIndex.Bytes(), 0644)
@@ -490,7 +487,7 @@ func GenerateModelsFiles(chainName string, isL2 bool, modelsPath string) error {
 		return fmt.Errorf("failed to write models file: %v", err)
 	}
 
-	outputPath = fmt.Sprintf("%s/%s/%s_labels.go", modelsPath, data.BlockchainNameLower, data.BlockchainNameLower)
+	outputPath = fmt.Sprintf("%s/models/%s_labels.py", modelsPath, data.BlockchainNameLower)
 	err = ioutil.WriteFile(outputPath, outputLabels.Bytes(), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write models file: %v", err)
