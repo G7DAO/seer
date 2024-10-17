@@ -3,12 +3,14 @@ package synchronizer
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -92,10 +94,25 @@ func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize
 
 // -------------------------------------------------------------------------------------------------------------------------------
 
-func GetDBConnection(uuid string) (string, error) {
+type CustomerInstances struct {
+	Id             string     `json:"id"`
+	Name           string     `json:"name"`
+	NormalizedName string     `json:"normalized_name"`
+	Instances      []Instance `json:"instances"`
+}
+
+type Instance struct {
+	Id          int           `json:"id"`
+	Name        string        `json:"name"`
+	Ip          string        `json:"ip"`
+	Is_running  bool          `json:"is_running"`
+	Credentials []interface{} `json:"credentials"`
+}
+
+func GetDBConnection(uuid string, id int) (string, error) {
 
 	// Create the request
-	req, err := http.NewRequest("GET", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid+"/instances/1/creds/seer/url", nil)
+	req, err := http.NewRequest("GET", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid+"/instances/"+strconv.Itoa(id)+"/creds/seer/url", nil)
 	if err != nil {
 		return "", err
 	}
@@ -111,7 +128,7 @@ func GetDBConnection(uuid string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Println("Failed to get connection string for id", uuid, ":", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid+"/instances/1/creds/seer/url")
+		log.Println("Failed to get connection string for id", uuid, ":", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid+"/instances/"+strconv.Itoa(id)+"/creds/seer/url")
 		return "", fmt.Errorf("failed to get connection string for id %s: %s", uuid, resp.Status)
 	}
 
@@ -129,6 +146,52 @@ func GetDBConnection(uuid string) (string, error) {
 	}
 
 	return connectionString, nil
+}
+
+func GetCustomerInstances(uuid string) ([]int, error) {
+	// Create the request
+	req, err := http.NewRequest("GET", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set the authorization header
+	req.Header.Set("Authorization", "Bearer "+MOONSTREAM_DB_V3_CONTROLLER_SEER_ACCESS_TOKEN)
+
+	// Perform the request
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Println("Failed to get instances for id", uuid, ":", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid+"/instances")
+		return nil, fmt.Errorf("failed to get instances for id %s: %s", uuid, resp.Status)
+	}
+
+	// Read string from body
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var customerInstances CustomerInstances
+
+	err = json.Unmarshal(bodyBytes, &customerInstances)
+	if err != nil {
+		return nil, err
+	}
+
+	var instances []int
+
+	for _, instance := range customerInstances.Instances {
+		if instance.Is_running {
+			instances = append(instances, instance.Id)
+		}
+	}
+
+	return instances, nil
 }
 
 func (d *Synchronizer) ReadAbiJobsFromDatabase(blockchain string) ([]indexer.AbiJob, error) {
@@ -160,29 +223,40 @@ type CustomerDBConnection struct {
 	Pgx *indexer.PostgreSQLpgx
 }
 
-func CustomersLatestBlocks(customerDBConnections map[string]CustomerDBConnection, blockchain string) (map[string]uint64, error) {
+func CustomersLatestBlocks(customerDBConnections map[string]map[int]CustomerDBConnection, blockchain string) (map[string]uint64, error) {
 	latestBlocks := make(map[string]uint64)
-	for id, customer := range customerDBConnections {
-		pool := customer.Pgx.GetPool()
-		conn, err := pool.Acquire(context.Background())
-		if err != nil {
-			log.Println("Error acquiring pool connection: ", err)
-			return nil, err
-		}
-		defer conn.Release()
+	for id, customerInstances := range customerDBConnections {
+		for _, customer := range customerInstances {
+			pool := customer.Pgx.GetPool()
+			conn, err := pool.Acquire(context.Background())
+			if err != nil {
+				log.Println("Error acquiring pool connection: ", err)
+				return nil, err
+			}
+			defer conn.Release()
 
-		latestLabelBlock, err := customer.Pgx.ReadLastLabel(blockchain)
-		if err != nil {
-			log.Println("Error reading latest block: ", err)
-			return nil, err
+			latestLabelBlock, err := customer.Pgx.ReadLastLabel(blockchain)
+			if err != nil {
+				log.Println("Error reading latest block: ", err)
+				return nil, err
+			}
+			/// check if id exists
+
+			if _, ok := latestBlocks[id]; ok {
+				if latestBlocks[id] > latestLabelBlock {
+					latestBlocks[id] = latestLabelBlock
+				}
+			} else {
+				latestBlocks[id] = latestLabelBlock
+			}
+			log.Printf("Latest block for customer %s is: %d\n", id, latestLabelBlock)
+
 		}
-		latestBlocks[id] = latestLabelBlock
-		log.Printf("Latest block for customer %s is: %d\n", id, latestLabelBlock)
 	}
 	return latestBlocks, nil
 }
 
-func (d *Synchronizer) StartBlockLookUp(customerDBConnections map[string]CustomerDBConnection, blockchain string, blockShift int64) (uint64, error) {
+func (d *Synchronizer) StartBlockLookUp(customerDBConnections map[string]map[int]CustomerDBConnection, blockchain string, blockShift int64) (uint64, error) {
 	var startBlock uint64
 	latestCustomerBlocks, err := CustomersLatestBlocks(customerDBConnections, d.blockchain)
 	if err != nil {
@@ -215,8 +289,8 @@ func (d *Synchronizer) StartBlockLookUp(customerDBConnections map[string]Custome
 }
 
 // getCustomers fetches ABI jobs, extracts customer IDs, and establishes database connections.
-func (d *Synchronizer) getCustomers(customerDbUriFlag string, customerIds []string) (map[string]CustomerDBConnection, []string, error) {
-	customerDBConnections := make(map[string]CustomerDBConnection)
+func (d *Synchronizer) getCustomers(customerDbUriFlag string, customerIds []string) (map[string]map[int]CustomerDBConnection, []string, error) {
+	customerDBConnections := make(map[string]map[int]CustomerDBConnection)
 	customerIdSet := make(map[string]struct{})
 
 	// If no customer IDs are provided as arguments, fetch them from ABI jobs.
@@ -242,27 +316,40 @@ func (d *Synchronizer) getCustomers(customerDbUriFlag string, customerIds []stri
 		var connectionString string
 		var dbConnErr error
 
-		if customerDbUriFlag == "" {
-			connectionString, dbConnErr = GetDBConnection(id)
-			if dbConnErr != nil {
-				log.Printf("Unable to get connection database URI for customer %s, err: %v", id, dbConnErr)
-				continue
-			}
-		} else {
-			connectionString = customerDbUriFlag
-		}
+		// get list of customer ids
 
-		pgx, pgxErr := indexer.NewPostgreSQLpgxWithCustomURI(connectionString)
-		if pgxErr != nil {
-			log.Printf("Error creating RDS connection for customer %s, err: %v", id, pgxErr)
+		instances, instancesErr := GetCustomerInstances(id)
+
+		if instancesErr != nil {
+			log.Printf("Error getting customer instances for customer %s, err: %v", id, instancesErr)
 			continue
 		}
 
-		customerDBConnections[id] = CustomerDBConnection{
-			Uri: connectionString,
-			Pgx: pgx,
+		for _, instance := range instances {
+
+			if customerDbUriFlag == "" {
+				connectionString, dbConnErr = GetDBConnection(id, instance)
+				if dbConnErr != nil {
+					log.Printf("Unable to get connection database URI for customer %s, err: %v", id, dbConnErr)
+					continue
+				}
+			} else {
+				connectionString = customerDbUriFlag
+			}
+
+			pgx, pgxErr := indexer.NewPostgreSQLpgxWithCustomURI(connectionString)
+			if pgxErr != nil {
+				log.Printf("Error creating RDS connection for customer %s, err: %v", id, pgxErr)
+				continue
+			}
+
+			customerDBConnections[id] = make(map[int]CustomerDBConnection)
+			customerDBConnections[id][instance] = CustomerDBConnection{
+				Uri: connectionString,
+				Pgx: pgx,
+			}
+			finalCustomerIds = append(finalCustomerIds, id)
 		}
-		finalCustomerIds = append(finalCustomerIds, id)
 	}
 
 	log.Println("Customer IDs to sync:", finalCustomerIds)
@@ -380,8 +467,10 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		errChan := make(chan error, 1) // Buffered channel for error handling
 
 		for _, update := range updates {
-			wg.Add(1)
-			go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, sem, errChan, &wg)
+			for id := range customerDBConnections[update.CustomerID] {
+				wg.Add(1)
+				go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, id, sem, errChan, &wg)
+			}
 		}
 
 		wg.Wait()
@@ -566,8 +655,12 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		errChan := make(chan error, 1)        // Buffered channel for error handling
 
 		for _, update := range customerUpdates {
-			wg.Add(1)
-			go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, sem, errChan, &wg)
+
+			for id := range customerDBConnections[update.CustomerID] {
+				wg.Add(1)
+				go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, id, sem, errChan, &wg)
+
+			}
 
 		}
 
@@ -608,7 +701,8 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 func (d *Synchronizer) processProtoCustomerUpdate(
 	update indexer.CustomerUpdates,
 	rawData bytes.Buffer,
-	customerDBConnections map[string]CustomerDBConnection,
+	customerDBConnections map[string]map[int]CustomerDBConnection,
+	id int,
 	sem chan struct{},
 	errChan chan error,
 	wg *sync.WaitGroup,
@@ -619,7 +713,7 @@ func (d *Synchronizer) processProtoCustomerUpdate(
 	defer wg.Done()
 	sem <- struct{}{} // Acquire semaphore
 
-	customer, exists := customerDBConnections[update.CustomerID]
+	customer, exists := customerDBConnections[update.CustomerID][id]
 	if !exists {
 		errChan <- fmt.Errorf("no DB connection for customer %s", update.CustomerID)
 		<-sem // Release semaphore
