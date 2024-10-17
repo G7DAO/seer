@@ -94,14 +94,14 @@ func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize
 
 // -------------------------------------------------------------------------------------------------------------------------------
 
-type CustomerInstances struct {
-	Id             string     `json:"id"`
-	Name           string     `json:"name"`
-	NormalizedName string     `json:"normalized_name"`
-	Instances      []Instance `json:"instances"`
+type Customer struct {
+	Id             string             `json:"id"`
+	Name           string             `json:"name"`
+	NormalizedName string             `json:"normalized_name"`
+	Instances      []CustomerInstance `json:"instances"`
 }
 
-type Instance struct {
+type CustomerInstance struct {
 	Id          int           `json:"id"`
 	Name        string        `json:"name"`
 	Ip          string        `json:"ip"`
@@ -176,7 +176,7 @@ func GetCustomerInstances(uuid string) ([]int, error) {
 		return nil, err
 	}
 
-	var customerInstances CustomerInstances
+	var customerInstances Customer
 
 	err = json.Unmarshal(bodyBytes, &customerInstances)
 	if err != nil {
@@ -226,8 +226,8 @@ type CustomerDBConnection struct {
 func CustomersLatestBlocks(customerDBConnections map[string]map[int]CustomerDBConnection, blockchain string) (map[string]uint64, error) {
 	latestBlocks := make(map[string]uint64)
 	for id, customerInstances := range customerDBConnections {
-		for _, customer := range customerInstances {
-			pool := customer.Pgx.GetPool()
+		for _, instanceConnection := range customerInstances {
+			pool := instanceConnection.Pgx.GetPool()
 			conn, err := pool.Acquire(context.Background())
 			if err != nil {
 				log.Println("Error acquiring pool connection: ", err)
@@ -235,7 +235,7 @@ func CustomersLatestBlocks(customerDBConnections map[string]map[int]CustomerDBCo
 			}
 			defer conn.Release()
 
-			latestLabelBlock, err := customer.Pgx.ReadLastLabel(blockchain)
+			latestLabelBlock, err := instanceConnection.Pgx.ReadLastLabel(blockchain)
 			if err != nil {
 				log.Println("Error reading latest block: ", err)
 				return nil, err
@@ -343,13 +343,15 @@ func (d *Synchronizer) getCustomers(customerDbUriFlag string, customerIds []stri
 				continue
 			}
 
-			customerDBConnections[id] = make(map[int]CustomerDBConnection)
+			if _, ok := customerDBConnections[id]; !ok {
+				customerDBConnections[id] = make(map[int]CustomerDBConnection)
+			}
 			customerDBConnections[id][instance] = CustomerDBConnection{
 				Uri: connectionString,
 				Pgx: pgx,
 			}
-			finalCustomerIds = append(finalCustomerIds, id)
 		}
+		finalCustomerIds = append(finalCustomerIds, id)
 	}
 
 	log.Println("Customer IDs to sync:", finalCustomerIds)
@@ -457,7 +459,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		// Read the raw data from the storage for current path
 		rawData, readErr := d.StorageInstance.Read(path)
 		if readErr != nil {
-			return isEnd, fmt.Errorf("error reading events for customers %s: %w", readErr)
+			return isEnd, fmt.Errorf("error reading raw data: %w", readErr)
 		}
 
 		log.Printf("Read %d users updates from the indexer db in range of blocks %d-%d\n", len(updates), d.startBlock, lastBlockOfChank)
@@ -467,9 +469,9 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		errChan := make(chan error, 1) // Buffered channel for error handling
 
 		for _, update := range updates {
-			for id := range customerDBConnections[update.CustomerID] {
+			for instanceId := range customerDBConnections[update.CustomerID] {
 				wg.Add(1)
-				go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, id, sem, errChan, &wg)
+				go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, instanceId, sem, errChan, &wg)
 			}
 		}
 
@@ -656,9 +658,9 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 		for _, update := range customerUpdates {
 
-			for id := range customerDBConnections[update.CustomerID] {
+			for instanceId := range customerDBConnections[update.CustomerID] {
 				wg.Add(1)
-				go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, id, sem, errChan, &wg)
+				go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, instanceId, sem, errChan, &wg)
 
 			}
 
