@@ -1358,7 +1358,7 @@ func CreateDefinitionsCommand() *cobra.Command {
 				}
 
 				// Execute Alembic revision --autogenerate
-				cmd := exec.Command("alembic", "revision", "--autogenerate")
+				cmd := exec.Command("alembic", "revision", "--autogenerate", "-m", fmt.Sprintf("add_%s_tables", data.BlockchainNameLower))
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 
@@ -1370,6 +1370,50 @@ func CreateDefinitionsCommand() *cobra.Command {
 
 				log.Println("Alembic revision generated successfully.")
 			}
+
+			if deployScripts || full {
+				// Create deploy scripts in deploy folder
+				deployPath := fmt.Sprintf("./deploy/%s", data.BlockchainNameLower)
+				if _, err := os.Stat(deployPath); os.IsNotExist(err) {
+					err := os.Mkdir(deployPath, 0755)
+					if err != nil {
+						return
+					}
+				}
+
+				// Read and parse the template file Crawler
+				tmpl, parseErr := template.ParseFiles("deploy/deploy.sh.tmpl")
+				if parseErr != nil {
+					return parseErr
+				}
+
+				// Read and parse the template file Synchonizer
+				tmplSync, parseErr := template.ParseFiles("deploy/sync.sh.tmpl")
+				if parseErr != nil {
+					return parseErr
+				}
+
+				// Read and parse the template file HistoricalSync
+				tmplHistoricalSync, parseErr := template.ParseFiles("deploy/historical-sync.sh.tmpl")
+				if parseErr != nil {
+					return parseErr
+				}
+
+				funcMap := template.FuncMap{
+					"replaceUnderscoreWithDash": func(s string) string {
+						return strings.ReplaceAll(s, "_", "-")
+					},
+					"replaceUnderscoreWithSpace": func(s string) string {
+						return strings.ReplaceAll(s, "_", " ")
+					},
+				}
+			
+
+				// Create output file
+
+
+
+
 
 			if createSubscriptionType {
 				log.Printf("Generating subscription type for %s", chainName)
