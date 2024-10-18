@@ -1194,7 +1194,7 @@ func CreateGenerateBlockchainCmd() *cobra.Command {
 func CreateDefinitionsCommand() *cobra.Command {
 
 	var rpc, chainName, outputPath string
-	var defenitions, models, clientInteraface, migrations, full, createSubscriptionType bool
+	var defenitions, models, clientInteraface, migrations, full, createSubscriptionType, deployScripts bool
 
 	definitionsCmd := &cobra.Command{
 		Use:   "chain",
@@ -1250,6 +1250,7 @@ func CreateDefinitionsCommand() *cobra.Command {
 				BlockchainName:      blockchainName,
 				BlockchainNameLower: chainName,
 				IsSideChain:         sideChain,
+				ChainDashName:       strings.ReplaceAll(chainName, "_", "-"),
 			}
 
 			// defaultPath := fmt.Sprintf("./blockchain/%s/%s.proto", strings.ToLower(chainName), strings.ToLower(chainName))
@@ -1373,47 +1374,13 @@ func CreateDefinitionsCommand() *cobra.Command {
 
 			if deployScripts || full {
 				// Create deploy scripts in deploy folder
-				deployPath := fmt.Sprintf("./deploy/%s", data.BlockchainNameLower)
-				if _, err := os.Stat(deployPath); os.IsNotExist(err) {
-					err := os.Mkdir(deployPath, 0755)
-					if err != nil {
-						return
-					}
+				err := blockchain.GenerateDeploy(data, "./deploy")
+
+				if err != nil {
+					return err
 				}
 
-				// Read and parse the template file Crawler
-				tmpl, parseErr := template.ParseFiles("deploy/deploy.sh.tmpl")
-				if parseErr != nil {
-					return parseErr
-				}
-
-				// Read and parse the template file Synchonizer
-				tmplSync, parseErr := template.ParseFiles("deploy/sync.sh.tmpl")
-				if parseErr != nil {
-					return parseErr
-				}
-
-				// Read and parse the template file HistoricalSync
-				tmplHistoricalSync, parseErr := template.ParseFiles("deploy/historical-sync.sh.tmpl")
-				if parseErr != nil {
-					return parseErr
-				}
-
-				funcMap := template.FuncMap{
-					"replaceUnderscoreWithDash": func(s string) string {
-						return strings.ReplaceAll(s, "_", "-")
-					},
-					"replaceUnderscoreWithSpace": func(s string) string {
-						return strings.ReplaceAll(s, "_", " ")
-					},
-				}
-			
-
-				// Create output file
-
-
-
-
+			}
 
 			if createSubscriptionType {
 				log.Printf("Generating subscription type for %s", chainName)
@@ -1432,6 +1399,7 @@ func CreateDefinitionsCommand() *cobra.Command {
 	definitionsCmd.Flags().BoolVar(&migrations, "migrations", false, "Generate migrations")
 	definitionsCmd.Flags().BoolVar(&full, "full", false, "Generate all")
 	definitionsCmd.Flags().BoolVar(&createSubscriptionType, "subscription", false, "Generate subscription type")
+	definitionsCmd.Flags().BoolVar(&deployScripts, "deploy", false, "Generate deploy scripts")
 
 	return definitionsCmd
 }

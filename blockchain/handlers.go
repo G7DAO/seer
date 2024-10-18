@@ -9,6 +9,9 @@ import (
 	"io/ioutil"
 	"log"
 	"math/big"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -99,6 +102,7 @@ type ChainInfo struct {
 type BlockchainTemplateData struct {
 	BlockchainName      string
 	BlockchainNameLower string
+	ChainDashName       string
 	IsSideChain         bool
 }
 
@@ -495,4 +499,77 @@ func GenerateModelsFiles(data BlockchainTemplateData, modelsPath string) error {
 
 	fmt.Printf("Models generated successfully at %s.\n", outputPath)
 	return nil
+}
+
+func GenerateDeploy(chain BlockchainTemplateData, deployPath string) error {
+	funcMap := template.FuncMap{
+		"replaceUnderscoreWithDash": func(s string) string {
+			return strings.ReplaceAll(s, "_", "-")
+		},
+		"replaceUnderscoreWithSpace": func(s string) string {
+			return strings.ReplaceAll(s, "_", " ")
+		},
+	}
+
+	templateDir := "deploy/templates"
+
+	// Read all entries in the template directory
+	entries, err := os.ReadDir(templateDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue // Skip directories
+		}
+
+		templateFileName := entry.Name()
+		// Only process files with .tmpl extension
+		if !strings.HasSuffix(templateFileName, ".tmpl") {
+			continue
+		}
+
+		templateFilePath := filepath.Join(templateDir, templateFileName)
+
+		// Parse the template file
+		tmpl, parseErr := template.New(templateFileName).Funcs(funcMap).ParseFiles(templateFilePath)
+		if parseErr != nil {
+			return parseErr
+		}
+
+		// Generate the output file name
+		outputFileName := generateOutputFileName(templateFileName, chain.ChainDashName)
+		outputFilePath := filepath.Join(deployPath, outputFileName)
+
+		// Create the output file
+		outputFile, createErr := os.Create(outputFilePath)
+		if createErr != nil {
+			return createErr
+		}
+		defer outputFile.Close()
+
+		// Execute the template and write to the output file
+		if err := tmpl.Execute(outputFile, chain); err != nil {
+			return err
+		}
+
+		log.Printf("File generated successfully: %s", outputFilePath)
+	}
+
+	return nil
+}
+
+// Helper function to generate output file names dynamically
+func generateOutputFileName(templateFileName, chainName string) string {
+	// Remove the .tmpl extension
+	baseFileName := strings.TrimSuffix(templateFileName, ".tmpl")
+
+	// Split the file name into name and extension
+	ext := filepath.Ext(baseFileName)
+	name := strings.TrimSuffix(baseFileName, ext)
+
+	// Insert the chain name before the extension
+	outputFileName := fmt.Sprintf("%s-%s%s", name, chainName, ext)
+	return outputFileName
 }
