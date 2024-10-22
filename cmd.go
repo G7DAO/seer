@@ -296,7 +296,7 @@ func CreateCrawlerCommand() *cobra.Command {
 
 func CreateSynchronizerCommand() *cobra.Command {
 	var startBlock, endBlock, batchSize uint64
-	var timeout, threads int
+	var timeout, threads, cycleTickerWaitTime int
 	var chain, baseDir, customerDbUriFlag string
 
 	synchronizerCmd := &cobra.Command{
@@ -353,7 +353,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 
 			crawler.CurrentBlockchainState.RaiseLatestBlockNumber(latestBlockNumber)
 
-			newSynchronizer.Start(customerDbUriFlag)
+			newSynchronizer.Start(customerDbUriFlag, cycleTickerWaitTime)
 
 			return nil
 		},
@@ -367,6 +367,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 	synchronizerCmd.Flags().Uint64Var(&batchSize, "batch-size", 100, "The number of blocks to crawl in each batch (default: 100)")
 	synchronizerCmd.Flags().StringVar(&customerDbUriFlag, "customer-db-uri", "", "Set customer database URI for development. This workflow bypass fetching customer IDs and its database URL connection strings from mdb-v3-controller API")
 	synchronizerCmd.Flags().IntVar(&threads, "threads", 5, "Number of go-routines for concurrent decoding")
+	synchronizerCmd.Flags().IntVar(&cycleTickerWaitTime, "cycle-ticker-wait-time", 10, "The wait time for the synchronizer in seconds before it try to start new cycle")
 
 	return synchronizerCmd
 }

@@ -359,10 +359,10 @@ func (d *Synchronizer) getCustomers(customerDbUriFlag string, customerIds []stri
 	return customerDBConnections, finalCustomerIds, nil
 }
 
-func (d *Synchronizer) Start(customerDbUriFlag string) {
+func (d *Synchronizer) Start(customerDbUriFlag string, cycleTickerWaitTime int) {
 	var isEnd bool
 
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(time.Duration(cycleTickerWaitTime) * time.Second)
 	defer ticker.Stop()
 
 	isEnd, err := d.SyncCycle(customerDbUriFlag)
