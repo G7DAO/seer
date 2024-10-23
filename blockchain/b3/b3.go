@@ -21,9 +21,9 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"google.golang.org/protobuf/proto"
 
-	seer_common "github.com/moonstream-to/seer/blockchain/common"
-	"github.com/moonstream-to/seer/indexer"
-	"github.com/moonstream-to/seer/version"
+	seer_common "github.com/G7DAO/seer/blockchain/common"
+	"github.com/G7DAO/seer/indexer"
+	"github.com/G7DAO/seer/version"
 )
 
 func NewClient(url string, timeout int) (*Client, error) {
