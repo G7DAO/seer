@@ -353,27 +353,6 @@ func CollectChainInfo(client seer_common.EvmClient) (*ChainInfo, error) {
 		l2Score++
 	}
 
-	// fmt.Printf("L2 score: %d\n", l2Score)
-
-	// // difficulty
-	// difficulty := block.Difficulty
-
-	// fmt.Printf("Difficulty: %s\n", difficulty)
-
-	// if difficulty != "" {
-	// 	// convert to big int
-	// 	difficultyBigInt, ok := new(big.Int).SetString(difficulty, 0)
-	// 	if !ok {
-	// 		log.Printf("Failed to convert difficulty to big int")
-	// 	} else {
-	// 		if difficultyBigInt.Cmp(big.NewInt(0)) == 0 {
-	// 			l2Score++
-	// 		}
-	// 	}
-	// }
-
-	// fmt.Printf("L2 score: %d\n", l2Score)
-
 	if l2Score >= 1 {
 		chainInfo.ChainType = "L2"
 	} else {

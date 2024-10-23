@@ -1389,12 +1389,6 @@ func CreateDefinitionsCommand() *cobra.Command {
 				ChainDashName:       strings.ReplaceAll(chainName, "_", "-"),
 			}
 
-			// defaultPath := fmt.Sprintf("./blockchain/%s/%s.proto", strings.ToLower(chainName), strings.ToLower(chainName))
-
-			// if outputPath == "" {
-			// 	outputPath = defaultPath
-			// }
-
 			goPackage := fmt.Sprintf("github.com/moonstream-to/seer/blockchain/%s", strings.ToLower(data.BlockchainNameLower))
 
 			// check if the chain folder exists
@@ -1404,6 +1398,8 @@ func CreateDefinitionsCommand() *cobra.Command {
 					return err
 				}
 			}
+
+			// Generate Proto file
 
 			if defenitions || full {
 				// chain folder
@@ -1424,6 +1420,8 @@ func CreateDefinitionsCommand() *cobra.Command {
 				}
 			}
 
+			// Generate alembic models
+
 			if models || full {
 
 				modelsPath := "./moonstreamdb-v3/moonstreamdbv3"
@@ -1436,6 +1434,8 @@ func CreateDefinitionsCommand() *cobra.Command {
 				}
 
 			}
+
+			// Generate Go code from proto file with custom chain client
 
 			if clientInteraface || full {
 
@@ -1486,6 +1486,8 @@ func CreateDefinitionsCommand() *cobra.Command {
 				log.Printf("Generating client interfaces for %s", chainName)
 			}
 
+			// Run Alembic revision --autogenerate
+
 			if migrations || full {
 
 				// Change directory to moonstreamdb-v3 for alembic
@@ -1508,6 +1510,8 @@ func CreateDefinitionsCommand() *cobra.Command {
 				log.Println("Alembic revision generated successfully.")
 			}
 
+			// Generate deploy scripts
+
 			if deployScripts || full {
 				// Create deploy scripts in deploy folder
 				err := blockchain.GenerateDeploy(data, "./deploy")
@@ -1518,6 +1522,8 @@ func CreateDefinitionsCommand() *cobra.Command {
 
 			}
 
+			// Generate bugout resources
+
 			if createSubscriptionType {
 				log.Printf("Generating subscription type for %s", chainName)
 			}
@@ -1527,7 +1533,7 @@ func CreateDefinitionsCommand() *cobra.Command {
 	}
 
 	definitionsCmd.Flags().StringVar(&rpc, "rpc", "", "The RPC URL for the blockchain")
-	definitionsCmd.Flags().StringVar(&chainName, "chain", "", "The name of the blockchain")
+	definitionsCmd.Flags().StringVar(&chainName, "chain-name", "", "The name of the blockchain")
 	definitionsCmd.Flags().StringVar(&outputPath, "output", "", "The path to the output file")
 	definitionsCmd.Flags().BoolVar(&defenitions, "definitions", false, "Generate definitions")
 	definitionsCmd.Flags().BoolVar(&models, "models", false, "Generate models")
