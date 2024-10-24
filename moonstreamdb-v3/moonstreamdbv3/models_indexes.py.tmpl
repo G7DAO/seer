@@ -1,0 +1,14 @@
+# {{ .BlockchainNameLower }}_indexes.py
+
+from sqlalchemy import Column, BigInteger
+from models_indexes.abstract_indexes import EvmBasedBlocks, EvmBasedReorgs
+
+class {{ .BlockchainName }}BlockIndex(EvmBasedBlocks):
+    __tablename__ = "{{ .BlockchainNameLower }}_blocks"
+
+    {{- if .IsSideChain }}
+    l1_block_number = Column(BigInteger, nullable=False)
+    {{- end }}
+
+class {{ .BlockchainName }}Reorgs(EvmBasedReorgs):
+    __tablename__ = "{{ .BlockchainNameLower }}_reorgs"

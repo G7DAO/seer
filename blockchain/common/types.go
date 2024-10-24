@@ -51,3 +51,9 @@ type TraceResult struct {
 	GasUsed *big.Int `json:"gasUsed"`
 	Output  string   `json:"output"`
 }
+
+type ProtoTemplateData struct {
+	GoPackage string
+	ChainName string
+	IsL2      bool
+}
