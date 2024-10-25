@@ -4,7 +4,7 @@ from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
 
-class ProofofplayApexlabel(EvmBasedLabel):
+class ProofOfPlayApexLabel(EvmBasedLabel):
     __tablename__ = "proofofplay_apex_labels"
 
     __table_args__ = (

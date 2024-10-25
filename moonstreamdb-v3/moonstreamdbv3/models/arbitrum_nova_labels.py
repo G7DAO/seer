@@ -4,7 +4,7 @@ from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
 
-class ArbitrumNovalabel(EvmBasedLabel):
+class ArbitrumNovaLabel(EvmBasedLabel):
     __tablename__ = "arbitrum_nova_labels"
 
     __table_args__ = (

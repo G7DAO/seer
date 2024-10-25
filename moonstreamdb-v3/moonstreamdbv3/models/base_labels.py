@@ -4,7 +4,7 @@ from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
 
-class Baselabel(EvmBasedLabel):
+class BaseLabel(EvmBasedLabel):
     __tablename__ = "base_labels"
 
     __table_args__ = (

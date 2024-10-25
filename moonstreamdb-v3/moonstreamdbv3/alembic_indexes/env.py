@@ -30,6 +30,8 @@ def import_models(package_name):
     for loader, module_name, is_pkg in pkgutil.walk_packages(
         package.__path__, package_name + "."
     ):
+        if module_name == "__init__":
+            continue
         importlib.import_module(module_name)
 
 

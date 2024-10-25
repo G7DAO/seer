@@ -4,7 +4,7 @@ from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
 
-class BlastSepolialabel(EvmBasedLabel):
+class BlastSepoliaLabel(EvmBasedLabel):
     __tablename__ = "blast_sepolia_labels"
 
     __table_args__ = (

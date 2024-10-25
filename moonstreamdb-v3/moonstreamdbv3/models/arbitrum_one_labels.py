@@ -3,7 +3,8 @@
 from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
-class ArbitrumOnelabel(EvmBasedLabel):
+
+class ArbitrumOneLabel(EvmBasedLabel):
     __tablename__ = "arbitrum_one_labels"
 
     __table_args__ = (

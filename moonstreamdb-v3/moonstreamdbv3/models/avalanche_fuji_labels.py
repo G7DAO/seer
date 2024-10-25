@@ -4,7 +4,7 @@ from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
 
-class AvalancheFujilabel(EvmBasedLabel):
+class AvalancheFujiLabel(EvmBasedLabel):
     __tablename__ = "avalanche_fuji_labels"
 
     __table_args__ = (

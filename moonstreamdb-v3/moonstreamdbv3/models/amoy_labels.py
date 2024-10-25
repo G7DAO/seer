@@ -4,7 +4,7 @@ from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
 
-class Amoylabel(EvmBasedLabel):
+class AmoyLabel(EvmBasedLabel):
     __tablename__ = "amoy_labels"
 
     __table_args__ = (

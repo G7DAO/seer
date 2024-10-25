@@ -3,7 +3,7 @@
 from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
-class {{ .BlockchainName }}label(EvmBasedLabel):
+class {{ .BlockchainName }}Label(EvmBasedLabel):
     __tablename__ = "{{ .BlockchainNameLower }}_labels"
 
     __table_args__ = (

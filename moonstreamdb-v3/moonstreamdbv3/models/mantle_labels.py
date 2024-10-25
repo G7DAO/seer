@@ -3,7 +3,8 @@
 from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
-class Mantlelabel(EvmBasedLabel):
+
+class MantleLabel(EvmBasedLabel):
     __tablename__ = "mantle_labels"
 
     __table_args__ = (

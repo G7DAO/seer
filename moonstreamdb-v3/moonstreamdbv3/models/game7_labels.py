@@ -1,8 +1,8 @@
-
 # game7_labels.py
 
 from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
+
 
 class Game7Label(EvmBasedLabel):  # type: ignore
     __tablename__ = "game7_labels"

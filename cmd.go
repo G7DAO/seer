@@ -1497,7 +1497,7 @@ func CreateDefinitionsCommand() *cobra.Command {
 				}
 
 				// Execute Alembic revision --autogenerate
-				cmd := exec.Command("alembic", "revision", "--autogenerate", "-m", fmt.Sprintf("add_%s_tables", data.BlockchainNameLower))
+				cmd := exec.Command("alembic", "-c", "alembic_indexes.dev.ini", "revision", "--autogenerate", "-m", fmt.Sprintf("add_%s_tables", data.BlockchainNameLower))
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 

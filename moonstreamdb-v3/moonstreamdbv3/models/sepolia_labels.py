@@ -3,7 +3,8 @@
 from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
-class Sepolialabel(EvmBasedLabel):
+
+class SepoliaLabel(EvmBasedLabel):
     __tablename__ = "sepolia_labels"
 
     __table_args__ = (

@@ -4,7 +4,7 @@ from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
 
-class StarknetSepolialabel(EvmBasedLabel):
+class StarknetSepoliaLabel(EvmBasedLabel):
     __tablename__ = "starknet_sepolia_labels"
 
     __table_args__ = (

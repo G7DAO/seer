@@ -4,7 +4,7 @@ from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
 
-class ZksyncEraSepolialabel(EvmBasedLabel):
+class ZksyncEraSepoliaLabel(EvmBasedLabel):
     __tablename__ = "zksync_era_sepolia_labels"
 
     __table_args__ = (

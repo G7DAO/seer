@@ -3,7 +3,8 @@
 from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
-class Game7Testnetlabel(EvmBasedLabel):
+
+class Game7TestnetLabel(EvmBasedLabel):
     __tablename__ = "game7_testnet_labels"
 
     __table_args__ = (

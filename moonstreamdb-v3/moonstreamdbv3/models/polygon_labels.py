@@ -3,7 +3,8 @@
 from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
-class Polygonlabel(EvmBasedLabel):
+
+class PolygonLabel(EvmBasedLabel):
     __tablename__ = "polygon_labels"
 
     __table_args__ = (

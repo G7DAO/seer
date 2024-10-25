@@ -3,7 +3,8 @@
 from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
-class Xailabel(EvmBasedLabel):
+
+class XaiLabel(EvmBasedLabel):
     __tablename__ = "xai_labels"
 
     __table_args__ = (

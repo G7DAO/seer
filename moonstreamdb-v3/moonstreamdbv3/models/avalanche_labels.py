@@ -4,7 +4,7 @@ from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
 
-class Avalanchelabel(EvmBasedLabel):
+class AvalancheLabel(EvmBasedLabel):
     __tablename__ = "avalanche_labels"
 
     __table_args__ = (

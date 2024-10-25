@@ -4,7 +4,7 @@ from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
 
-class Starknetlabel(EvmBasedLabel):
+class StarknetLabel(EvmBasedLabel):
     __tablename__ = "starknet_labels"
 
     __table_args__ = (

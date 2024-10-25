@@ -4,7 +4,7 @@ from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
 
-class Game7OrbitArbitrumSepolialabel(EvmBasedLabel):
+class Game7OrbitArbitrumSepoliaLabel(EvmBasedLabel):
     __tablename__ = "game7_orbit_arbitrum_sepolia_labels"
 
     __table_args__ = (

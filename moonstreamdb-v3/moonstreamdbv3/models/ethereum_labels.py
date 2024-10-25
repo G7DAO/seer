@@ -3,7 +3,8 @@
 from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
-class Ethereumlabel(EvmBasedLabel):
+
+class EthereumLabel(EvmBasedLabel):
     __tablename__ = "ethereum_labels"
 
     __table_args__ = (

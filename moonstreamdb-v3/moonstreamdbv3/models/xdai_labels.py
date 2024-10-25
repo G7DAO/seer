@@ -4,7 +4,7 @@ from sqlalchemy import Index, text
 from models.abstract_labels import EvmBasedLabel
 
 
-class Xdailabel(EvmBasedLabel):
+class XDaiLabel(EvmBasedLabel):
     __tablename__ = "xdai_labels"
 
     __table_args__ = (
