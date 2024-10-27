@@ -441,7 +441,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 
 		// Read updates from the indexer db
 		// This function will return a list of customer updates 1 update is 1 customer
-		_, lastBlockOfChank, path, updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, customerIds)
+		_, lastBlockOfChank, paths, updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, customerIds)
 		if err != nil {
 			return isEnd, fmt.Errorf("error reading updates: %w", err)
 		}
@@ -452,12 +452,12 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		}
 
 		if crawler.SEER_CRAWLER_DEBUG {
-			log.Printf("Read batch key: %s", path)
+			log.Printf("Read batch key: %s", paths)
 		}
 		log.Println("Last block of current chank: ", lastBlockOfChank)
 
 		// Read the raw data from the storage for current path
-		rawData, readErr := d.StorageInstance.Read(path)
+		rawData, readErr := d.StorageInstance.ReadFiles(paths)
 		if readErr != nil {
 			return isEnd, fmt.Errorf("error reading raw data: %w", readErr)
 		}

@@ -216,3 +216,20 @@ func (g *GCS) ReadBatch(readItems []ReadItem) (map[string][]string, error) {
 
 	return result, nil
 }
+
+func (g *GCS) ReadFiles(keys []string) (bytes.Buffer, error) {
+	var result bytes.Buffer
+
+	for _, key := range keys {
+		buf, err := g.Read(key)
+		if err != nil {
+			return bytes.Buffer{}, fmt.Errorf("failed to read object from bucket: %v", err)
+		}
+
+		if _, err := io.Copy(&result, &buf); err != nil {
+			return bytes.Buffer{}, fmt.Errorf("failed to read object data: %v", err)
+		}
+	}
+
+	return result, nil
+}

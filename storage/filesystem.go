@@ -144,3 +144,21 @@ func (fs *FileStorage) Delete(key string) error {
 	// Implement the Delete method
 	return nil
 }
+
+func (fs *FileStorage) ReadFiles(keys []string) (bytes.Buffer, error) {
+
+	var data bytes.Buffer
+
+	for _, key := range keys {
+		data, err := fs.Read(key)
+		if err != nil {
+			return bytes.Buffer{}, err
+		}
+
+		if _, err := io.Copy(&data, &data); err != nil {
+			return bytes.Buffer{}, fmt.Errorf("failed to read object data: %v", err)
+		}
+
+	}
+	return data, nil
+}

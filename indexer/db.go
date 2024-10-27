@@ -545,14 +545,14 @@ func (p *PostgreSQLpgx) GetCustomersIDs(blockchain string) ([]string, error) {
 	return customerIds, nil
 }
 
-func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, customerIds []string) (uint64, uint64, string, []CustomerUpdates, error) {
+func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, customerIds []string) (uint64, uint64, []string, []CustomerUpdates, error) {
 
 	pool := p.GetPool()
 
 	conn, err := pool.Acquire(context.Background())
 
 	if err != nil {
-		return 0, 0, "", nil, err
+		return 0, 0, make([]string, 0), nil, err
 	}
 
 	defer conn.Release()
@@ -565,16 +565,16 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
         from
             %s
         WHERE
-            block_number = $1
+            block_number >= $1 and block_number <= $1 + 50 
     ),
 	latest_block_of_path as (
 		SELECT
-			block_number as block_number,
-			path as path
+			max(block_number) as last_block_number,
+			json_agg(path) as paths
 		from
 			%s
 		WHERE
-			path = (SELECT path from path)
+			path = (SELECT path from path ORDER BY block_number desc limit 1)
 		order by block_number desc
 		limit 1
 	),
@@ -621,8 +621,8 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
             customer_id
     )
 	SELECT
-    	block_number,
-    	path,
+    	last_block_number,
+    	paths,
     	(SELECT json_agg(json_build_object(customer_id, abis)) FROM reformatted_jobs) as jobs
 	FROM
     	latest_block_of_path
@@ -632,18 +632,18 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 
 	if err != nil {
 		log.Println("Error querying abi jobs from database", err)
-		return 0, 0, "", nil, err
+		return 0, 0, make([]string, 0), nil, err
 	}
 
 	var customers []map[string]map[string]map[string]*AbiEntry
-	var path string
+	var paths []string
 	var firstBlockNumber, lastBlockNumber uint64
 
 	for rows.Next() {
-		err = rows.Scan(&lastBlockNumber, &path, &customers)
+		err = rows.Scan(&lastBlockNumber, &paths, &customers)
 		if err != nil {
 			log.Println("Error scanning row:", err)
-			return 0, 0, "", nil, err
+			return 0, 0, make([]string, 0), nil, err
 		}
 	}
 
@@ -662,7 +662,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 
 	}
 
-	return firstBlockNumber, lastBlockNumber, path, customerUpdates, nil
+	return firstBlockNumber, lastBlockNumber, paths, customerUpdates, nil
 
 }
 
