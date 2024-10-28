@@ -1331,6 +1331,7 @@ func CreateDefinitionsCommand() *cobra.Command {
 
 	var rpc, chainName, outputPath string
 	var defenitions, models, clientInteraface, migrations, full, createSubscriptionType, deployScripts, L2Flag bool
+	var alembicLabelsConfig, alembicIndexesConfig string
 
 	definitionsCmd := &cobra.Command{
 		Use:   "chain",
@@ -1496,15 +1497,35 @@ func CreateDefinitionsCommand() *cobra.Command {
 					return fmt.Errorf("failed to change directory: %w", err)
 				}
 
-				// Execute Alembic revision --autogenerate
-				cmd := exec.Command("alembic", "-c", "alembic_indexes.dev.ini", "revision", "--autogenerate", "-m", fmt.Sprintf("add_%s_tables", data.BlockchainNameLower))
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
+				if alembicLabelsConfig != "" {
 
-				log.Printf("Generating migrations for %s", chainName)
+					// Check if database is up to date
+					cmd := exec.Command("alembic", "-c", alembicLabelsConfig, "upgrade", "head")
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
 
-				if err := cmd.Run(); err != nil {
-					return fmt.Errorf("failed to generate Alembic revision: %w", err)
+					if err := cmd.Run(); err != nil {
+						return fmt.Errorf("failed to upgrade Alembic database: %w", err)
+					}
+
+					log.Println("Generated Alembic labels migration successfully.\n %s", cmd.Stdout)
+
+				}
+
+				// Change directory back to the root
+
+				if alembicIndexesConfig != "" {
+
+					// Execute Alembic revision --autogenerate
+					cmd := exec.Command("alembic", "-c", "alembic_indexes.dev.ini", "revision", "--autogenerate", "-m", fmt.Sprintf("add_%s_tables", data.BlockchainNameLower))
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+
+					if err := cmd.Run(); err != nil {
+						return fmt.Errorf("failed to generate Alembic revision: %w", err)
+					}
+					// return shell output
+					log.Printf("Generate Alembic indexes migration successfully.\n %s", cmd.Stdout)
 				}
 
 				log.Println("Alembic revision generated successfully.")
@@ -1543,6 +1564,8 @@ func CreateDefinitionsCommand() *cobra.Command {
 	definitionsCmd.Flags().BoolVar(&createSubscriptionType, "subscription", false, "Generate subscription type")
 	definitionsCmd.Flags().BoolVar(&deployScripts, "deploy", false, "Generate deploy scripts")
 	definitionsCmd.Flags().BoolVar(&L2Flag, "L2", false, "Set this flag if the chain is a Layer 2 chain")
+	definitionsCmd.Flags().StringVar(&alembicLabelsConfig, "alembic-labels", "", "The path to the alembic labels config file")
+	definitionsCmd.Flags().StringVar(&alembicIndexesConfig, "alembic-indexes", "", "The path to the alembic indexes config file")
 
 	return definitionsCmd
 
