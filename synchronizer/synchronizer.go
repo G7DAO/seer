@@ -25,17 +25,18 @@ type Synchronizer struct {
 	Client          seer_blockchain.BlockchainClient
 	StorageInstance storage.Storer
 
-	blockchain string
-	startBlock uint64
-	endBlock   uint64
-	batchSize  uint64
-	baseDir    string
-	basePath   string
-	threads    int
+	blockchain      string
+	startBlock      uint64
+	endBlock        uint64
+	batchSize       uint64
+	baseDir         string
+	basePath        string
+	threads         int
+	minBlocksToSync int
 }
 
 // NewSynchronizer creates a new synchronizer instance with the given blockchain handler.
-func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize uint64, timeout int, threads int) (*Synchronizer, error) {
+func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize uint64, timeout int, threads int, minBlocksToSync int) (*Synchronizer, error) {
 	var synchronizer Synchronizer
 
 	basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", blockchain)
@@ -61,13 +62,14 @@ func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize
 		Client:          client,
 		StorageInstance: storageInstance,
 
-		blockchain: blockchain,
-		startBlock: startBlock,
-		endBlock:   endBlock,
-		batchSize:  batchSize,
-		baseDir:    baseDir,
-		basePath:   basePath,
-		threads:    threads,
+		blockchain:      blockchain,
+		startBlock:      startBlock,
+		endBlock:        endBlock,
+		batchSize:       batchSize,
+		baseDir:         baseDir,
+		basePath:        basePath,
+		threads:         threads,
+		minBlocksToSync: minBlocksToSync,
 	}
 
 	return &synchronizer, nil
@@ -441,7 +443,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 
 		// Read updates from the indexer db
 		// This function will return a list of customer updates 1 update is 1 customer
-		_, lastBlockOfChank, paths, updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, customerIds)
+		_, lastBlockOfChank, paths, updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, customerIds, d.minBlocksToSync)
 		if err != nil {
 			return isEnd, fmt.Errorf("error reading updates: %w", err)
 		}

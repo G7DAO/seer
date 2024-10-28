@@ -545,7 +545,7 @@ func (p *PostgreSQLpgx) GetCustomersIDs(blockchain string) ([]string, error) {
 	return customerIds, nil
 }
 
-func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, customerIds []string) (uint64, uint64, []string, []CustomerUpdates, error) {
+func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, customerIds []string, minBlocksToSync int) (uint64, uint64, []string, []CustomerUpdates, error) {
 
 	pool := p.GetPool()
 
@@ -565,7 +565,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
         from
             %s
         WHERE
-            block_number >= $1 and block_number <= $1 + 50 
+            block_number >= $1 and block_number <= $1 + $3 
     ),
 	latest_block_of_path as (
 		SELECT
@@ -628,7 +628,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
     	latest_block_of_path
 	`, blocksTableName, blocksTableName)
 
-	rows, err := conn.Query(context.Background(), query, fromBlock, blockchain)
+	rows, err := conn.Query(context.Background(), query, fromBlock, blockchain, minBlocksToSync)
 
 	if err != nil {
 		log.Println("Error querying abi jobs from database", err)
