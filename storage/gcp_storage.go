@@ -9,6 +9,7 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -229,6 +230,57 @@ func (g *GCS) ReadFiles(keys []string) (bytes.Buffer, error) {
 		if _, err := io.Copy(&result, &buf); err != nil {
 			return bytes.Buffer{}, fmt.Errorf("failed to read object data: %v", err)
 		}
+	}
+
+	return result, nil
+}
+
+func (g *GCS) ReadFilesAsync(keys []string, threads int) (bytes.Buffer, error) {
+	var result bytes.Buffer
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(keys))
+
+	// Semaphore to limit the number of concurrent reads
+	sem := make(chan struct{}, threads)
+
+	for _, key := range keys {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(k string) {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+
+			buf, err := g.Read(k)
+			if err != nil {
+				errChan <- fmt.Errorf("failed to read object from bucket %s: %v", k, err)
+				return
+			}
+
+			mu.Lock()
+			if _, err := io.Copy(&result, &buf); err != nil {
+				mu.Unlock()
+				errChan <- fmt.Errorf("failed to copy data for key %s: %v", k, err)
+				return
+			}
+			mu.Unlock()
+		}(key)
+	}
+
+	// Wait for all goroutines to finish
+	wg.Wait()
+	close(errChan)
+
+	// Check if any errors occurred
+	if len(errChan) > 0 {
+		var errMsgs []string
+		for err := range errChan {
+			errMsgs = append(errMsgs, err.Error())
+		}
+		return result, fmt.Errorf("errors occurred during file reads:\n%s",
+			strings.Join(errMsgs, "\n"))
 	}
 
 	return result, nil

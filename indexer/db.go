@@ -561,20 +561,20 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 
 	query := fmt.Sprintf(`WITH path as (
         SELECT
-            path
+            path,
+			block_number
         from
             %s
         WHERE
-            block_number >= $1 and block_number <= $1 + $3 
+            block_number >= $1 and block_number <= $1 + $3
     ),
 	latest_block_of_path as (
 		SELECT
-			max(block_number) as last_block_number,
-			json_agg(path) as paths
+			block_number as last_block_number
 		from
 			%s
 		WHERE
-			path = (SELECT path from path ORDER BY block_number desc limit 1)
+			path = (SELECT path FROM path ORDER BY block_number DESC LIMIT 1)
 		order by block_number desc
 		limit 1
 	),
@@ -622,7 +622,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
     )
 	SELECT
     	last_block_number,
-    	paths,
+    	(SELECT array_agg(path) FROM path) as paths,
     	(SELECT json_agg(json_build_object(customer_id, abis)) FROM reformatted_jobs) as jobs
 	FROM
     	latest_block_of_path
