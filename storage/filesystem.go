@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 )
 
@@ -147,26 +146,24 @@ func (fs *FileStorage) Delete(key string) error {
 	return nil
 }
 
-func (fs *FileStorage) ReadFiles(keys []string) (bytes.Buffer, error) {
+func (fs *FileStorage) ReadFiles(keys []string) ([]bytes.Buffer, error) {
 
-	var data bytes.Buffer
+	var data []bytes.Buffer
 
 	for _, key := range keys {
-		data, err := fs.Read(key)
-		if err != nil {
-			return bytes.Buffer{}, err
-		}
+		dataBlock, err := fs.Read(key)
 
-		if _, err := io.Copy(&data, &data); err != nil {
-			return bytes.Buffer{}, fmt.Errorf("failed to read object data: %v", err)
+		if err != nil {
+			return nil, err
 		}
+		data = append(data, dataBlock)
 
 	}
 	return data, nil
 }
 
-func (fs *FileStorage) ReadFilesAsync(keys []string, threads int) (bytes.Buffer, error) {
-	var data bytes.Buffer
+func (fs *FileStorage) ReadFilesAsync(keys []string, threads int) ([]bytes.Buffer, error) {
+	var data []bytes.Buffer
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(keys))
@@ -187,28 +184,18 @@ func (fs *FileStorage) ReadFilesAsync(keys []string, threads int) (bytes.Buffer,
 				errChan <- fmt.Errorf("failed to read file %s: %v", k, err)
 				return
 			}
+
 			mu.Lock()
-			_, writeErr := data.Write(bf.Bytes())
+			data = append(data, bf)
 			mu.Unlock()
-			if writeErr != nil {
-				errChan <- fmt.Errorf("failed to write data for file %s: %v", k, writeErr)
-			}
 		}(key)
 	}
 
-	// Wait for all goroutines to finish
 	wg.Wait()
 	close(errChan)
 
-	// Check if any errors occurred
 	if len(errChan) > 0 {
-		// Collect all errors
-		var errMsgs []string
-		for err := range errChan {
-			errMsgs = append(errMsgs, err.Error())
-		}
-		return data, fmt.Errorf("errors occurred during file reads:\n%s",
-			strings.Join(errMsgs, "\n"))
+		return nil, fmt.Errorf("failed to read files: %v", <-errChan)
 	}
 
 	return data, nil

@@ -218,25 +218,23 @@ func (g *GCS) ReadBatch(readItems []ReadItem) (map[string][]string, error) {
 	return result, nil
 }
 
-func (g *GCS) ReadFiles(keys []string) (bytes.Buffer, error) {
-	var result bytes.Buffer
+func (g *GCS) ReadFiles(keys []string) ([]bytes.Buffer, error) {
+	var result []bytes.Buffer
 
 	for _, key := range keys {
 		buf, err := g.Read(key)
 		if err != nil {
-			return bytes.Buffer{}, fmt.Errorf("failed to read object from bucket: %v", err)
+			return nil, fmt.Errorf("failed to read object from bucket %s: %v", key, err)
 		}
 
-		if _, err := io.Copy(&result, &buf); err != nil {
-			return bytes.Buffer{}, fmt.Errorf("failed to read object data: %v", err)
-		}
+		result = append(result, buf)
 	}
 
 	return result, nil
 }
 
-func (g *GCS) ReadFilesAsync(keys []string, threads int) (bytes.Buffer, error) {
-	var result bytes.Buffer
+func (g *GCS) ReadFilesAsync(keys []string, threads int) ([]bytes.Buffer, error) {
+	var result []bytes.Buffer
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(keys))
@@ -260,11 +258,7 @@ func (g *GCS) ReadFilesAsync(keys []string, threads int) (bytes.Buffer, error) {
 			}
 
 			mu.Lock()
-			if _, err := io.Copy(&result, &buf); err != nil {
-				mu.Unlock()
-				errChan <- fmt.Errorf("failed to copy data for key %s: %v", k, err)
-				return
-			}
+			result = append(result, buf)
 			mu.Unlock()
 		}(key)
 	}

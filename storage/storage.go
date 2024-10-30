@@ -11,8 +11,8 @@ type Storer interface {
 	Save(batchDir, filename string, bf bytes.Buffer) error
 	Read(key string) (bytes.Buffer, error)
 	ReadBatch(readItems []ReadItem) (map[string][]string, error)
-	ReadFiles(keys []string) (bytes.Buffer, error)
-	ReadFilesAsync(keys []string, threads int) (bytes.Buffer, error)
+	ReadFiles(keys []string) ([]bytes.Buffer, error)
+	ReadFilesAsync(keys []string, threads int) ([]bytes.Buffer, error)
 	Delete(key string) error
 	List(ctx context.Context, delim, blockBatch string, timeout int, returnFunc ListReturnFunc) ([]string, error)
 }

@@ -704,7 +704,7 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 func (d *Synchronizer) processProtoCustomerUpdate(
 	update indexer.CustomerUpdates,
-	rawData bytes.Buffer,
+	rawDataList []bytes.Buffer,
 	customerDBConnections map[string]map[int]CustomerDBConnection,
 	id int,
 	sem chan struct{},
@@ -731,14 +731,25 @@ func (d *Synchronizer) processProtoCustomerUpdate(
 		return
 	}
 	defer conn.Release()
-	decodedEvents, decodedTransactions, err := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis, d.threads)
-	if err != nil {
-		errChan <- fmt.Errorf("error  %s: %w", update.CustomerID, err)
-		<-sem // Release semaphore
-		return
-	}
 
-	err = customer.Pgx.WriteLabes(d.blockchain, decodedTransactions, decodedEvents)
+	var listDecodedEvents []indexer.EventLabel
+	var listDecodedTransactions []indexer.TransactionLabel
+
+	for _, rawData := range rawDataList {
+		// Decode the raw data to transactions
+		decodedEvents, decodedTransactions, err := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis, d.threads)
+
+		listDecodedEvents = append(listDecodedEvents, decodedEvents...)
+		listDecodedTransactions = append(listDecodedTransactions, decodedTransactions...)
+
+		if err != nil {
+			errChan <- fmt.Errorf("error decoding data for customer %s: %w", update.CustomerID, err)
+			<-sem // Release semaphore
+			return
+		}
+
+	}
+	err = customer.Pgx.WriteLabes(d.blockchain, listDecodedTransactions, listDecodedEvents)
 
 	if err != nil {
 		errChan <- fmt.Errorf("error writing labels for customer %s: %w", update.CustomerID, err)
