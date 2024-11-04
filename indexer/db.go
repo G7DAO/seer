@@ -1412,6 +1412,69 @@ func (p *PostgreSQLpgx) FindBatchPath(blockchain string, blockNumber uint64) (st
 
 }
 
+func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumber uint64, minBlocksToSync int) ([]string, uint64, uint64, error) {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	defer conn.Release()
+
+	var paths []string
+
+	var minBlockNumber uint64
+
+	var maxBlockNumber uint64
+	query := fmt.Sprintf(`WITH path as (
+        SELECT
+            path,
+			block_number
+        from
+            %s
+        WHERE
+            block_number >= $1 and block_number <= $1 + $3
+    ), latest_block_of_path as (
+		SELECT
+			block_number as last_block_number
+		from
+			%s
+		WHERE
+			path = (SELECT path FROM path ORDER BY block_number DESC LIMIT 1)
+		order by block_number desc
+		limit 1
+	), earliest_block_of_path as (
+		SELECT
+			block_number as first_block_number
+		from
+			%s
+		WHERE
+			path = (SELECT path FROM path ORDER BY block_number ASC LIMIT 1)
+		order by block_number asc
+		limit 1
+	)
+	select arr_agg(select path from path) as paths, (SELECT first_block_number FROM earliest_block_of_path) as min_block_number, (SELECT last_block_number FROM latest_block_of_path) as max_block_number
+	`, BlocksTableName(blockchain), BlocksTableName(blockchain), BlocksTableName(blockchain))
+
+	err = conn.QueryRow(context.Background(), query, blockNumber).Scan(&paths, &minBlockNumber, &maxBlockNumber)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			// Blocks not indexed yet
+			return nil, 0, 0, nil
+		}
+		return nil,
+			0,
+			0,
+			err
+	}
+
+	return paths, minBlockNumber, maxBlockNumber, nil
+
+}
+
 func (p *PostgreSQLpgx) GetAbiJobsWithoutDeployBlocks(blockchain string) (map[string]map[string][]string, error) {
 	pool := p.GetPool()
 

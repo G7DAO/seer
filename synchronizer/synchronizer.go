@@ -626,16 +626,16 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		}
 
 		// Determine the processing strategy (RPC or storage)
-		var path string
+		var paths []string
 		var firstBlockOfChunk uint64
 
 		for {
-			path, firstBlockOfChunk, _, err = indexer.DBConnection.FindBatchPath(d.blockchain, d.startBlock)
+			paths, firstBlockOfChunk, _, err = indexer.DBConnection.RetrievePathsAndBlockBounds(d.blockchain, d.startBlock, d.minBlocksToSync)
 			if err != nil {
 				return fmt.Errorf("error finding batch path: %w", err)
 			}
 
-			if path != "" {
+			if paths != nil {
 				d.endBlock = firstBlockOfChunk
 				break
 			}
@@ -645,8 +645,8 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		}
 
 		// Read raw data from storage or via RPC
-		var rawData bytes.Buffer
-		rawData, err = d.StorageInstance.Read(path)
+		var rawData []bytes.Buffer
+		rawData, err = d.StorageInstance.ReadFilesAsync(paths, d.threads)
 		if err != nil {
 			return fmt.Errorf("error reading events from storage: %w", err)
 		}
