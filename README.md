@@ -1,9 +1,8 @@
 # seer
 
-`seer` is Moonstream's second generation blockchain-adjacent tooling for crawling data and performing
+`seer` is blockchain-adjacent tooling for crawling data and performing
 smart contract interactions.
 
-It builds on what we have learned from our first generation of [`crawlers`](https://github.com/moonstream-to/api/tree/e69d81d1fb081cbddb0c8a1983af41e53d5a0f8f/crawlers) and from [`moonworm`](https://github.com/moonstream-to/moonworm).
 
 ## Build
 
@@ -87,7 +86,7 @@ This will create an executable file called `ownable-erc-721` (on Windows, you ma
 
 Try running it:
 
-```
+```bash
 $ ./ownable-erc-721 -h
 
 Interact with the OwnableERC721 contract
@@ -128,6 +127,34 @@ Flags:
   -h, --help   help for ownable-erc-721
 
 Use "ownable-erc-721 [command] --help" for more information about a command.
+```
+
+```bash
+$ ./ownable-erc-721 approve -h
+Execute the Approve method on a OwnableERC721 contract
+
+Usage:
+  ownable-erc-721 approve [flags]
+
+Flags:
+      --contract string                   Address of the contract to interact with
+      --gas-limit uint                    Gas limit for the transaction
+      --gas-price string                  Gas price to use for the transaction
+  -h, --help                              help for approve
+      --keyfile string                    Path to the keystore file to use for the transaction
+      --max-fee-per-gas string            Maximum fee per gas to use for the (EIP-1559) transaction
+      --max-priority-fee-per-gas string   Maximum priority fee per gas to use for the (EIP-1559) transaction
+      --nonce string                      Nonce to use for the transaction
+      --password string                   Password to use to unlock the keystore (if not specified, you will be prompted for the password when the command executes)
+      --rpc string                        URL of the JSONRPC API to use
+      --safe string                       Address of the Safe contract
+      --safe-api string                   Safe API for the Safe Transaction Service (optional)
+      --safe-operation uint8              Safe operation type: 0 (Call) or 1 (DelegateCall)
+      --simulate                          Simulate the transaction without sending it
+      --timeout uint                      Timeout (in seconds) for interactions with the JSONRPC API (default 60)
+      --to-0 string                       to-0 argument (common.Address)
+      --token-id string                   token-id argument
+      --value string                      Value to send with the transaction
 ```
 
 # Crawler

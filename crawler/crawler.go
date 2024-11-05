@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	seer_blockchain "github.com/moonstream-to/seer/blockchain"
-	"github.com/moonstream-to/seer/indexer"
-	"github.com/moonstream-to/seer/storage"
+	seer_blockchain "github.com/G7DAO/seer/blockchain"
+	"github.com/G7DAO/seer/indexer"
+	"github.com/G7DAO/seer/storage"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -108,7 +108,7 @@ func NewCrawler(blockchain string, startBlock, finalBlock, confirmations, batchS
 		panic(err)
 	}
 
-	client, err := seer_blockchain.NewClient(blockchain, BlockchainURLs[blockchain], timeout)
+	client, err := seer_blockchain.NewClient(blockchain, seer_blockchain.BlockchainURLs[blockchain], timeout)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func (c *Crawler) Start(threads int) {
 
 	// If Start block is not set, using last crawled block from indexes database
 	if c.startBlock == 0 {
-		latestIndexedBlock, latestErr := indexer.DBConnection.GetLatestDBBlockNumber(c.blockchain)
+		latestIndexedBlock, latestErr := indexer.DBConnection.GetLatestDBBlockNumber(c.blockchain, false)
 
 		// If there are no rows in result then set startBlock with shift
 		if latestErr != nil {

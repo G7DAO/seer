@@ -1,6 +1,11 @@
 package indexer
 
-import "time"
+import (
+	"sync"
+	"time"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
+)
 
 // gorm is a Go ORM library for working with databases
 
@@ -65,36 +70,26 @@ type AbiJob struct {
 	AbiType               string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
+	DeploymentBlockNumber *uint64
 }
 
 type CustomerUpdates struct {
-	CustomerID string                                  `json:"customer_id"`
-	Abis       map[string]map[string]map[string]string `json:"abis"`
-	LastBlock  uint64                                  `json:"last_block"`
-	Path       string                                  `json:"path"`
+	CustomerID string                          `json:"customer_id"`
+	Abis       map[string]map[string]*AbiEntry `json:"abis"`
+	LastBlock  uint64                          `json:"last_block"`
+	Path       string                          `json:"path"`
 }
 
 type TaskForTransaction struct {
-	Hash     string `json:"hash"`
 	Address  string `json:"address"`
 	Selector string `json:"selector"`
 	ABI      string `json:"abi"`
-	RowID    uint64 `json:"row_id"`
-	Path     string `json:"path"`
 }
 
 type TaskForLog struct { // Assuming structure similar to TransactionIndex
-	Hash     string `json:"hash"`
 	Address  string `json:"address"`
 	Selector string `json:"selector"`
 	ABI      string `json:"abi"`
-	RowID    uint64 `json:"row_id"`
-	Path     string `json:"path"`
-}
-
-type RawChainData struct {
-	Transactions []TaskForTransaction `json:"transactions"`
-	Events       []TaskForLog         `json:"events"`
 }
 
 type EventLabel struct {
@@ -139,4 +134,17 @@ type EvmContract struct {
 	Name                     *string
 	Statistics               *map[string]interface{}
 	SupportedStandards       *map[string]interface{}
+}
+
+type AbiJobsDeployInfo struct {
+	DeployedBlockNumber uint64
+	IDs                 []string
+}
+
+type AbiEntry struct {
+	AbiJSON string `json:"abi"`
+	Abi     *abi.ABI
+	AbiName string `json:"abi_name"`
+	AbiType string `json:"abi_type"`
+	Once    sync.Once
 }

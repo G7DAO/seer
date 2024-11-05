@@ -8,26 +8,29 @@ import (
 	"log"
 	"math/big"
 	"strconv"
+	"sync"
 	"time"
 
+	"github.com/G7DAO/seer/blockchain/arbitrum_one"
+	"github.com/G7DAO/seer/blockchain/arbitrum_sepolia"
+	"github.com/G7DAO/seer/blockchain/b3"
+	"github.com/G7DAO/seer/blockchain/b3_sepolia"
+	seer_common "github.com/G7DAO/seer/blockchain/common"
+	"github.com/G7DAO/seer/blockchain/ethereum"
+	"github.com/G7DAO/seer/blockchain/game7_orbit_arbitrum_sepolia"
+	"github.com/G7DAO/seer/blockchain/game7_testnet"
+	"github.com/G7DAO/seer/blockchain/imx_zkevm"
+	"github.com/G7DAO/seer/blockchain/imx_zkevm_sepolia"
+	"github.com/G7DAO/seer/blockchain/mantle"
+	"github.com/G7DAO/seer/blockchain/mantle_sepolia"
+	"github.com/G7DAO/seer/blockchain/polygon"
+	"github.com/G7DAO/seer/blockchain/sepolia"
+	"github.com/G7DAO/seer/blockchain/xai"
+	"github.com/G7DAO/seer/blockchain/xai_sepolia"
+	"github.com/G7DAO/seer/indexer"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/moonstream-to/seer/blockchain/arbitrum_one"
-	"github.com/moonstream-to/seer/blockchain/arbitrum_sepolia"
-	seer_common "github.com/moonstream-to/seer/blockchain/common"
-	"github.com/moonstream-to/seer/blockchain/ethereum"
-	"github.com/moonstream-to/seer/blockchain/game7_orbit_arbitrum_sepolia"
-	"github.com/moonstream-to/seer/blockchain/game7_testnet"
-	"github.com/moonstream-to/seer/blockchain/imx_zkevm"
-	"github.com/moonstream-to/seer/blockchain/imx_zkevm_sepolia"
-	"github.com/moonstream-to/seer/blockchain/mantle"
-	"github.com/moonstream-to/seer/blockchain/mantle_sepolia"
-	"github.com/moonstream-to/seer/blockchain/polygon"
-	"github.com/moonstream-to/seer/blockchain/sepolia"
-	"github.com/moonstream-to/seer/blockchain/xai"
-	"github.com/moonstream-to/seer/blockchain/xai_sepolia"
-	"github.com/moonstream-to/seer/indexer"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -72,10 +75,10 @@ func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 		client, err := imx_zkevm_sepolia.NewClient(url, timeout)
 		return client, err
 	} else if chain == "b3" {
-		client, err := imx_zkevm_sepolia.NewClient(url, timeout)
+		client, err := b3.NewClient(url, timeout)
 		return client, err
 	} else if chain == "b3_sepolia" {
-		client, err := imx_zkevm_sepolia.NewClient(url, timeout)
+		client, err := b3_sepolia.NewClient(url, timeout)
 		return client, err
 	} else {
 		return nil, errors.New("unsupported chain type")
@@ -95,10 +98,13 @@ type BlockchainClient interface {
 	FetchAsProtoBlocksWithEvents(*big.Int, *big.Int, bool, int) ([]proto.Message, []indexer.BlockIndex, uint64, error)
 	ProcessBlocksToBatch([]proto.Message) (proto.Message, error)
 	DecodeProtoEntireBlockToJson(*bytes.Buffer) (*seer_common.BlocksBatchJson, error)
-	DecodeProtoEntireBlockToLabels(*bytes.Buffer, map[string]map[string]map[string]string) ([]indexer.EventLabel, []indexer.TransactionLabel, error)
-	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]map[string]string) ([]indexer.TransactionLabel, error)
-	TransactionReceipt(context.Context, string) (*types.Receipt, error)
+	DecodeProtoEntireBlockToLabels(*bytes.Buffer, map[string]map[string]*indexer.AbiEntry, int) ([]indexer.EventLabel, []indexer.TransactionLabel, error)
+	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]*indexer.AbiEntry) ([]indexer.TransactionLabel, error)
+	TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error)
 	ChainType() string
+	GetCode(context.Context, common.Address, uint64) ([]byte, error)
+	GetTransactionsLabels(uint64, uint64, map[string]map[string]*indexer.AbiEntry, int) ([]indexer.TransactionLabel, map[uint64]seer_common.BlockWithTransactions, error)
+	GetEventsLabels(uint64, uint64, map[string]map[string]*indexer.AbiEntry, map[uint64]seer_common.BlockWithTransactions) ([]indexer.EventLabel, error)
 }
 
 func GetLatestBlockNumberWithRetry(client BlockchainClient, retryAttempts int, retryWaitTime time.Duration) (*big.Int, error) {
@@ -159,7 +165,7 @@ func GetDeployedContracts(client BlockchainClient, BlocksBatch *seer_common.Bloc
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 
-				transactionReceipt, err := client.TransactionReceipt(ctx, transaction.Hash)
+				transactionReceipt, err := client.TransactionReceipt(ctx, common.HexToHash(transaction.Hash))
 				if err != nil {
 					log.Printf("Failed to get transaction receipt: %v", err)
 					continue
@@ -210,4 +216,129 @@ func GetDeployedContracts(client BlockchainClient, BlocksBatch *seer_common.Bloc
 	log.Printf("Found %d deployed contracts", len(deployedContracts))
 
 	return deployedContracts, nil
+
+}
+
+func DeployBlocksLookUpAndUpdate(blockchain string) error {
+
+	// get all abi jobs without deployed block
+
+	chainsAddresses, err := indexer.DBConnection.GetAbiJobsWithoutDeployBlocks(blockchain)
+
+	if err != nil {
+		log.Printf("Failed to get abi jobs without deployed blocks: %v", err)
+		return err
+	}
+
+	if len(chainsAddresses) == 0 {
+		log.Printf("No abi jobs without deployed blocks")
+		return nil
+	}
+
+	for chain, addresses := range chainsAddresses {
+
+		var wg sync.WaitGroup
+
+		sem := make(chan struct{}, 5)  // Semaphore to control
+		errChan := make(chan error, 1) // Buffered channel for error handling
+
+		log.Printf("Processing chain: %s with amount of addresses: %d\n", chain, len(addresses))
+
+		for address, ids := range addresses {
+
+			wg.Add(1)
+			go func(address string, chain string, ids []string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				client, err := NewClient(chain, BlockchainURLs[chain], 4)
+
+				if err != nil {
+					errChan <- err
+					return
+				}
+
+				// get all abi jobs without deployed block
+				deployedBlock, err := FindDeployedBlock(client, address)
+
+				if err != nil {
+					errChan <- err
+					return
+				}
+
+				log.Printf("Deployed block: %d for address: %s in chain: %s\n", deployedBlock, address, chain)
+
+				if deployedBlock != 0 {
+					// update abi job with deployed block
+					err := indexer.DBConnection.UpdateAbiJobsDeployBlock(deployedBlock, ids)
+					if err != nil {
+						errChan <- err
+						return
+					}
+				}
+
+			}(address, chain, ids)
+
+		}
+
+		go func() {
+			wg.Wait()
+			close(errChan)
+		}()
+
+		for err := range errChan {
+			if err != nil {
+				log.Printf("Failed to get deployed block: %v", err)
+				return err
+			}
+		}
+
+	}
+
+	return nil
+
+}
+
+func FindDeployedBlock(client BlockchainClient, address string) (uint64, error) {
+
+	// Binary search by get code
+
+	ctx := context.Background()
+
+	latestBlockNumber, err := client.GetLatestBlockNumber()
+
+	if err != nil {
+		return 0, err
+	}
+
+	var left uint64 = 1
+	var right uint64 = latestBlockNumber.Uint64()
+	var code []byte
+
+	for left < right {
+		mid := (left + right) / 2
+
+		// with timeout
+
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+
+		defer cancel()
+
+		code, err = client.GetCode(ctx, common.HexToAddress(address), mid)
+
+		if err != nil {
+			log.Printf("Failed to get code: %v", err)
+			return 0, err
+		}
+
+		if len(code) == 0 {
+			left = mid + 1
+		} else {
+			right = mid
+		}
+
+	}
+
+	return left, nil
 }
