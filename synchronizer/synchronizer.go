@@ -110,9 +110,12 @@ type CustomerInstance struct {
 }
 
 func GetDBConnection(uuid string, id int) (string, error) {
+	// Define timeout duration
+	ctx, cancel := context.WithTimeout(context.Background(), SEER_MDB_V3_CONTROLLER_API_TIMEOUT)
+	defer cancel()
 
-	// Create the request
-	req, err := http.NewRequest("GET", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid+"/instances/"+strconv.Itoa(id)+"/creds/seer/url", nil)
+	// Create the request with the context
+	req, err := http.NewRequestWithContext(ctx, "GET", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid+"/instances/"+strconv.Itoa(id)+"/creds/seer/url", nil)
 	if err != nil {
 		return "", err
 	}
@@ -123,6 +126,9 @@ func GetDBConnection(uuid string, id int) (string, error) {
 	// Perform the request
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("request timed out: %w", err)
+		}
 		return "", err
 	}
 	defer resp.Body.Close()
@@ -149,8 +155,12 @@ func GetDBConnection(uuid string, id int) (string, error) {
 }
 
 func GetCustomerInstances(uuid string) ([]int, error) {
-	// Create the request
-	req, err := http.NewRequest("GET", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid, nil)
+	// Define timeout duration
+	ctx, cancel := context.WithTimeout(context.Background(), SEER_MDB_V3_CONTROLLER_API_TIMEOUT)
+	defer cancel()
+
+	// Create the request with the context
+	req, err := http.NewRequestWithContext(ctx, "GET", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +171,9 @@ func GetCustomerInstances(uuid string) ([]int, error) {
 	// Perform the request
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("request timed out: %w", err)
+		}
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -177,14 +190,12 @@ func GetCustomerInstances(uuid string) ([]int, error) {
 	}
 
 	var customerInstances Customer
-
 	err = json.Unmarshal(bodyBytes, &customerInstances)
 	if err != nil {
 		return nil, err
 	}
 
 	var instances []int
-
 	for _, instance := range customerInstances.Instances {
 		if instance.Is_running {
 			instances = append(instances, instance.Id)
@@ -661,7 +672,6 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 			for instanceId := range customerDBConnections[update.CustomerID] {
 				wg.Add(1)
 				go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, instanceId, sem, errChan, &wg)
-
 			}
 
 		}

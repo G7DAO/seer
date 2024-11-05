@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 var (
 	MOONSTREAM_DB_V3_CONTROLLER_API               string = "https://mdb-v3-api.moonstream.to"
 	MOONSTREAM_DB_V3_CONTROLLER_SEER_ACCESS_TOKEN string
+	SEER_MDB_V3_CONTROLLER_API_TIMEOUT            time.Duration = 10 * time.Second
 )
 
 func CheckVariablesForSynchronizer() error {
