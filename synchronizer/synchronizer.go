@@ -3,6 +3,7 @@ package synchronizer
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"github.com/G7DAO/seer/crawler"
 	"github.com/G7DAO/seer/indexer"
 	"github.com/G7DAO/seer/storage"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 type Synchronizer struct {
@@ -497,13 +499,14 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 
 func (d *Synchronizer) SyncContracts() {
 
+	indexedLatestBlock, idxLatestErr := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain)
+	if idxLatestErr != nil {
+		log.Println("Error getting latest block from the indexer db:", idxLatestErr)
+		return
+	}
+
 	if d.startBlock == 0 {
 		// Get the latest block from the indexer db
-		indexedLatestBlock, idxLatestErr := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain)
-		if idxLatestErr != nil {
-			log.Println("Error getting latest block from the indexer db:", idxLatestErr)
-			return
-		}
 
 		if indexedLatestBlock != 0 {
 			d.startBlock = indexedLatestBlock
@@ -554,6 +557,33 @@ func (d *Synchronizer) SyncContracts() {
 			log.Println("Error getting deployed contracts:", err)
 			return
 		}
+
+		// get current deployed bytcode
+
+		ctx := context.Background()
+
+		ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
+
+		defer cancel()
+
+		for _, contract := range contracts {
+			contractBytecode, err := d.Client.GetCode(ctxWithTimeout, common.HexToAddress(contract.Address), indexedLatestBlock)
+			if err != nil {
+				log.Println("Error getting contract bytecode:", err)
+				return
+			}
+			// convert []bytes to md5 hash of the bytecode
+
+			contract.BytecodeHash = fmt.Sprintf("%x", md5.Sum(contractBytecode))
+
+			// Convert bytes to string and assign to Bytecode as a pointer
+			bytecodeStr := string(contractBytecode)
+			contract.Bytecode = &bytecodeStr
+		}
+
+		// Write contracts to the bytecode storage
+
+		err = indexer.DBConnection.WriteBytecode(d.blockchain, contracts)
 
 		// Write contracts to the database
 

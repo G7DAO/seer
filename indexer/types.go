@@ -124,7 +124,10 @@ type TransactionLabel struct {
 type EvmContract struct {
 	Address                  string
 	Bytecode                 *string
+	BytecodeHash             string
+	BytecodeStorageId        *string
 	DeployedBytecode         string
+	DeployedBytecodeHash     string
 	Abi                      *map[string]interface{}
 	DeployedAtBlockNumber    uint64
 	DeployedAtBlockHash      string
