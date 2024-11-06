@@ -493,7 +493,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 
 		// Check for errors from goroutines
 		if err := <-errChan; err != nil {
-			return isEnd, err
+			return isEnd, fmt.Errorf("error processing customer updates: %w", err)
 		}
 
 		d.startBlock = lastBlockOfChank + 1
@@ -678,6 +678,7 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 		wg.Wait()
 		close(sem)
+		close(errChan) // Close the channel to signal that all goroutines have finished
 
 		// Check for errors from goroutines
 		select {
