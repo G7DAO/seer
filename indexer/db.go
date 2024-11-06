@@ -774,7 +774,7 @@ func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool
 	return nil
 }
 
-func (p *PostgreSQLpgx) WriteLabes(
+func (p *PostgreSQLpgx) wWriteLabes(
 	blockchain string,
 	transactions []TransactionLabel,
 	events []EventLabel,
