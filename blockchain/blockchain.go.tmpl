@@ -743,6 +743,8 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 
 					ctxWithTimeout, cancel := context.WithTimeout(context.Background(), c.timeout)
 
+					defer cancel()
+
 					receipt, err := c.TransactionReceipt(ctxWithTimeout, common.HexToHash(tx.Hash))
                     if err != nil {
                         errorChan <- fmt.Errorf("error getting transaction receipt for tx %s: %v", tx.Hash, err)
@@ -1049,6 +1051,8 @@ func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMa
 				}
 
 				ctxWithTimeout, cancel := context.WithTimeout(context.Background(), c.timeout)
+
+				defer cancel()
 
 				receipt, err := c.TransactionReceipt(ctxWithTimeout, common.HexToHash(tx.Hash))
 
