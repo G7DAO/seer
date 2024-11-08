@@ -3,6 +3,8 @@ package blockchain
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -154,8 +156,8 @@ func DecodeTransactionInputData(contractABI *abi.ABI, data []byte) {
 	fmt.Printf("Method inputs: %v\n", inputsMap)
 }
 
-func GetDeployedContracts(client BlockchainClient, BlocksBatch *seer_common.BlocksBatchJson) (map[string]indexer.EvmContract, error) {
-	deployedContracts := make(map[string]indexer.EvmContract)
+func GetDeployedContracts(client BlockchainClient, BlocksBatch *seer_common.BlocksBatchJson) (map[string]*indexer.EvmContract, error) {
+	deployedContracts := make(map[string]*indexer.EvmContract)
 	for _, block := range BlocksBatch.Blocks {
 		for _, transaction := range block.Transactions {
 			if (transaction.ToAddress == "" || transaction.ToAddress == "0x") && transaction.Input != "0x" {
@@ -192,11 +194,18 @@ func GetDeployedContracts(client BlockchainClient, BlocksBatch *seer_common.Bloc
 					return nil, err
 				}
 
+				// Compute the MD5 hash and convert it to a hexadecimal string
+				hash := md5.Sum([]byte(transaction.Input))
+				deployedBytecodeHash := hex.EncodeToString(hash[:])
+
 				// Assign EvmContract to the map
-				deployedContracts[contractAddress] = indexer.EvmContract{
+				deployedContracts[contractAddress] = &indexer.EvmContract{
 					Address:                  contractAddress,
 					Bytecode:                 nil,
+					BytecodeHash:             "",
+					DeployedBy:               transaction.FromAddress,
 					DeployedBytecode:         transaction.Input,
+					DeployedBytecodeHash:     deployedBytecodeHash,
 					Abi:                      nil,
 					DeployedAtBlockNumber:    transactionReceipt.BlockNumber.Uint64(),
 					DeployedAtBlockHash:      block.Hash,

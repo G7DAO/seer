@@ -126,6 +126,7 @@ type EvmContract struct {
 	Bytecode                 *string
 	BytecodeHash             string
 	BytecodeStorageId        *string
+	DeployedBy               string
 	DeployedBytecode         string
 	DeployedBytecodeHash     string
 	Abi                      *map[string]interface{}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -558,11 +559,16 @@ func (d *Synchronizer) SyncContracts() {
 			return
 		}
 
+		if len(contracts) == 0 {
+			log.Println("No contracts found in the batch")
+			continue
+		}
+
 		// get current deployed bytcode
 
 		ctx := context.Background()
 
-		ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
+		ctxWithTimeout, cancel := context.WithTimeout(ctx, 60*time.Second)
 
 		defer cancel()
 
@@ -572,18 +578,36 @@ func (d *Synchronizer) SyncContracts() {
 				log.Println("Error getting contract bytecode:", err)
 				return
 			}
-			// convert []bytes to md5 hash of the bytecode
 
-			contract.BytecodeHash = fmt.Sprintf("%x", md5.Sum(contractBytecode))
+			hexstring := hex.EncodeToString(contractBytecode)
+
+			// convert []bytes to md5 hash of the bytecode
+			hashString := fmt.Sprintf("%x", md5.Sum(contractBytecode)) // Convert [16]byte to hex string
+
+			// Assign the hash string to BytecodeHash
+			contract.BytecodeHash = hashString
 
 			// Convert bytes to string and assign to Bytecode as a pointer
-			bytecodeStr := string(contractBytecode)
-			contract.Bytecode = &bytecodeStr
+
+			contract.Bytecode = &hexstring
+
 		}
 
 		// Write contracts to the bytecode storage
 
-		err = indexer.DBConnection.WriteBytecode(d.blockchain, contracts)
+		err = indexer.DBConnection.WriteBytecodeStorage(contracts)
+
+		for _, contract := range contracts {
+
+			bytecodeId, err := indexer.DBConnection.BytecodeIdByHash(contract.BytecodeHash)
+			if err != nil {
+				log.Println("Error getting bytecode storage id by hash:", err)
+				continue
+			}
+
+			contract.BytecodeStorageId = &bytecodeId
+
+		}
 
 		// Write contracts to the database
 
@@ -636,7 +660,7 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		return fmt.Errorf("error parsing ABI jobs: %w", err)
 	}
 
-	fmt.Printf("Found %d customer updates\n", len(customerUpdates))
+	log.Printf("Found %d customer updates\n", len(customerUpdates))
 
 	// Filter out blocks more
 	if autoJobs {
