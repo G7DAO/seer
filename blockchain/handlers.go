@@ -3,10 +3,13 @@ package blockchain
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 	"math/big"
+	"strconv"
 	"sync"
 	"time"
 
@@ -29,6 +32,7 @@ import (
 	"github.com/G7DAO/seer/indexer"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -98,6 +102,7 @@ type BlockchainClient interface {
 	DecodeProtoEntireBlockToJson(*bytes.Buffer) (*seer_common.BlocksBatchJson, error)
 	DecodeProtoEntireBlockToLabels(*bytes.Buffer, map[string]map[string]*indexer.AbiEntry, int) ([]indexer.EventLabel, []indexer.TransactionLabel, error)
 	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]*indexer.AbiEntry) ([]indexer.TransactionLabel, error)
+	TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error)
 	ChainType() string
 	GetCode(context.Context, common.Address, uint64) ([]byte, error)
 	GetTransactionsLabels(uint64, uint64, map[string]map[string]*indexer.AbiEntry, int) ([]indexer.TransactionLabel, map[uint64]seer_common.BlockWithTransactions, error)
@@ -149,6 +154,78 @@ func DecodeTransactionInputData(contractABI *abi.ABI, data []byte) {
 	}
 	fmt.Printf("Method Name: %s\n", method.Name)
 	fmt.Printf("Method inputs: %v\n", inputsMap)
+}
+
+func GetDeployedContracts(client BlockchainClient, BlocksBatch *seer_common.BlocksBatchJson) (map[string]*indexer.EvmContract, error) {
+	deployedContracts := make(map[string]*indexer.EvmContract)
+	for _, block := range BlocksBatch.Blocks {
+		for _, transaction := range block.Transactions {
+			if (transaction.ToAddress == "" || transaction.ToAddress == "0x") && transaction.Input != "0x" {
+
+				// make get receipt call
+
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+
+				transactionReceipt, err := client.TransactionReceipt(ctx, common.HexToHash(transaction.Hash))
+				if err != nil {
+					log.Printf("Failed to get transaction receipt: %v", err)
+					continue
+				}
+
+				if transactionReceipt.ContractAddress == (common.Address{}) {
+					continue
+				}
+
+				// Extract contract address as string
+				contractAddress := transactionReceipt.ContractAddress.String() // Assuming ContractAddress is of type common.Address
+
+				timestamp, err := strconv.ParseUint(block.Timestamp, 10, 64)
+				if err != nil {
+					log.Printf("Failed to parse block timestamp: %v", err)
+					// Handle the error appropriately (e.g., continue to the next block or return)
+					return nil, err
+				}
+
+				transactionIndex, err := strconv.ParseUint(transaction.TransactionIndex, 10, 64)
+				if err != nil {
+					log.Printf("Failed to parse transaction index: %v", err)
+					// Handle the error appropriately (e.g., continue to the next transaction or return)
+					return nil, err
+				}
+
+				// Compute the MD5 hash and convert it to a hexadecimal string
+				hash := md5.Sum([]byte(transaction.Input))
+				deployedBytecodeHash := hex.EncodeToString(hash[:])
+
+				// Assign EvmContract to the map
+				deployedContracts[contractAddress] = &indexer.EvmContract{
+					Address:                  contractAddress,
+					Bytecode:                 nil,
+					BytecodeHash:             "",
+					DeployedBy:               transaction.FromAddress,
+					DeployedBytecode:         transaction.Input,
+					DeployedBytecodeHash:     deployedBytecodeHash,
+					Abi:                      nil,
+					DeployedAtBlockNumber:    transactionReceipt.BlockNumber.Uint64(),
+					DeployedAtBlockHash:      block.Hash,
+					DeployedAtBlockTimestamp: timestamp,
+					TransactionHash:          transaction.Hash,
+					TransactionIndex:         transactionIndex,
+					Name:                     nil,
+					Statistics:               nil,
+					SupportedStandards:       nil,
+				}
+
+				// Try to get bytecode
+			}
+		}
+	}
+
+	log.Printf("Found %d deployed contracts", len(deployedContracts))
+
+	return deployedContracts, nil
+
 }
 
 func DeployBlocksLookUpAndUpdate(blockchain string) error {

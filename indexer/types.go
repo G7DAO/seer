@@ -121,6 +121,25 @@ type TransactionLabel struct {
 	BlockTimestamp  uint64
 }
 
+type EvmContract struct {
+	Address                  string
+	Bytecode                 *string
+	BytecodeHash             string
+	BytecodeStorageId        *string
+	DeployedBy               string
+	DeployedBytecode         string
+	DeployedBytecodeHash     string
+	Abi                      *map[string]interface{}
+	DeployedAtBlockNumber    uint64
+	DeployedAtBlockHash      string
+	DeployedAtBlockTimestamp uint64
+	TransactionHash          string
+	TransactionIndex         uint64
+	Name                     *string
+	Statistics               *map[string]interface{}
+	SupportedStandards       *map[string]interface{}
+}
+
 type AbiJobsDeployInfo struct {
 	DeployedBlockNumber uint64
 	IDs                 []string

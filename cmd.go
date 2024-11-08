@@ -774,6 +774,62 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 	cleanCommand.Flags().Uint64Var(&batchLimit, "batch-limit", 1000, "The number of rows to delete in each batch (default: 1000)")
 	cleanCommand.Flags().IntVar(&sleepTime, "sleep-time", 1, "The time to sleep between batches in seconds (default: 1)")
 
+	var startBlock, endBlock uint64
+	var baseDir string
+	var timeout int
+
+	findContractsCommand := &cobra.Command{
+		Use:   "find-contracts",
+		Short: "Find contracts in the blockstorage",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
+			syncErr := synchronizer.CheckVariablesForSynchronizer()
+			if syncErr != nil {
+				return syncErr
+			}
+
+			if chain == "" {
+				return fmt.Errorf("blockchain is required via --chain")
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			indexer.InitDBConnection()
+
+			synchronizerInstance, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, 0, timeout, 1)
+
+			if synchonizerErr != nil {
+				return synchonizerErr
+			}
+
+			synchronizerInstance.SyncContracts()
+
+			return nil
+		},
+	}
+
+	findContractsCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	findContractsCommand.Flags().Uint64Var(&startBlock, "start-block", 0, "The block number to start decoding from (default: latest block)")
+	findContractsCommand.Flags().Uint64Var(&endBlock, "end-block", 0, "The block number to end decoding at (default: latest block)")
+	findContractsCommand.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	findContractsCommand.Flags().IntVar(&timeout, "timeout", 30, "The timeout for the crawler in seconds (default: 30)")
+	indexCommand.AddCommand(findContractsCommand)
+
 	indexCommand.AddCommand(cleanCommand)
 
 	deploymentBlocksCommand := &cobra.Command{

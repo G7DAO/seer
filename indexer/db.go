@@ -1412,6 +1412,46 @@ func (p *PostgreSQLpgx) FindBatchPath(blockchain string, blockNumber uint64) (st
 
 }
 
+func (p *PostgreSQLpgx) GetPaths(chain string, startBlock uint64, endBlock uint64) ([]string, error) {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer conn.Release()
+
+	if startBlock > endBlock {
+		startBlock, endBlock = endBlock, startBlock
+	}
+
+	query := fmt.Sprintf("with paths as (SELECT DISTINCT ON(path) path, block_number FROM %s WHERE block_number >= $1 AND block_number <= $2) SELECT path, block_number FROM paths order by 2 desc", BlocksTableName(chain))
+	rows, err := conn.Query(context.Background(), query, startBlock, endBlock)
+	if err != nil {
+		return nil, err
+	}
+
+	var paths []string
+
+	for rows.Next() {
+
+		var path string
+		var blockNumber uint64
+
+		err = rows.Scan(&path, &blockNumber)
+
+		paths = append(paths, path)
+
+	}
+
+	log.Println("Found", len(paths), "paths for blockchain:", chain)
+
+	return paths, nil
+
+}
+
 func (p *PostgreSQLpgx) GetAbiJobsWithoutDeployBlocks(blockchain string) (map[string]map[string][]string, error) {
 	pool := p.GetPool()
 
@@ -1651,4 +1691,332 @@ func (p *PostgreSQLpgx) DeleteJobs(jobIds []string) error {
 	log.Printf("Deleted %d jobs", len(jobIds))
 
 	return nil
+}
+
+func (p *PostgreSQLpgx) WriteContracts(chain string, contracts map[string]*EvmContract) error {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
+	if err != nil {
+		return err
+	}
+
+	defer conn.Release()
+
+	tx, err := conn.Begin(context.Background())
+
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if err := recover(); err != nil {
+			tx.Rollback(context.Background())
+			panic(err)
+		} else if err != nil {
+			tx.Rollback(context.Background())
+		} else {
+			err = tx.Commit(context.Background())
+		}
+	}()
+
+	tableName := chain + "_contracts"
+
+	columns := []string{"address", "deployed_bytecode", "deployed_bytecode_hash", "bytecode_storage_id", "abi", "deployed_at_block_number", "deployed_at_block_hash", "deployed_at_block_timestamp", "transaction_hash", "transaction_index", "name", "statistics", "supported_standards", "deployed_by"}
+	var valuesMap = make(map[string]UnnestInsertValueStruct)
+
+	valuesMap["address"] = UnnestInsertValueStruct{
+		Type:   "BYTEA",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["deployed_bytecode"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["deployed_bytecode_hash"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["bytecode_storage_id"] = UnnestInsertValueStruct{
+		Type:   "UUID",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["abi"] = UnnestInsertValueStruct{
+		Type:   "jsonb",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["deployed_at_block_number"] = UnnestInsertValueStruct{
+		Type:   "BIGINT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["deployed_at_block_hash"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["deployed_at_block_timestamp"] = UnnestInsertValueStruct{
+		Type:   "BIGINT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["transaction_hash"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["transaction_index"] = UnnestInsertValueStruct{
+		Type:   "BIGINT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["name"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["statistics"] = UnnestInsertValueStruct{
+		Type:   "jsonb",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["supported_standards"] = UnnestInsertValueStruct{
+		Type:   "jsonb",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["deployed_by"] = UnnestInsertValueStruct{
+		Type:   "BYTEA",
+		Values: make([]interface{}, 0),
+	}
+
+	for _, contract := range contracts {
+
+		addressBytes, err := decodeAddress(contract.Address)
+		if err != nil {
+			log.Println("Error decoding address:", err, contract)
+			continue
+		}
+
+		addressBytesDeployedBy, err := decodeAddress(contract.DeployedBy)
+		if err != nil {
+			log.Println("Error decoding deployed by address:", err, contract)
+			continue
+		}
+
+		if contract.Abi != nil {
+
+			abi, err := json.Marshal(*contract.Abi)
+			if err != nil {
+				log.Println("Error marshalling abi:", err, contract)
+				continue
+			}
+
+			updateValues(valuesMap, "abi", abi)
+
+		} else {
+			updateValues(valuesMap, "abi", nil)
+		}
+
+		if contract.Statistics != nil {
+
+			statistics, err := json.Marshal(*contract.Statistics)
+			if err != nil {
+				log.Println("Error marshalling statistics:", err, contract)
+				continue
+			}
+
+			updateValues(valuesMap, "statistics", statistics)
+
+		} else {
+			updateValues(valuesMap, "statistics", nil)
+		}
+
+		if contract.SupportedStandards != nil {
+
+			supportedStandards, err := json.Marshal(*contract.SupportedStandards)
+			if err != nil {
+				log.Println("Error marshalling supported standards:", err, contract)
+				continue
+			}
+
+			updateValues(valuesMap, "supported_standards", supportedStandards)
+
+		} else {
+			updateValues(valuesMap, "supported_standards", nil)
+		}
+
+		updateValues(valuesMap, "address", addressBytes)
+		updateValues(valuesMap, "bytecode_storage_id", contract.BytecodeStorageId)
+		updateValues(valuesMap, "deployed_bytecode", contract.DeployedBytecode)
+		updateValues(valuesMap, "deployed_bytecode_hash", contract.DeployedBytecodeHash)
+		updateValues(valuesMap, "deployed_at_block_number", contract.DeployedAtBlockNumber)
+		updateValues(valuesMap, "deployed_at_block_hash", contract.DeployedAtBlockHash)
+		updateValues(valuesMap, "deployed_at_block_timestamp", contract.DeployedAtBlockTimestamp)
+		updateValues(valuesMap, "transaction_hash", contract.TransactionHash)
+		updateValues(valuesMap, "transaction_index", contract.TransactionIndex)
+		updateValues(valuesMap, "name", contract.Name)
+		updateValues(valuesMap, "deployed_by", addressBytesDeployedBy)
+
+	}
+
+	ctx := context.Background()
+
+	err = p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT DO NOTHING")
+
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Saved %d contracts records into %s table", len(contracts), tableName)
+
+	return nil
+
+}
+
+func (p *PostgreSQLpgx) WriteBytecodeStorage(Contracts map[string]*EvmContract) error {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
+	if err != nil {
+		return err
+	}
+
+	defer conn.Release()
+
+	tx, err := conn.Begin(context.Background())
+
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if err := recover(); err != nil {
+			tx.Rollback(context.Background())
+			panic(err)
+		} else if err != nil {
+			tx.Rollback(context.Background())
+		} else {
+			err = tx.Commit(context.Background())
+		}
+	}()
+
+	tableName := "bytecode_storage"
+
+	columns := []string{"id", "hash", "bytecode", "title", "description", "abi", "code", "data"}
+
+	var valuesMap = make(map[string]UnnestInsertValueStruct)
+
+	valuesMap["id"] = UnnestInsertValueStruct{
+		Type:   "UUID",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["hash"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["bytecode"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["title"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["description"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["abi"] = UnnestInsertValueStruct{
+		Type:   "jsonb",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["code"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["data"] = UnnestInsertValueStruct{
+		Type:   "jsonb",
+		Values: make([]interface{}, 0),
+	}
+
+	for _, contract := range Contracts {
+
+		id := uuid.New()
+
+		var abiJson []byte
+
+		if contract.Abi != nil {
+			abiJson, err = json.Marshal(*contract.Abi)
+			if err != nil {
+				log.Println("Error marshalling abi:", err, contract)
+				continue
+			}
+		}
+
+		data := map[string]interface{}{}
+
+		updateValues(valuesMap, "id", id)
+		updateValues(valuesMap, "hash", contract.BytecodeHash)
+		updateValues(valuesMap, "bytecode", contract.Bytecode)
+		updateValues(valuesMap, "title", nil)
+		updateValues(valuesMap, "description", nil)
+		updateValues(valuesMap, "abi", abiJson)
+		updateValues(valuesMap, "code", nil)
+		updateValues(valuesMap, "data", data)
+
+	}
+
+	ctx := context.Background()
+
+	err = p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT DO NOTHING")
+
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Saved %d bytecode storage records into %s table", len(Contracts), tableName)
+
+	// Return address and bytecode storage id
+
+	return nil
+
+}
+
+func (p *PostgreSQLpgx) BytecodeIdByHash(hash string) (string, error) {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+
+	if err != nil {
+		return "", err
+	}
+
+	defer conn.Release()
+
+	var id string
+
+	query := "SELECT id FROM bytecode_storage WHERE hash = $1"
+
+	err = conn.QueryRow(context.Background(), query, hash).Scan(&id)
+
+	if err != nil {
+		return "", err
+	}
+
+	return id, nil
 }

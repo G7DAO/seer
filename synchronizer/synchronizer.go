@@ -3,6 +3,8 @@ package synchronizer
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +21,7 @@ import (
 	"github.com/G7DAO/seer/crawler"
 	"github.com/G7DAO/seer/indexer"
 	"github.com/G7DAO/seer/storage"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 type Synchronizer struct {
@@ -506,6 +509,129 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	return isEnd, nil
 }
 
+func (d *Synchronizer) SyncContracts() {
+
+	indexedLatestBlock, idxLatestErr := indexer.DBConnection.GetLatestDBBlockNumber(d.blockchain)
+	if idxLatestErr != nil {
+		log.Println("Error getting latest block from the indexer db:", idxLatestErr)
+		return
+	}
+
+	if d.startBlock == 0 {
+		// Get the latest block from the indexer db
+
+		if indexedLatestBlock != 0 {
+			d.startBlock = indexedLatestBlock
+		} else {
+			panic("No start block found in indexer db")
+		}
+
+	}
+
+	if d.endBlock == 0 {
+		d.endBlock = 1
+	}
+
+	log.Printf("Sync contracts for blockchain %s in range of blocks %d-%d\n", d.blockchain, d.startBlock, d.endBlock)
+	// Read all paths from database
+	paths, err := indexer.DBConnection.GetPaths(d.blockchain, d.startBlock, d.endBlock)
+	if err != nil {
+		log.Println("Error reading paths from database:", err)
+		return
+	}
+
+	for _, path := range paths {
+
+		// Read the raw data from the storage for current path
+		rawData, readErr := d.StorageInstance.Read(path)
+
+		if readErr != nil {
+			log.Println("Error reading events for customers:", readErr)
+			return
+		}
+
+		log.Printf("Read blocks for path: %s\n", path)
+
+		// get all deployed contracts
+		batch, err := d.Client.DecodeProtoEntireBlockToJson(&rawData)
+
+		if err != nil {
+			log.Println("Error getting deployed contracts:", err)
+			return
+		}
+
+		log.Printf("Decoded %d blocks\n", len(batch.Blocks))
+
+		// get all deployed contracts
+		contracts, err := seer_blockchain.GetDeployedContracts(d.Client, batch)
+
+		if err != nil {
+			log.Println("Error getting deployed contracts:", err)
+			return
+		}
+
+		if len(contracts) == 0 {
+			log.Println("No contracts found in the batch")
+			continue
+		}
+
+		// get current deployed bytcode
+
+		ctx := context.Background()
+
+		ctxWithTimeout, cancel := context.WithTimeout(ctx, 60*time.Second)
+
+		defer cancel()
+
+		for _, contract := range contracts {
+			contractBytecode, err := d.Client.GetCode(ctxWithTimeout, common.HexToAddress(contract.Address), indexedLatestBlock)
+			if err != nil {
+				log.Println("Error getting contract bytecode:", err)
+				return
+			}
+
+			hexstring := hex.EncodeToString(contractBytecode)
+
+			// convert []bytes to md5 hash of the bytecode
+			hashString := fmt.Sprintf("%x", md5.Sum(contractBytecode)) // Convert [16]byte to hex string
+
+			// Assign the hash string to BytecodeHash
+			contract.BytecodeHash = hashString
+
+			// Convert bytes to string and assign to Bytecode as a pointer
+
+			contract.Bytecode = &hexstring
+
+		}
+
+		// Write contracts to the bytecode storage
+
+		err = indexer.DBConnection.WriteBytecodeStorage(contracts)
+
+		for _, contract := range contracts {
+
+			bytecodeId, err := indexer.DBConnection.BytecodeIdByHash(contract.BytecodeHash)
+			if err != nil {
+				log.Println("Error getting bytecode storage id by hash:", err)
+				continue
+			}
+
+			contract.BytecodeStorageId = &bytecodeId
+
+		}
+
+		// Write contracts to the database
+
+		err = indexer.DBConnection.WriteContracts(d.blockchain, contracts)
+		if err != nil {
+			log.Println("Error writing contracts to database:", err)
+			return
+		}
+
+	}
+
+}
+
 func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []string, customerIds []string, batchSize uint64, autoJobs bool) error {
 	var isCycleFinished bool
 	var updateDeadline time.Time
@@ -545,7 +671,7 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		return fmt.Errorf("error parsing ABI jobs: %w", err)
 	}
 
-	fmt.Printf("Found %d customer updates\n", len(customerUpdates))
+	log.Printf("Found %d customer updates\n", len(customerUpdates))
 
 	// Filter out blocks more
 	if autoJobs {
