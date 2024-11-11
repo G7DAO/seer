@@ -57,6 +57,12 @@ func CheckVariablesForBlockchains() error {
 	if MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI == "" {
 		return fmt.Errorf("MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI environment variable is required")
 	}
+
+	MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI")
+	if MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI == "" {
+		return fmt.Errorf("MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI environment variable is required")
+	}
+
 	MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI")
 	if MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI == "" {
 		return fmt.Errorf("MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI environment variable is required")
@@ -80,6 +86,7 @@ func CheckVariablesForBlockchains() error {
 		"arbitrum_sepolia":             MOONSTREAM_NODE_ARBITRUM_SEPOLIA_A_EXTERNAL_URI,
 		"game7_orbit_arbitrum_sepolia": MOONSTREAM_NODE_GAME7_ORBIT_ARBITRUM_SEPOLIA_A_EXTERNAL_URI,
 		"game7_testnet":                MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI,
+		"game7":                        MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI,
 		"xai":                          MOONSTREAM_NODE_XAI_A_EXTERNAL_URI,
 		"xai_sepolia":                  MOONSTREAM_NODE_XAI_SEPOLIA_A_EXTERNAL_URI,
 		"mantle":                       MOONSTREAM_NODE_MANTLE_A_EXTERNAL_URI,
