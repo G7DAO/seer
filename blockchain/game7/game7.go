@@ -501,6 +501,7 @@ func ToEntireBlocksBatchFromLogProto(obj *Game7BlocksBatch) *seer_common.BlocksB
 }
 
 func ToProtoSingleBlock(obj *seer_common.BlockJson) *Game7Block {
+
 	return &Game7Block{
 		BlockNumber:      fromHex(obj.BlockNumber).Uint64(),
 		Difficulty:       fromHex(obj.Difficulty).Uint64(),
