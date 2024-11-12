@@ -45,7 +45,7 @@ func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize
 		panic(err)
 	}
 
-	client, err := seer_blockchain.NewClient(blockchain, crawler.BlockchainURLs[blockchain], timeout)
+	client, err := seer_blockchain.NewClient(blockchain, seer_blockchain.BlockchainURLs[blockchain], timeout)
 	if err != nil {
 		log.Println("Error initializing blockchain client:", err)
 		log.Fatal(err)
