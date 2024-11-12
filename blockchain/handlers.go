@@ -16,6 +16,7 @@ import (
 	"github.com/G7DAO/seer/blockchain/b3_sepolia"
 	seer_common "github.com/G7DAO/seer/blockchain/common"
 	"github.com/G7DAO/seer/blockchain/ethereum"
+	"github.com/G7DAO/seer/blockchain/game7"
 	"github.com/G7DAO/seer/blockchain/game7_orbit_arbitrum_sepolia"
 	"github.com/G7DAO/seer/blockchain/game7_testnet"
 	"github.com/G7DAO/seer/blockchain/imx_zkevm"
@@ -47,6 +48,9 @@ func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 		return client, err
 	} else if chain == "arbitrum_sepolia" {
 		client, err := arbitrum_sepolia.NewClient(url, timeout)
+		return client, err
+	} else if chain == "game7" {
+		client, err := game7.NewClient(url, timeout)
 		return client, err
 	} else if chain == "game7_orbit_arbitrum_sepolia" {
 		client, err := game7_orbit_arbitrum_sepolia.NewClient(url, timeout)

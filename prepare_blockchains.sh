@@ -21,3 +21,5 @@ for BLOCKCHAIN in $BLOCKCHAIN_NAMES_RAW; do
     fi
   fi
 done
+
+go fmt ./...
