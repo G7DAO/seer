@@ -26,6 +26,7 @@ USER_SYSTEMD_DIR="${USER_SYSTEMD_DIR:-/home/ubuntu/.config/systemd/user}"
 SEER_CRAWLER_ARBITRUM_ONE_SERVICE_FILE="seer-crawler-arbitrum-one.service"
 SEER_CRAWLER_ARBITRUM_SEPOLIA_SERVICE_FILE="seer-crawler-arbitrum-sepolia.service"
 SEER_CRAWLER_ETHEREUM_SERVICE_FILE="seer-crawler-ethereum.service"
+SEEER_CRAWLER_GAME7_SERVICE_FILE="seer-crawler-game7.service"
 SEER_CRAWLER_GAME7_TESTNET_SERVICE_FILE="seer-crawler-game7-testnet.service"
 SEER_CRAWLER_MANTLE_SEPOLIA_SERVICE_FILE="seer-crawler-mantle-sepolia.service"
 SEER_CRAWLER_MANTLE_SERVICE_FILE="seer-crawler-mantle.service"
@@ -43,6 +44,7 @@ SEER_SYNCHRONIZER_ETHEREUM_SERVICE_FILE="seer-synchronizer-ethereum.service"
 SEER_SYNCHRONIZER_POLYGON_SERVICE_FILE="seer-synchronizer-polygon.service"
 SEER_SYNCHRONIZER_ARBITRUM_ONE_SERVICE_FILE="seer-synchronizer-arbitrum-one.service"
 SEER_SYNCHRONIZER_ARBITRUM_SEPOLIA_SERVICE_FILE="seer-synchronizer-arbitrum-sepolia.service"
+SEER_SYNCHRONIZER_GAME7_SERVICE_FILE="seer-synchronizer-game7.service"
 SEER_SYNCHRONIZER_GAME7_TESTNET_SERVICE_FILE="seer-synchronizer-game7-testnet.service"
 SEER_SYNCHRONIZER_MANTLE_SEPOLIA_SERVICE_FILE="seer-synchronizer-mantle-sepolia.service"
 SEER_SYNCHRONIZER_MANTLE_SERVICE_FILE="seer-synchronizer-mantle.service"
@@ -63,6 +65,8 @@ SEER_HISTORICAL_SYNCHRONIZER_ARBITRUM_ONE_SERVICE_FILE="seer-historical-synchron
 SEER_HISTORICAL_SYNCHRONIZER_ARBITRUM_ONE_TIMER_FILE="seer-historical-synchronizer-arbitrum-one.timer"
 SEER_HISTORICAL_SYNCHRONIZER_ARBITRUM_SEPOLIA_SERVICE_FILE="seer-historical-synchronizer-arbitrum-sepolia.service"
 SEER_HISTORICAL_SYNCHRONIZER_ARBITRUM_SEPOLIA_TIMER_FILE="seer-historical-synchronizer-arbitrum-sepolia.timer"
+SEER_HISTORICAL_SYNCHRONIZER_GAME7_SERVICE_FILE="seer-historical-synchronizer-game7.service"
+SEER_HISTORICAL_SYNCHRONIZER_GAME7_TIMER_FILE="seer-historical-synchronizer-game7.timer"
 SEER_HISTORICAL_SYNCHRONIZER_GAME7_TESTNET_SERVICE_FILE="seer-historical-synchronizer-game7-testnet.service"
 SEER_HISTORICAL_SYNCHRONIZER_GAME7_TESTNET_TIMER_FILE="seer-historical-synchronizer-game7-testnet.timer"
 SEER_HISTORICAL_SYNCHRONIZER_MANTLE_SEPOLIA_SERVICE_FILE="seer-historical-synchronizer-mantle-sepolia.service"
@@ -117,6 +121,9 @@ echo "MOONSTREAM_NODE_ARBITRUM_ONE_A_EXTERNAL_URI=${MOONSTREAM_NODE_ARBITRUM_ONE
 
 MOONSTREAM_NODE_ARBITRUM_SEPOLIA_A_EXTERNAL_URI=$(gcloud secrets versions access latest --secret=MOONSTREAM_NODE_ARBITRUM_SEPOLIA_A_EXTERNAL_URI)
 echo "MOONSTREAM_NODE_ARBITRUM_SEPOLIA_A_EXTERNAL_URI=${MOONSTREAM_NODE_ARBITRUM_SEPOLIA_A_EXTERNAL_URI}" >> "${PARAMETERS_ENV_PATH}"
+
+MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI=$(gcloud secrets versions access latest --secret=MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI)
+echo "MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI=${MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI}" >> "${PARAMETERS_ENV_PATH}"
 
 MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI=$(gcloud secrets versions access latest --secret=MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI)
 echo "MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI=${MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI}" >> "${PARAMETERS_ENV_PATH}"
