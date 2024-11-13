@@ -776,8 +776,9 @@ func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool
 
 func (p *PostgreSQLpgx) WriteLabes(
 	blockchain string,
-	transactions []TransactionLabel,
+	txCalls []TransactionLabel,
 	events []EventLabel,
+	transactions []RawTransaction,
 ) error {
 
 	pool := p.GetPool()
@@ -807,9 +808,10 @@ func (p *PostgreSQLpgx) WriteLabes(
 		}
 	}()
 
-	if len(transactions) > 0 {
-		err := p.WriteTransactions(tx, blockchain, transactions)
+	if len(txCalls) > 0 {
+		err := p.WriteTxCalls(tx, blockchain, txCalls)
 		if err != nil {
+			log.Println("Error writing tx calls labels:", err)
 			return err
 		}
 	}
@@ -817,6 +819,15 @@ func (p *PostgreSQLpgx) WriteLabes(
 	if len(events) > 0 {
 		err := p.WriteEvents(tx, blockchain, events)
 		if err != nil {
+			log.Println("Error writing events labels:", err)
+			return err
+		}
+	}
+
+	if len(transactions) > 0 {
+		err := p.WriteRawTransactions(tx, blockchain, transactions)
+		if err != nil {
+			log.Println("Error writing raw transactions:", err)
 			return err
 		}
 	}
@@ -946,7 +957,7 @@ func (p *PostgreSQLpgx) WriteEvents(tx pgx.Tx, blockchain string, events []Event
 	return nil
 }
 
-func (p *PostgreSQLpgx) WriteTransactions(tx pgx.Tx, blockchain string, transactions []TransactionLabel) error {
+func (p *PostgreSQLpgx) WriteTxCalls(tx pgx.Tx, blockchain string, transactions []TransactionLabel) error {
 	tableName := LabelsTableName(blockchain)
 	columns := []string{"id", "address", "block_number", "block_hash", "caller_address", "label_name", "label_type", "origin_address", "label", "transaction_hash", "label_data", "block_timestamp"}
 

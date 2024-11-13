@@ -121,6 +121,24 @@ type TransactionLabel struct {
 	BlockTimestamp  uint64
 }
 
+type RawTransaction struct {
+	L1BlockNumber        uint64
+	Hash                 string
+	BlockTimestamp       uint64
+	BlockHash            string
+	FromAddress          string
+	ToAddress            string
+	Gas                  uint64
+	GasPrice             uint64
+	MaxFeePerGas         uint64
+	MaxPriorityFeePerGas uint64
+	Input                string
+	Nonce                uint64
+	TransactionIndex     uint64
+	TransactionType      int
+	Value                uint64
+}
+
 type AbiJobsDeployInfo struct {
 	DeployedBlockNumber uint64
 	IDs                 []string
