@@ -24,6 +24,8 @@ import (
 	"github.com/G7DAO/seer/blockchain/mantle"
 	"github.com/G7DAO/seer/blockchain/mantle_sepolia"
 	"github.com/G7DAO/seer/blockchain/polygon"
+	"github.com/G7DAO/seer/blockchain/ronin"
+	"github.com/G7DAO/seer/blockchain/ronin_saigon"
 	"github.com/G7DAO/seer/blockchain/sepolia"
 	"github.com/G7DAO/seer/blockchain/xai"
 	"github.com/G7DAO/seer/blockchain/xai_sepolia"
@@ -34,6 +36,8 @@ import (
 )
 
 func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
+	fmt.Printf("Chain: %s\n", chain)
+	fmt.Printf("URL: %s\n", url)
 	if chain == "ethereum" {
 		client, err := ethereum.NewClient(url, timeout)
 		return client, err
@@ -81,6 +85,12 @@ func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 		return client, err
 	} else if chain == "b3_sepolia" {
 		client, err := b3_sepolia.NewClient(url, timeout)
+		return client, err
+	} else if chain == "ronin" {
+		client, err := ronin.NewClient(url, timeout)
+		return client, err
+	} else if chain == "ronin_saigon" {
+		client, err := ronin_saigon.NewClient(url, timeout)
 		return client, err
 	} else {
 		return nil, errors.New("unsupported chain type")

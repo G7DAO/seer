@@ -78,6 +78,16 @@ func CheckVariablesForBlockchains() error {
 		return fmt.Errorf("MOONSTREAM_NODE_B3_SEPOLIA_A_EXTERNAL_URI environment variable is required")
 	}
 
+	MOONSTREAM_NODE_RONIN_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_RONIN_A_EXTERNAL_URI")
+	if MOONSTREAM_NODE_RONIN_A_EXTERNAL_URI == "" {
+		return fmt.Errorf("MOONSTREAM_NODE_RONIN_A_EXTERNAL_URI environment variable is required")
+	}
+
+	MOONSTREAM_NODE_RONIN_SAIGON_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_RONIN_SAIGON_A_EXTERNAL_URI")
+	if MOONSTREAM_NODE_RONIN_SAIGON_A_EXTERNAL_URI == "" {
+		return fmt.Errorf("MOONSTREAM_NODE_RONIN_SAIGON_A_EXTERNAL_URI environment variable is required")
+	}
+
 	BlockchainURLs = map[string]string{
 		"ethereum":                     MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI,
 		"sepolia":                      MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI,
@@ -95,6 +105,8 @@ func CheckVariablesForBlockchains() error {
 		"imx_zkevm_sepolia":            MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI,
 		"b3":                           MOONSTREAM_NODE_B3_A_EXTERNAL_URI,
 		"b3_sepolia":                   MOONSTREAM_NODE_B3_SEPOLIA_A_EXTERNAL_URI,
+		"ronin":                        MOONSTREAM_NODE_RONIN_A_EXTERNAL_URI,
+		"ronin_saigon":                 MOONSTREAM_NODE_RONIN_SAIGON_A_EXTERNAL_URI,
 	}
 
 	return nil

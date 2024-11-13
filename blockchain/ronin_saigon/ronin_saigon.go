@@ -1,4 +1,4 @@
-package game7
+package ronin_saigon
 
 import (
 	"bytes"
@@ -48,7 +48,7 @@ type Client struct {
 
 // ChainType returns the chain type.
 func (c *Client) ChainType() string {
-	return "game7"
+	return "ronin_saigon"
 }
 
 // Close closes the underlying RPC client.
@@ -283,7 +283,7 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 
 // ParseBlocksWithTransactions parses blocks and their transactions into custom data structure.
 // This method showcases how to handle and transform detailed block and transaction data.
-func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxRequests int) ([]*Game7Block, error) {
+func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxRequests int) ([]*RoninSaigonBlock, error) {
 	var blocksWithTxsJson []*seer_common.BlockJson
 	var fetchErr error
 	if maxRequests > 1 {
@@ -295,7 +295,7 @@ func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxR
 		return nil, fetchErr
 	}
 
-	var parsedBlocks []*Game7Block
+	var parsedBlocks []*RoninSaigonBlock
 	for _, blockAndTxsJson := range blocksWithTxsJson {
 		// Convert BlockJson to Block and Transactions as required.
 		parsedBlock := ToProtoSingleBlock(blockAndTxsJson)
@@ -313,7 +313,7 @@ func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxR
 	return parsedBlocks, nil
 }
 
-func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*Game7EventLog, error) {
+func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*RoninSaigonEventLog, error) {
 
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), c.timeout)
 
@@ -329,7 +329,7 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 		return nil, err
 	}
 
-	var parsedEvents []*Game7EventLog
+	var parsedEvents []*RoninSaigonEventLog
 
 	for _, log := range logs {
 		parsedEvent := ToProtoSingleEventLog(log)
@@ -376,14 +376,14 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 		}
 
 		// Prepare blocks to index
-		blocksIndex = append(blocksIndex, indexer.NewBlockIndex("game7",
+		blocksIndex = append(blocksIndex, indexer.NewBlockIndex("ronin_saigon",
 			block.BlockNumber,
 			block.Hash,
 			block.Timestamp,
 			block.ParentHash,
 			uint64(bI),
 			"",
-			block.L1BlockNumber,
+			0,
 		))
 
 		blocksSize += uint64(proto.Size(block))
@@ -394,22 +394,22 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 }
 
 func (c *Client) ProcessBlocksToBatch(msgs []proto.Message) (proto.Message, error) {
-	var blocks []*Game7Block
+	var blocks []*RoninSaigonBlock
 	for _, msg := range msgs {
-		block, ok := msg.(*Game7Block)
+		block, ok := msg.(*RoninSaigonBlock)
 		if !ok {
-			return nil, fmt.Errorf("failed to type assert proto.Message to *Game7Block")
+			return nil, fmt.Errorf("failed to type assert proto.Message to *RoninSaigonBlock")
 		}
 		blocks = append(blocks, block)
 	}
 
-	return &Game7BlocksBatch{
+	return &RoninSaigonBlocksBatch{
 		Blocks:      blocks,
 		SeerVersion: version.SeerVersion,
 	}, nil
 }
 
-func ToEntireBlocksBatchFromLogProto(obj *Game7BlocksBatch) *seer_common.BlocksBatchJson {
+func ToEntireBlocksBatchFromLogProto(obj *RoninSaigonBlocksBatch) *seer_common.BlocksBatchJson {
 	blocksBatchJson := seer_common.BlocksBatchJson{
 		Blocks:      []seer_common.BlockJson{},
 		SeerVersion: obj.SeerVersion,
@@ -488,11 +488,6 @@ func ToEntireBlocksBatchFromLogProto(obj *Game7BlocksBatch) *seer_common.BlocksB
 			BaseFeePerGas:    b.BaseFeePerGas,
 			IndexedAt:        fmt.Sprintf("%d", b.IndexedAt),
 
-			MixHash:       b.MixHash,
-			SendCount:     b.SendCount,
-			SendRoot:      b.SendRoot,
-			L1BlockNumber: fmt.Sprintf("%d", b.L1BlockNumber),
-
 			Transactions: txs,
 		})
 	}
@@ -500,8 +495,8 @@ func ToEntireBlocksBatchFromLogProto(obj *Game7BlocksBatch) *seer_common.BlocksB
 	return &blocksBatchJson
 }
 
-func ToProtoSingleBlock(obj *seer_common.BlockJson) *Game7Block {
-	return &Game7Block{
+func ToProtoSingleBlock(obj *seer_common.BlockJson) *RoninSaigonBlock {
+	return &RoninSaigonBlock{
 		BlockNumber:      fromHex(obj.BlockNumber).Uint64(),
 		Difficulty:       fromHex(obj.Difficulty).Uint64(),
 		ExtraData:        obj.ExtraData,
@@ -521,24 +516,19 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *Game7Block {
 		TotalDifficulty:  obj.TotalDifficulty,
 		TransactionsRoot: obj.TransactionsRoot,
 		IndexedAt:        fromHex(obj.IndexedAt).Uint64(),
-
-		MixHash:       obj.MixHash,
-		SendCount:     obj.SendCount,
-		SendRoot:      obj.SendRoot,
-		L1BlockNumber: fromHex(obj.L1BlockNumber).Uint64(),
 	}
 }
 
-func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *Game7Transaction {
-	var accessList []*Game7TransactionAccessList
+func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *RoninSaigonTransaction {
+	var accessList []*RoninSaigonTransactionAccessList
 	for _, al := range obj.AccessList {
-		accessList = append(accessList, &Game7TransactionAccessList{
+		accessList = append(accessList, &RoninSaigonTransactionAccessList{
 			Address:     al.Address,
 			StorageKeys: al.StorageKeys,
 		})
 	}
 
-	return &Game7Transaction{
+	return &RoninSaigonTransaction{
 		Hash:                 obj.Hash,
 		BlockNumber:          fromHex(obj.BlockNumber).Uint64(),
 		BlockHash:            obj.BlockHash,
@@ -566,7 +556,7 @@ func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *Game7Transactio
 	}
 }
 
-func ToEvenFromLogProto(obj *Game7EventLog) *seer_common.EventJson {
+func ToEvenFromLogProto(obj *RoninSaigonEventLog) *seer_common.EventJson {
 	return &seer_common.EventJson{
 		Address:         obj.Address,
 		Topics:          obj.Topics,
@@ -579,8 +569,8 @@ func ToEvenFromLogProto(obj *Game7EventLog) *seer_common.EventJson {
 	}
 }
 
-func ToProtoSingleEventLog(obj *seer_common.EventJson) *Game7EventLog {
-	return &Game7EventLog{
+func ToProtoSingleEventLog(obj *seer_common.EventJson) *RoninSaigonEventLog {
+	return &RoninSaigonEventLog{
 		Address:         obj.Address,
 		Topics:          obj.Topics,
 		Data:            obj.Data,
@@ -592,10 +582,10 @@ func ToProtoSingleEventLog(obj *seer_common.EventJson) *Game7EventLog {
 	}
 }
 
-func (c *Client) DecodeProtoEventLogs(data []string) ([]*Game7EventLog, error) {
-	var events []*Game7EventLog
+func (c *Client) DecodeProtoEventLogs(data []string) ([]*RoninSaigonEventLog, error) {
+	var events []*RoninSaigonEventLog
 	for _, d := range data {
-		var event Game7EventLog
+		var event RoninSaigonEventLog
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -608,10 +598,10 @@ func (c *Client) DecodeProtoEventLogs(data []string) ([]*Game7EventLog, error) {
 	return events, nil
 }
 
-func (c *Client) DecodeProtoTransactions(data []string) ([]*Game7Transaction, error) {
-	var transactions []*Game7Transaction
+func (c *Client) DecodeProtoTransactions(data []string) ([]*RoninSaigonTransaction, error) {
+	var transactions []*RoninSaigonTransaction
 	for _, d := range data {
-		var transaction Game7Transaction
+		var transaction RoninSaigonTransaction
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -624,10 +614,10 @@ func (c *Client) DecodeProtoTransactions(data []string) ([]*Game7Transaction, er
 	return transactions, nil
 }
 
-func (c *Client) DecodeProtoBlocks(data []string) ([]*Game7Block, error) {
-	var blocks []*Game7Block
+func (c *Client) DecodeProtoBlocks(data []string) ([]*RoninSaigonBlock, error) {
+	var blocks []*RoninSaigonBlock
 	for _, d := range data {
-		var block Game7Block
+		var block RoninSaigonBlock
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -641,7 +631,7 @@ func (c *Client) DecodeProtoBlocks(data []string) ([]*Game7Block, error) {
 }
 
 func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) (*seer_common.BlocksBatchJson, error) {
-	var protoBlocksBatch Game7BlocksBatch
+	var protoBlocksBatch RoninSaigonBlocksBatch
 
 	dataBytes := rawData.Bytes()
 
@@ -656,7 +646,7 @@ func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) (*seer_comm
 }
 
 func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap map[string]map[string]*indexer.AbiEntry, threads int) ([]indexer.EventLabel, []indexer.TransactionLabel, error) {
-	var protoBlocksBatch Game7BlocksBatch
+	var protoBlocksBatch RoninSaigonBlocksBatch
 
 	dataBytes := rawData.Bytes()
 
@@ -685,7 +675,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 	for _, b := range protoBlocksBatch.Blocks {
 		wg.Add(1)
 		semaphoreChan <- struct{}{}
-		go func(b *Game7Block) {
+		go func(b *RoninSaigonBlock) {
 			defer wg.Done()
 			defer func() { <-semaphoreChan }()
 

@@ -26,7 +26,7 @@ USER_SYSTEMD_DIR="${USER_SYSTEMD_DIR:-/home/ubuntu/.config/systemd/user}"
 SEER_CRAWLER_ARBITRUM_ONE_SERVICE_FILE="seer-crawler-arbitrum-one.service"
 SEER_CRAWLER_ARBITRUM_SEPOLIA_SERVICE_FILE="seer-crawler-arbitrum-sepolia.service"
 SEER_CRAWLER_ETHEREUM_SERVICE_FILE="seer-crawler-ethereum.service"
-SEEER_CRAWLER_GAME7_SERVICE_FILE="seer-crawler-game7.service"
+SEER_CRAWLER_GAME7_SERVICE_FILE="seer-crawler-game7.service"
 SEER_CRAWLER_GAME7_TESTNET_SERVICE_FILE="seer-crawler-game7-testnet.service"
 SEER_CRAWLER_MANTLE_SEPOLIA_SERVICE_FILE="seer-crawler-mantle-sepolia.service"
 SEER_CRAWLER_MANTLE_SERVICE_FILE="seer-crawler-mantle.service"
@@ -38,6 +38,8 @@ SEER_CRAWLER_IMX_ZKEVM_SERVICE_FILE="seer-crawler-imx-zkevm.service"
 SEER_CRAWLER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE="seer-crawler-imx-zkevm-sepolia.service"
 SEER_CRAWLER_B3_SERVICE_FILE="seer-crawler-b3.service"
 SEER_CRAWLER_B3_SEPOLIA_SERVICE_FILE="seer-crawler-b3-sepolia.service"
+SEER_CRAWLER_RONIN_SERVICE_FILE="seer-crawler-ronin.service"
+SEER_CRAWLER_RONIN_SAIGON_SERVICE_FILE="seer-crawler-ronin-saigon.service"
 
 # Synchronizer
 SEER_SYNCHRONIZER_ETHEREUM_SERVICE_FILE="seer-synchronizer-ethereum.service"
@@ -55,6 +57,8 @@ SEER_SYNCHRONIZER_IMX_ZKEVM_SERVICE_FILE="seer-synchronizer-imx-zkevm.service"
 SEER_SYNCHRONIZER_IMX_ZKEVM_SEPOLIA_SERVICE_FILE="seer-synchronizer-imx-zkevm-sepolia.service"
 SEER_SYNCHRONIZER_B3_SERVICE_FILE="seer-synchronizer-b3.service"
 SEER_SYNCHRONIZER_B3_SEPOLIA_SERVICE_FILE="seer-synchronizer-b3-sepolia.service"
+SEER_SYNCHRONIZER_RONIN_SERVICE_FILE="seer-synchronizer-ronin.service"
+SEER_SYNCHRONIZER_RONIN_SAIGON_SERVICE_FILE="seer-synchronizer-ronin-saigon.service"
 
 # Historical Synchronizer (timers)
 SEER_HISTORICAL_SYNCHRONIZER_ETHEREUM_SERVICE_FILE="seer-historical-synchronizer-ethereum.service"
@@ -87,6 +91,10 @@ SEER_HISTORICAL_SYNCHRONIZER_B3_SERVICE_FILE="seer-historical-synchronizer-b3.se
 SEER_HISTORICAL_SYNCHRONIZER_B3_TIMER_FILE="seer-historical-synchronizer-b3.timer"
 SEER_HISTORICAL_SYNCHRONIZER_B3_SEPOLIA_SERVICE_FILE="seer-historical-synchronizer-b3-sepolia.service"
 SEER_HISTORICAL_SYNCHRONIZER_B3_SEPOLIA_TIMER_FILE="seer-historical-synchronizer-b3-sepolia.timer"
+SEER_HISTORICAL_SYNCHRONIZER_RONIN_SERVICE_FILE="seer-historical-synchronizer-ronin.service"
+SEER_HISTORICAL_SYNCHRONIZER_RONIN_TIMER_FILE="seer-historical-synchronizer-ronin.timer"
+SEER_HISTORICAL_SYNCHRONIZER_RONIN_SAIGON_SERVICE_FILE="seer-historical-synchronizer-ronin-saigon.service"
+SEER_HISTORICAL_SYNCHRONIZER_RONIN_SAIGON_TIMER_FILE="seer-historical-synchronizer-ronin-saigon.timer"
 
 
 set -eu
@@ -154,6 +162,12 @@ echo "MOONSTREAM_NODE_B3_A_EXTERNAL_URI=${MOONSTREAM_NODE_B3_A_EXTERNAL_URI}" >>
 
 MOONSTREAM_NODE_B3_SEPOLIA_A_EXTERNAL_URI=$(gcloud secrets versions access latest --secret=MOONSTREAM_NODE_B3_SEPOLIA_A_EXTERNAL_URI)
 echo "MOONSTREAM_NODE_B3_SEPOLIA_A_EXTERNAL_URI=${MOONSTREAM_NODE_B3_SEPOLIA_A_EXTERNAL_URI}" >> "${PARAMETERS_ENV_PATH}"
+
+MOONSTREAM_NODE_RONIN_A_EXTERNAL_URI=$(gcloud secrets versions access latest --secret=MOONSTREAM_NODE_RONIN_A_EXTERNAL_URI)
+echo "MOONSTREAM_NODE_RONIN_A_EXTERNAL_URI=${MOONSTREAM_NODE_RONIN_A_EXTERNAL_URI}" >> "${PARAMETERS_ENV_PATH}"
+
+MOONSTREAM_NODE_RONIN_SAIGON_A_EXTERNAL_URI=$(gcloud secrets versions access latest --secret=MOONSTREAM
+echo "MOONSTREAM_NODE_RONIN_SAIGON_A_EXTERNAL_URI=${MOONSTREAM_NODE_RONIN_SAIGON_A_EXTERNAL_URI}" >> "${PARAMETERS_ENV_PATH}"
 
 echo "SEER_CRAWLER_INDEXER_LABEL=seer" >> "${PARAMETERS_ENV_PATH}"
 
@@ -274,11 +288,11 @@ XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_IMX_ZK
 
 echo
 echo
-echo -e "${PREFIX_INFO} Replacing existing seer crawler for Game7 blockchain service definition with ${SEEER_CRAWLER_GAME7_SERVICE_FILE}"
-chmod 644 "${SCRIPT_DIR}/${SEEER_CRAWLER_GAME7_SERVICE_FILE}"
-cp "${SCRIPT_DIR}/${SEEER_CRAWLER_GAME7_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEEER_CRAWLER_GAME7_SERVICE_FILE}"
+echo -e "${PREFIX_INFO} Replacing existing seer crawler for Game7 blockchain service definition with ${SEER_CRAWLER_GAME7_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_GAME7_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_CRAWLER_GAME7_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_GAME7_SERVICE_FILE}"
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
-XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEEER_CRAWLER_GAME7_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_GAME7_SERVICE_FILE}"
 
 echo
 echo
@@ -303,6 +317,22 @@ chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_B3_SEPOLIA_SERVICE_FILE}"
 cp "${SCRIPT_DIR}/${SEER_CRAWLER_B3_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_B3_SEPOLIA_SERVICE_FILE}"
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_B3_SEPOLIA_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer crawler for Ronin blockchain service definition with ${SEER_CRAWLER_RONIN_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_RONIN_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_CRAWLER_RONIN_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_RONIN_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_RONIN_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer crawler for Ronin Saigon blockchain service definition with ${SEER_CRAWLER_RONIN_SAIGON_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_CRAWLER_RONIN_SAIGON_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_CRAWLER_RONIN_SAIGON_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_CRAWLER_RONIN_SAIGON_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_CRAWLER_RONIN_SAIGON_SERVICE_FILE}"
 
 # Synchronizers
 
@@ -427,6 +457,22 @@ chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_B3_SEPOLIA_SERVICE_FILE}"
 cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_B3_SEPOLIA_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_B3_SEPOLIA_SERVICE_FILE}"
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_B3_SEPOLIA_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Ronin blockchain service definition with ${SEER_SYNCHRONIZER_RONIN_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_RONIN_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_RONIN_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_RONIN_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_RONIN_SERVICE_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer synchronizer for Ronin Saigon blockchain service definition with ${SEER_SYNCHRONIZER_RONIN_SAIGON_SERVICE_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_RONIN_SAIGON_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_SYNCHRONIZER_RONIN_SAIGON_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_SYNCHRONIZER_RONIN_SAIGON_SERVICE_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_SYNCHRONIZER_RONIN_SAIGON_SERVICE_FILE}"
 
 
 # Historical Synchronizers
@@ -565,3 +611,21 @@ cp "${SCRIPT_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_B3_SEPOLIA_SERVICE_FILE}" "${US
 cp "${SCRIPT_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_B3_SEPOLIA_TIMER_FILE}" "${USER_SYSTEMD_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_B3_SEPOLIA_TIMER_FILE}"
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
 XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_HISTORICAL_SYNCHRONIZER_B3_SEPOLIA_TIMER_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer historical synchronizer for Ronin blockchain service and timer with: ${SEER_HISTORICAL_SYNCHRONIZER_RONIN_SERVICE_FILE}, ${SEER_HISTORICAL_SYNCHRONIZER_RONIN_TIMER_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_RONIN_SERVICE_FILE}" "${SCRIPT_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_RONIN_TIMER_FILE}"
+cp "${SCRIPT_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_RONIN_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_RONIN_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_RONIN_TIMER_FILE}" "${USER_SYSTEMD_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_RONIN_TIMER_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_HISTORICAL_SYNCHRONIZER_RONIN_TIMER_FILE}"
+
+echo
+echo
+echo -e "${PREFIX_INFO} Replacing existing seer historical synchronizer for Ronin Saigon blockchain service and timer with: ${SEER_HISTORICAL_SYNCHRONIZER_RONIN_SAIGON_SERVICE_FILE}, ${SEER_HISTORICAL_SYNCHRONIZER_RONIN_SAIGON_TIMER_FILE}"
+chmod 644 "${SCRIPT_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_RONIN_SAIGON_SERVICE_FILE}" "${SCRIPT_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_RONIN_SAIGON_TIMER_FILE}"
+cp "${SCRIPT_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_RONIN_SAIGON_SERVICE_FILE}" "${USER_SYSTEMD_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_RONIN_SAIGON_SERVICE_FILE}"
+cp "${SCRIPT_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_RONIN_SAIGON_TIMER_FILE}" "${USER_SYSTEMD_DIR}/${SEER_HISTORICAL_SYNCHRONIZER_RONIN_SAIGON_TIMER_FILE}"
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user daemon-reload
+XDG_RUNTIME_DIR="/run/user/1000" systemctl --user restart "${SEER_HISTORICAL_SYNCHRONIZER_RONIN_SAIGON_TIMER_FILE}"
