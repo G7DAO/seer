@@ -34,13 +34,14 @@ func NewClient(url string, timeout int) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{rpcClient: rpcClient}, nil
+	return &Client{rpcClient: rpcClient, timeout: time.Duration(timeout) * time.Second}, nil
 }
 
 // Client is a wrapper around the Ethereum JSON-RPC client.
 
 type Client struct {
 	rpcClient *rpc.Client
+	timeout   time.Duration
 }
 
 // Client common
@@ -58,7 +59,12 @@ func (c *Client) Close() {
 // GetLatestBlockNumber returns the latest block number.
 func (c *Client) GetLatestBlockNumber() (*big.Int, error) {
 	var result string
-	if err := c.rpcClient.CallContext(context.Background(), &result, "eth_blockNumber"); err != nil {
+
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), c.timeout)
+
+	defer cancel()
+
+	if err := c.rpcClient.CallContext(ctxWithTimeout, &result, "eth_blockNumber"); err != nil {
 		return nil, err
 	}
 
@@ -198,7 +204,11 @@ func (c *Client) FetchBlocksInRange(from, to *big.Int, debug bool) ([]*seer_comm
 	ctx := context.Background() // For simplicity, using a background context; consider timeouts for production.
 
 	for i := new(big.Int).Set(from); i.Cmp(to) <= 0; i.Add(i, big.NewInt(1)) {
-		block, err := c.GetBlockByNumber(ctx, i, true)
+
+		ctxWithTimeout, cancel := context.WithTimeout(ctx, c.timeout)
+		defer cancel()
+
+		block, err := c.GetBlockByNumber(ctxWithTimeout, i, true)
 		if err != nil {
 			return nil, err
 		}
@@ -237,7 +247,11 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 
 			sem <- struct{}{} // Acquire semaphore
 
-			block, getErr := c.GetBlockByNumber(ctx, b, true)
+			ctxWithTimeout, cancel := context.WithTimeout(ctx, c.timeout)
+
+			defer cancel()
+
+			block, getErr := c.GetBlockByNumber(ctxWithTimeout, b, true)
 			if getErr != nil {
 				log.Printf("Failed to fetch block number: %d, error: %v", b, getErr)
 				errChan <- getErr
@@ -300,7 +314,12 @@ func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxR
 }
 
 func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*PolygonEventLog, error) {
-	logs, err := c.ClientFilterLogs(context.Background(), ethereum.FilterQuery{
+
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), c.timeout)
+
+	defer cancel()
+
+	logs, err := c.ClientFilterLogs(ctxWithTimeout, ethereum.FilterQuery{
 		FromBlock: from,
 		ToBlock:   to,
 	}, debug)
@@ -708,7 +727,11 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 						label = indexer.SeerCrawlerRawLabel
 					}
 
-					receipt, err := c.TransactionReceipt(context.Background(), common.HexToHash(tx.Hash))
+					ctxWithTimeout, cancel := context.WithTimeout(context.Background(), c.timeout)
+
+					defer cancel()
+
+					receipt, err := c.TransactionReceipt(ctxWithTimeout, common.HexToHash(tx.Hash))
 					if err != nil {
 						errorChan <- fmt.Errorf("error getting transaction receipt for tx %s: %v", tx.Hash, err)
 						continue
@@ -1010,7 +1033,11 @@ func (c *Client) GetTransactionsLabels(startBlock uint64, endBlock uint64, abiMa
 					label = indexer.SeerCrawlerRawLabel
 				}
 
-				receipt, err := c.TransactionReceipt(context.Background(), common.HexToHash(tx.Hash))
+				ctxWithTimeout, cancel := context.WithTimeout(context.Background(), c.timeout)
+
+				defer cancel()
+
+				receipt, err := c.TransactionReceipt(ctxWithTimeout, common.HexToHash(tx.Hash))
 
 				if err != nil {
 					fmt.Println("Error fetching transaction receipt: ", err)
@@ -1083,7 +1110,12 @@ func (c *Client) GetEventsLabels(startBlock uint64, endBlock uint64, abiMap map[
 		Addresses: addresses,
 		Topics:    [][]common.Hash{topics},
 	}
-	logs, err := c.ClientFilterLogs(context.Background(), filter, false)
+
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), c.timeout)
+
+	defer cancel()
+
+	logs, err := c.ClientFilterLogs(ctxWithTimeout, filter, false)
 
 	if err != nil {
 		return nil, err
@@ -1146,8 +1178,12 @@ func (c *Client) GetEventsLabels(startBlock uint64, endBlock uint64, abiMap map[
 
 		if _, ok := blocksCache[blockNumber]; !ok {
 
+			ctxWithTimeout, cancel := context.WithTimeout(context.Background(), c.timeout)
+
+			defer cancel()
+
 			// get block from rpc
-			block, err := c.GetBlockByNumber(context.Background(), big.NewInt(int64(blockNumber)), true)
+			block, err := c.GetBlockByNumber(ctxWithTimeout, big.NewInt(int64(blockNumber)), true)
 			if err != nil {
 				return nil, err
 			}
