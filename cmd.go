@@ -1039,6 +1039,11 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 				return syncErr
 			}
 
+			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			if blockchainErr != nil {
+				return blockchainErr
+			}
+
 			if chain == "" {
 				return fmt.Errorf("blockchain is required via --chain")
 			}

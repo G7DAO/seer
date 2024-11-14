@@ -791,6 +791,7 @@ func (p *PostgreSQLpgx) WriteLabes(
 	conn, err := pool.Acquire(context.Background())
 
 	if err != nil {
+		fmt.Println("Error acquiring connection:", err)
 		return err
 	}
 
@@ -799,6 +800,7 @@ func (p *PostgreSQLpgx) WriteLabes(
 	tx, err := conn.Begin(context.Background())
 
 	if err != nil {
+		fmt.Println("Error beginning transaction:", err)
 		return err
 	}
 
@@ -816,6 +818,7 @@ func (p *PostgreSQLpgx) WriteLabes(
 	if len(transactions) > 0 {
 		err := p.WriteTransactions(tx, blockchain, transactions)
 		if err != nil {
+			fmt.Println("Error writing transactions:", err)
 			return err
 		}
 	}
@@ -823,6 +826,7 @@ func (p *PostgreSQLpgx) WriteLabes(
 	if len(events) > 0 {
 		err := p.WriteEvents(tx, blockchain, events)
 		if err != nil {
+			fmt.Println("Error writing events:", err)
 			return err
 		}
 	}
@@ -1434,6 +1438,7 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 	var minBlockNumber uint64
 
 	var maxBlockNumber uint64
+
 	query := fmt.Sprintf(`WITH path as (
         SELECT
             path,
@@ -1441,7 +1446,7 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
         from
             %s
         WHERE
-            block_number >= $1 and block_number <= $1 + $3
+            block_number >= $2 and block_number <= $1
     ), latest_block_of_path as (
 		SELECT
 			block_number as last_block_number
@@ -1461,10 +1466,10 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 		order by block_number asc
 		limit 1
 	)
-	select arr_agg(select path from path) as paths, (SELECT first_block_number FROM earliest_block_of_path) as min_block_number, (SELECT last_block_number FROM latest_block_of_path) as max_block_number
+	select  ARRAY_AGG(path) as paths, (SELECT first_block_number FROM earliest_block_of_path) as min_block_number, (SELECT last_block_number FROM latest_block_of_path) as max_block_number from path
 	`, BlocksTableName(blockchain), BlocksTableName(blockchain), BlocksTableName(blockchain))
 
-	err = conn.QueryRow(context.Background(), query, blockNumber).Scan(&paths, &minBlockNumber, &maxBlockNumber)
+	err = conn.QueryRow(context.Background(), query, blockNumber, blockNumber-uint64(minBlocksToSync)).Scan(&paths, &minBlockNumber, &maxBlockNumber)
 
 	if err != nil {
 		if err == pgx.ErrNoRows {

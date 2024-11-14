@@ -683,14 +683,14 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		close(errChan) // Close the channel to signal that all goroutines have finished
 
 		// Check for errors from goroutines
-		select {
-		case err := <-errChan:
-			log.Printf("Error processing customer updates: %v", err)
-			return err
-		default:
+		// Check for errors from goroutines
+		if err := <-errChan; err != nil {
+			return fmt.Errorf("error processing customer updates: %w", err)
 		}
 
 		d.startBlock = d.endBlock - 1
+
+		fmt.Printf("Processed %d customer updates for block range %d-%d\n", len(customerUpdates), d.startBlock, d.endBlock)
 
 		if isCycleFinished || d.startBlock == 0 {
 			if autoJobs {
