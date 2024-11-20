@@ -805,13 +805,16 @@ func (p *PostgreSQLpgx) WriteLabes(
 	}
 
 	defer func() {
-		if err := recover(); err != nil {
+		if pErr := recover(); pErr != nil {
 			tx.Rollback(context.Background())
-			panic(err)
+			panic(pErr)
 		} else if err != nil {
 			tx.Rollback(context.Background())
 		} else {
 			err = tx.Commit(context.Background())
+			if err != nil {
+				fmt.Println("Error committing transaction:", err)
+			}
 		}
 	}()
 
@@ -831,7 +834,7 @@ func (p *PostgreSQLpgx) WriteLabes(
 		}
 	}
 
-	return nil
+	return err
 }
 
 func (p *PostgreSQLpgx) WriteEvents(tx pgx.Tx, blockchain string, events []EventLabel) error {
