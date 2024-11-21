@@ -557,8 +557,10 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 
 	conn, err := pool.Acquire(context.Background())
 
+	var paths []string
+
 	if err != nil {
-		return 0, 0, make([]string, 0), nil, err
+		return 0, 0, paths, nil, err
 	}
 
 	defer conn.Release()
@@ -576,7 +578,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
     ),
 	latest_block_of_path as (
 		SELECT
-			block_number as last_block_number
+			block_number as latest_block_number
 		from
 			%s
 		WHERE
@@ -627,7 +629,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
             customer_id
     )
 	SELECT
-    	last_block_number,
+    	latest_block_number,
     	(SELECT array_agg(path) FROM path) as paths,
     	(SELECT json_agg(json_build_object(customer_id, abis)) FROM reformatted_jobs) as jobs
 	FROM
@@ -638,18 +640,17 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 
 	if err != nil {
 		log.Println("Error querying abi jobs from database", err)
-		return 0, 0, make([]string, 0), nil, err
+		return 0, 0, paths, nil, err
 	}
 
 	var customers []map[string]map[string]map[string]*AbiEntry
-	var paths []string
 	var firstBlockNumber, lastBlockNumber uint64
 
 	for rows.Next() {
 		err = rows.Scan(&lastBlockNumber, &paths, &customers)
 		if err != nil {
 			log.Println("Error scanning row:", err)
-			return 0, 0, make([]string, 0), nil, err
+			return 0, 0, paths, nil, err
 		}
 	}
 
@@ -791,7 +792,6 @@ func (p *PostgreSQLpgx) WriteLabes(
 	conn, err := pool.Acquire(context.Background())
 
 	if err != nil {
-		fmt.Println("Error acquiring connection:", err)
 		return err
 	}
 
@@ -800,7 +800,6 @@ func (p *PostgreSQLpgx) WriteLabes(
 	tx, err := conn.Begin(context.Background())
 
 	if err != nil {
-		fmt.Println("Error beginning transaction:", err)
 		return err
 	}
 
@@ -813,7 +812,8 @@ func (p *PostgreSQLpgx) WriteLabes(
 		} else {
 			err = tx.Commit(context.Background())
 			if err != nil {
-				fmt.Println("Error committing transaction:", err)
+				log.Println("Error committing transaction:", err)
+				panic(err)
 			}
 		}
 	}()
@@ -821,7 +821,7 @@ func (p *PostgreSQLpgx) WriteLabes(
 	if len(transactions) > 0 {
 		err := p.WriteTransactions(tx, blockchain, transactions)
 		if err != nil {
-			fmt.Println("Error writing transactions:", err)
+			log.Println("Error writing transactions:", err)
 			return err
 		}
 	}
@@ -829,7 +829,7 @@ func (p *PostgreSQLpgx) WriteLabes(
 	if len(events) > 0 {
 		err := p.WriteEvents(tx, blockchain, events)
 		if err != nil {
-			fmt.Println("Error writing events:", err)
+			log.Println("Error writing events:", err)
 			return err
 		}
 	}
@@ -1452,7 +1452,7 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
             block_number >= $2 and block_number <= $1
     ), latest_block_of_path as (
 		SELECT
-			block_number as last_block_number
+			block_number as latest_block_number
 		from
 			%s
 		WHERE
@@ -1469,7 +1469,7 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 		order by block_number asc
 		limit 1
 	)
-	select  ARRAY_AGG(path) as paths, (SELECT first_block_number FROM earliest_block_of_path) as min_block_number, (SELECT last_block_number FROM latest_block_of_path) as max_block_number from path
+	select  ARRAY_AGG(path) as paths, (SELECT first_block_number FROM earliest_block_of_path) as min_block_number, (SELECT latest_block_number FROM latest_block_of_path) as max_block_number from path
 	`, BlocksTableName(blockchain), BlocksTableName(blockchain), BlocksTableName(blockchain))
 
 	err = conn.QueryRow(context.Background(), query, blockNumber, blockNumber-uint64(minBlocksToSync)).Scan(&paths, &minBlockNumber, &maxBlockNumber)

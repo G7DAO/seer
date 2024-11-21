@@ -476,25 +476,19 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		}
 
 		log.Printf("Read %d users updates from the indexer db in range of blocks %d-%d\n", len(updates), d.startBlock, lastBlockOfChank)
+		// Process customer updates in parallel
 		var wg sync.WaitGroup
-		var errWg sync.WaitGroup
-		errWg.Add(1)
 
-		sem := make(chan struct{}, d.threads) // Semaphore to limit the number of concurrent goroutines
-		errChan := make(chan error)           // Channel to collect errors from goroutines
+		// count the number of goroutines that will be running
+		var totalGoroutines int
+		for _, update := range updates {
+			totalGoroutines += len(customerDBConnections[update.CustomerID])
+		}
+
+		sem := make(chan struct{}, d.threads)        // Semaphore to control concurrency
+		errChan := make(chan error, totalGoroutines) // Channel to collect errors from goroutines
 
 		var errs []error
-		var mu sync.Mutex // To protect access to errs
-
-		go func() {
-			defer errWg.Done()
-			for err := range errChan {
-				mu.Lock()
-				errs = append(errs, err)
-				mu.Unlock()
-			}
-		}()
-
 		for _, update := range updates {
 			for instanceId := range customerDBConnections[update.CustomerID] {
 				wg.Add(1)
@@ -506,6 +500,10 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		close(errChan) // Close the channel to signal that all goroutines have finished
 
 		// Check if there were any errors
+		for err := range errChan {
+			errs = append(errs, err)
+		}
+
 		if len(errs) > 0 {
 			var errMsg string
 			for _, e := range errs {
@@ -682,23 +680,17 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 		// Process customer updates in parallel
 		var wg sync.WaitGroup
-		var errWg sync.WaitGroup
-		errWg.Add(1)
 
-		sem := make(chan struct{}, d.threads) // Semaphore to control concurrency
-		errChan := make(chan error)           // Channel to collect errors from goroutines
+		// count the number of goroutines that will be running
+		var totalGoroutines int
+		for _, update := range customerUpdates {
+			totalGoroutines += len(customerDBConnections[update.CustomerID])
+		}
+
+		sem := make(chan struct{}, d.threads)        // Semaphore to control concurrency
+		errChan := make(chan error, totalGoroutines) // Channel to collect errors from goroutines
 
 		var errs []error
-		var mu sync.Mutex // To protect access to errs
-
-		go func() {
-			defer errWg.Done()
-			for err := range errChan {
-				mu.Lock()
-				errs = append(errs, err)
-				mu.Unlock()
-			}
-		}()
 
 		for _, update := range customerUpdates {
 
@@ -713,6 +705,10 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		close(errChan) // Close the channel to signal that all goroutines have finished
 
 		// Check if there were any errors
+		for err := range errChan {
+			errs = append(errs, err)
+		}
+
 		if len(errs) > 0 {
 			var errMsg string
 			for _, e := range errs {
