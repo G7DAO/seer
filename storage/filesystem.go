@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sync"
 )
 
 type FileStorage struct {
@@ -144,59 +143,4 @@ func (fs *FileStorage) Delete(key string) error {
 
 	// Implement the Delete method
 	return nil
-}
-
-func (fs *FileStorage) ReadFiles(keys []string) ([]bytes.Buffer, error) {
-
-	var data []bytes.Buffer
-
-	for _, key := range keys {
-		dataBlock, err := fs.Read(key)
-
-		if err != nil {
-			return nil, err
-		}
-		data = append(data, dataBlock)
-
-	}
-	return data, nil
-}
-
-func (fs *FileStorage) ReadFilesAsync(keys []string, threads int) ([]bytes.Buffer, error) {
-	var data []bytes.Buffer
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	errChan := make(chan error, len(keys))
-
-	// Semaphore to limit the number of concurrent reads
-	sem := make(chan struct{}, threads)
-
-	for _, key := range keys {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(k string) {
-			defer func() {
-				<-sem
-				wg.Done()
-			}()
-			bf, err := fs.Read(k)
-			if err != nil {
-				errChan <- fmt.Errorf("failed to read file %s: %v", k, err)
-				return
-			}
-
-			mu.Lock()
-			data = append(data, bf)
-			mu.Unlock()
-		}(key)
-	}
-
-	wg.Wait()
-	close(errChan)
-
-	if len(errChan) > 0 {
-		return nil, fmt.Errorf("failed to read files: %v", <-errChan)
-	}
-
-	return data, nil
 }

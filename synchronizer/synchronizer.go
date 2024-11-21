@@ -470,7 +470,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		log.Println("Last block of current chank: ", lastBlockOfChank)
 
 		// Read the raw data from the storage for current path
-		rawData, readErr := d.StorageInstance.ReadFilesAsync(paths, d.threads)
+		rawData, readErr := storage.ReadFilesAsync(paths, d.threads, d.StorageInstance)
 		if readErr != nil {
 			return isEnd, fmt.Errorf("error reading raw data: %w", readErr)
 		}
@@ -671,7 +671,7 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 		// Read raw data from storage or via RPC
 		var rawData []bytes.Buffer
-		rawData, err = d.StorageInstance.ReadFilesAsync(paths, d.threads)
+		rawData, err = storage.ReadFilesAsync(paths, d.threads, d.StorageInstance)
 		if err != nil {
 			return fmt.Errorf("error reading events from storage: %w", err)
 		}

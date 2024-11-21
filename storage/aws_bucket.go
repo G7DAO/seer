@@ -101,13 +101,3 @@ func (s *S3) ReadBatch(readItems []ReadItem) (map[string][]string, error) {
 	// Implement the ReadBatch method
 	return nil, nil
 }
-
-func (s *S3) ReadFiles(keys []string) ([]bytes.Buffer, error) {
-	// Implement the ReadFiles method
-	return []bytes.Buffer{}, nil
-}
-
-func (s *S3) ReadFilesAsync(keys []string, threads int) ([]bytes.Buffer, error) {
-	// Implement the ReadFilesAsync method
-	return []bytes.Buffer{}, nil
-}
