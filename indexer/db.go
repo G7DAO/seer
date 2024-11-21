@@ -630,7 +630,7 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
     )
 	SELECT
     	latest_block_number,
-    	(SELECT array_agg(path) FROM path) as paths,
+    	(SELECT array_agg(DISTINCT path) FROM path) as paths,
     	(SELECT json_agg(json_build_object(customer_id, abis)) FROM reformatted_jobs) as jobs
 	FROM
     	latest_block_of_path
@@ -1469,7 +1469,7 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 		order by block_number asc
 		limit 1
 	)
-	select  ARRAY_AGG(path) as paths, (SELECT first_block_number FROM earliest_block_of_path) as min_block_number, (SELECT latest_block_number FROM latest_block_of_path) as max_block_number from path
+	select  ARRAY_AGG( DISTINCT path) as paths, (SELECT first_block_number FROM earliest_block_of_path) as min_block_number, (SELECT latest_block_number FROM latest_block_of_path) as max_block_number from path
 	`, BlocksTableName(blockchain), BlocksTableName(blockchain), BlocksTableName(blockchain))
 
 	err = conn.QueryRow(context.Background(), query, blockNumber, blockNumber-uint64(minBlocksToSync)).Scan(&paths, &minBlockNumber, &maxBlockNumber)
