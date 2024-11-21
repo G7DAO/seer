@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/big"
 	"os"
 	"strings"
 
@@ -200,13 +199,14 @@ func DecodeTransactionInputDataToInterface(contractABI *abi.ABI, data []byte) (m
 
 func DecodeLogArgsToLabelData(contractABI *abi.ABI, topics []string, data string) (map[string]interface{}, error) {
 
-	topic0 := topics[0]
+	var topicHashes []common.Hash
 
-	// Convert the topic0 string to common.Hash
-	topic0Hash := common.HexToHash(topic0)
+	for _, topic := range topics {
+		topicHashes = append(topicHashes, common.HexToHash(topic))
+	}
 
 	event, err := contractABI.EventByID(
-		topic0Hash,
+		topicHashes[0],
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -224,41 +224,17 @@ func DecodeLogArgsToLabelData(contractABI *abi.ABI, topics []string, data string
 	labelData["name"] = event.Name
 	labelData["args"] = make(map[string]interface{})
 
-	i := 1
-	// Extract indexed parameters from topics
+	indexed := make([]abi.Argument, 0)
 	for _, input := range event.Inputs {
-		var arg interface{}
 		if input.Indexed {
-			// Note: topic[0] is the event signature, so indexed params start from topic[1]
-			switch input.Type.T {
-			case abi.AddressTy:
-				arg = common.HexToAddress(topics[i]).Hex()
-			case abi.BytesTy:
-				arg = common.HexToHash(topics[i]).Hex()
-			case abi.FixedBytesTy:
-				if input.Type.Size == 32 {
-					arg = common.HexToHash(topics[i]).Hex()
-				} else {
-					arg = common.BytesToHash(common.Hex2Bytes(topics[i][2:])).Hex() // for other fixed sizes
-				}
-			case abi.UintTy:
-				arg = new(big.Int).SetBytes(common.Hex2Bytes(topics[i][2:]))
-			case abi.BoolTy:
-				arg = new(big.Int).SetBytes(common.Hex2Bytes(topics[i][2:])).Cmp(big.NewInt(0)) != 0
-			case abi.StringTy:
-				argBytes, err := hex.DecodeString(strings.TrimPrefix(topics[i], "0x"))
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode hex string to normal string: %v", err)
-				}
-				arg = string(argBytes)
-			default:
-				log.Fatalf("Unsupported indexed type: %s", input.Type.String())
-			}
-			i++
-		} else {
-			arg = "NON-INDEXED" // Placeholder for non-indexed arguments, which will be unpacked later
+			indexed = append(indexed, input)
 		}
-		labelData["args"].(map[string]interface{})[input.Name] = arg
+	}
+
+	// parse topics into map
+	err = abi.ParseTopicsIntoMap(labelData["args"].(map[string]interface{}), indexed, topicHashes[1:])
+	if err != nil {
+		return nil, err
 	}
 
 	// Unpack the data bytes into the args map
