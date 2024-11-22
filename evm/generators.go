@@ -1320,12 +1320,15 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 		Use:  "deploy",
 		Short: "Deploy a new {{.StructName}} contract",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if keyfile == "" {
-				return fmt.Errorf("--keystore not specified (this should be a path to an Ethereum account keystore file)")
-			}
 
-			if rpc == "" {
-				return fmt.Errorf("--rpc not specified (this should be a URL to an Ethereum JSONRPC API)")
+			if !calldata {
+				if keyfile == "" {
+					return fmt.Errorf("--keystore not specified (this should be a path to an Ethereum account keystore file)")
+				}
+
+				if rpc == "" {
+					return fmt.Errorf("--rpc not specified (this should be a URL to an Ethereum JSONRPC API)")
+				}
 			}
 
 			if safeAddress != "" {
@@ -1395,6 +1398,22 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Generate deploy bytecode with constructor arguments
+			deployCalldata, err := generate{{.StructName}}DeployBytecode(
+				{{- range .DeployHandler.MethodArgs}}
+				{{.CLIVar}},
+				{{- end}}
+			)
+			if err != nil {
+				return fmt.Errorf("failed to generate deploy bytecode: %v", err)
+			}
+
+			if calldata {
+				deployCalldataHex := hex.EncodeToString(deployCalldata)
+				cmd.Printf(deployCalldataHex)
+				return nil
+			}
+
 			client, clientErr := NewClient(rpc)
 			if clientErr != nil {
 				return clientErr
@@ -1418,22 +1437,6 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 			}
 
 			SetTransactionParametersFromArgs(transactionOpts, nonce, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, gasLimit, simulate)
-
-			// Generate deploy bytecode with constructor arguments
-			deployCalldata, err := generate{{.StructName}}DeployBytecode(
-				{{- range .DeployHandler.MethodArgs}}
-				{{.CLIVar}},
-				{{- end}}
-			)
-			if err != nil {
-				return fmt.Errorf("failed to generate deploy bytecode: %v", err)
-			}
-
-			if calldata {
-				deployCalldataHex := hex.EncodeToString(deployCalldata)
-				cmd.Printf(deployCalldataHex)
-				return nil
-			}
 
 			if safeAddress != "" {
 				// Create Safe proposal for deployment
@@ -1673,19 +1676,21 @@ func {{.HandlerName}}() *cobra.Command {
         Use: "{{(KebabCase .MethodName)}}",
         Short: "Execute the {{.MethodName}} method on a {{$structName}} contract",
         PreRunE: func(cmd *cobra.Command, args []string) error {
-            if contractAddressRaw == "" {
-                return fmt.Errorf("--contract not specified")
-            } else if !common.IsHexAddress(contractAddressRaw) {
-                return fmt.Errorf("--contract is not a valid Ethereum address")
-            }
-            contractAddress = common.HexToAddress(contractAddressRaw)
+			if !calldata {
+				if contractAddressRaw == "" {
+					return fmt.Errorf("--contract not specified")
+				} else if !common.IsHexAddress(contractAddressRaw) {
+					return fmt.Errorf("--contract is not a valid Ethereum address")
+				}
+				contractAddress = common.HexToAddress(contractAddressRaw)
 
-            if keyfile == "" {
-                return fmt.Errorf("--keystore not specified (this should be a path to an Ethereum account keystore file)")
-            }
+				if keyfile == "" {
+					return fmt.Errorf("--keystore not specified (this should be a path to an Ethereum account keystore file)")
+				}
 
-			if rpc == "" {
-				return fmt.Errorf("--rpc not specified (this should be a URL to an Ethereum JSONRPC API)")
+				if rpc == "" {
+					return fmt.Errorf("--rpc not specified (this should be a URL to an Ethereum JSONRPC API)")
+				}
 			}
 
             if safeAddress != "" {
@@ -1729,6 +1734,34 @@ func {{.HandlerName}}() *cobra.Command {
             return nil
         },
         RunE: func(cmd *cobra.Command, args []string) error {
+			abi, err := {{$structName}}MetaData.GetAbi()
+			if err != nil {
+				return fmt.Errorf("failed to get ABI: %v", err)
+			}
+			
+			// Generate transaction data (override method name if safe function is specified)
+			methodName := "{{ToLowerCamel .MethodName}}"
+			if safeFunction != "" {
+				methodName = safeFunction
+			}
+
+			txCalldata, err := abi.Pack(
+				methodName,
+				{{- range .MethodArgs}}
+				{{.CLIVar}},
+				{{- end}}
+			)
+
+			if err != nil {
+				return err
+			}
+
+			if calldata {
+				txCalldataHex := hex.EncodeToString(txCalldata)
+				cmd.Printf(txCalldataHex)
+				return nil
+			}
+				
             client, clientErr := NewClient(rpc)
             if clientErr != nil {
                 return clientErr
@@ -1762,34 +1795,6 @@ func {{.HandlerName}}() *cobra.Command {
                 Contract: &contract.{{$structName}}Transactor,
                 TransactOpts: *transactionOpts,
             }
-
-			abi, err := {{$structName}}MetaData.GetAbi()
-			if err != nil {
-				return fmt.Errorf("failed to get ABI: %v", err)
-			}
-			
-			// Generate transaction data (override method name if safe function is specified)
-			methodName := "{{ToLowerCamel .MethodName}}"
-			if safeFunction != "" {
-				methodName = safeFunction
-			}
-
-			txCalldata, err := abi.Pack(
-				methodName,
-				{{- range .MethodArgs}}
-				{{.CLIVar}},
-				{{- end}}
-			)
-
-			if err != nil {
-				return err
-			}
-
-			if calldata {
-				txCalldataHex := hex.EncodeToString(txCalldata)
-				cmd.Printf(txCalldataHex)
-				return nil
-			}
 
             if safeAddress != "" {
                 // Create Safe proposal for transaction
