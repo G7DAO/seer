@@ -1309,6 +1309,8 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var salt [32]byte
 	var predictAddress bool
 	var safeNonce *big.Int
+	var calldata bool
+
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
 	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
@@ -1417,17 +1419,23 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 
 			SetTransactionParametersFromArgs(transactionOpts, nonce, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, gasLimit, simulate)
 
-			if safeAddress != "" {
-				// Generate deploy bytecode with constructor arguments
-				deployBytecode, err := generate{{.StructName}}DeployBytecode(
-					{{- range .DeployHandler.MethodArgs}}
-					{{.CLIVar}},
-					{{- end}}
-				)
-				if err != nil {
-					return fmt.Errorf("failed to generate deploy bytecode: %v", err)
-				}
+			// Generate deploy bytecode with constructor arguments
+			deployCalldata, err := generate{{.StructName}}DeployBytecode(
+				{{- range .DeployHandler.MethodArgs}}
+				{{.CLIVar}},
+				{{- end}}
+			)
+			if err != nil {
+				return fmt.Errorf("failed to generate deploy bytecode: %v", err)
+			}
 
+			if calldata {
+				deployCalldataHex := hex.EncodeToString(deployCalldata)
+				cmd.Printf(deployCalldataHex)
+				return nil
+			}
+
+			if safeAddress != "" {
 				// Create Safe proposal for deployment
 				value := transactionOpts.Value
 				if value == nil {
@@ -1440,7 +1448,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					if safeOperationType == 0 {
 						from = common.HexToAddress(safeCreateCall)
 					}
-					deploymentAddress, err := PredictDeploymentAddressSafe(from, salt, deployBytecode)
+					deploymentAddress, err := PredictDeploymentAddressSafe(from, salt, deployCalldata)
 					if err != nil {
 						return fmt.Errorf("failed to predict deployment address: %v", err)
 					}
@@ -1448,7 +1456,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					return nil
 				} else {
 					fmt.Println("Creating Safe proposal...")
-					err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), salt, safeNonce)
+					err = DeployWithSafe(client, key, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployCalldata, SafeOperationType(safeOperationType), salt, safeNonce)
 					if err != nil {
 						return fmt.Errorf("failed to create Safe proposal: %v", err)
 					}
@@ -1467,7 +1475,6 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 			if deploymentErr != nil {
 				return deploymentErr
 			}
-
 
 			cmd.Printf("Transaction hash: %s\nContract address: %s\n", deploymentTransaction.Hash().Hex(), address.Hex())
 			if transactionOpts.NoSend {
@@ -1517,6 +1524,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().StringVar(&safeSaltRaw, "safe-salt", "", "Salt to use for the Safe transaction")
 	cmd.Flags().BoolVar(&predictAddress, "safe-predict-address", false, "Predict the deployment address (only works for Safe transactions)")
 	cmd.Flags().StringVar(&safeNonceRaw, "safe-nonce", "", "Safe nonce overrider for the transaction (optional)")
+	cmd.Flags().BoolVar(&calldata, "calldata", false, "Set this flag if want to return the calldata instead of sending the transaction")
 	
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
@@ -1654,6 +1662,7 @@ func {{.HandlerName}}() *cobra.Command {
     var safeAddress, safeApi string
 	var safeOperationType uint8
 	var safeNonce *big.Int
+	var calldata bool
 
     {{range .MethodArgs}}
     var {{.CLIVar}} {{.CLIType}}
@@ -1754,36 +1763,42 @@ func {{.HandlerName}}() *cobra.Command {
                 TransactOpts: *transactionOpts,
             }
 
+			abi, err := {{$structName}}MetaData.GetAbi()
+			if err != nil {
+				return fmt.Errorf("failed to get ABI: %v", err)
+			}
+			
+			// Generate transaction data (override method name if safe function is specified)
+			methodName := "{{ToLowerCamel .MethodName}}"
+			if safeFunction != "" {
+				methodName = safeFunction
+			}
+
+			txCalldata, err := abi.Pack(
+				methodName,
+				{{- range .MethodArgs}}
+				{{.CLIVar}},
+				{{- end}}
+			)
+
+			if err != nil {
+				return err
+			}
+
+			if calldata {
+				txCalldataHex := hex.EncodeToString(txCalldata)
+				cmd.Printf(txCalldataHex)
+				return nil
+			}
+
             if safeAddress != "" {
-				abi, err := {{$structName}}MetaData.GetAbi()
-				if err != nil {
-					return fmt.Errorf("failed to get ABI: %v", err)
-				}
-				
-                // Generate transaction data (override method name if safe function is specified)
-				methodName := "{{ToLowerCamel .MethodName}}"
-				if safeFunction != "" {
-					methodName = safeFunction
-				}
-
-				transaction, err := abi.Pack(
-					methodName,
-					{{- range .MethodArgs}}
-					{{.CLIVar}},
-					{{- end}}
-				)
-
-				if err != nil {
-					return err
-				}
-              
                 // Create Safe proposal for transaction
 				value := transactionOpts.Value
 				if value == nil {
 					value = big.NewInt(0)
 				}
 
-				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, transaction, value, safeApi, SafeOperationType(safeOperationType), safeNonce)
+				err = CreateSafeProposal(client, key, common.HexToAddress(safeAddress), contractAddress, txCalldata, value, safeApi, SafeOperationType(safeOperationType), safeNonce)
                 if err != nil {
                     return fmt.Errorf("failed to create Safe proposal: %v", err)
                 }
@@ -1800,7 +1815,7 @@ func {{.HandlerName}}() *cobra.Command {
                 return err
             }
 
-            cmd.Printf("Transaction hash: %s\n", transaction.Hash().Hex())
+			cmd.Printf("Transaction hash: %s\n", transaction.Hash().Hex())
             if transactionOpts.NoSend {
                 estimationMessage := ethereum.CallMsg{
                     From: 		transactionOpts.From,
@@ -1848,6 +1863,7 @@ func {{.HandlerName}}() *cobra.Command {
 	cmd.Flags().Uint8Var(&safeOperationType, "safe-operation", 0, "Safe operation type: 0 (Call) or 1 (DelegateCall)")
 	cmd.Flags().StringVar(&safeFunction, "safe-function", "", "Safe function overrider to use for the transaction (optional)")
 	cmd.Flags().StringVar(&safeNonceRaw, "safe-nonce", "", "Safe nonce overrider for the transaction (optional)")
+	cmd.Flags().BoolVar(&calldata, "calldata", false, "Set this flag if want to return the calldata instead of sending the transaction")
 
     {{range .MethodArgs}}
     cmd.Flags().{{.Flag}}
