@@ -1410,7 +1410,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 
 			if calldata {
 				deployCalldataHex := hex.EncodeToString(deployCalldata)
-				cmd.Printf(deployCalldataHex)
+				cmd.Println(deployCalldataHex)
 				return nil
 			}
 
@@ -1758,7 +1758,7 @@ func {{.HandlerName}}() *cobra.Command {
 
 			if calldata {
 				txCalldataHex := hex.EncodeToString(txCalldata)
-				cmd.Printf(txCalldataHex)
+				cmd.Println(txCalldataHex)
 				return nil
 			}
 				

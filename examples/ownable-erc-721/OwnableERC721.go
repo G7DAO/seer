@@ -1421,7 +1421,7 @@ func CreateOwnableERC721DeploymentCommand() *cobra.Command {
 
 			if calldata {
 				deployCalldataHex := hex.EncodeToString(deployCalldata)
-				cmd.Printf(deployCalldataHex)
+				cmd.Println(deployCalldataHex)
 				return nil
 			}
 
@@ -2343,7 +2343,7 @@ func CreateApproveCommand() *cobra.Command {
 
 			if calldata {
 				txCalldataHex := hex.EncodeToString(txCalldata)
-				cmd.Printf(txCalldataHex)
+				cmd.Println(txCalldataHex)
 				return nil
 			}
 
@@ -2570,7 +2570,7 @@ func CreateMintCommand() *cobra.Command {
 
 			if calldata {
 				txCalldataHex := hex.EncodeToString(txCalldata)
-				cmd.Printf(txCalldataHex)
+				cmd.Println(txCalldataHex)
 				return nil
 			}
 
@@ -2777,7 +2777,7 @@ func CreateRenounceOwnershipCommand() *cobra.Command {
 
 			if calldata {
 				txCalldataHex := hex.EncodeToString(txCalldata)
-				cmd.Printf(txCalldataHex)
+				cmd.Println(txCalldataHex)
 				return nil
 			}
 
@@ -3007,7 +3007,7 @@ func CreateSafeTransferFromCommand() *cobra.Command {
 
 			if calldata {
 				txCalldataHex := hex.EncodeToString(txCalldata)
-				cmd.Printf(txCalldataHex)
+				cmd.Println(txCalldataHex)
 				return nil
 			}
 
@@ -3259,7 +3259,7 @@ func CreateSafeTransferFrom0Command() *cobra.Command {
 
 			if calldata {
 				txCalldataHex := hex.EncodeToString(txCalldata)
-				cmd.Printf(txCalldataHex)
+				cmd.Println(txCalldataHex)
 				return nil
 			}
 
@@ -3494,7 +3494,7 @@ func CreateSetApprovalForAllCommand() *cobra.Command {
 
 			if calldata {
 				txCalldataHex := hex.EncodeToString(txCalldata)
-				cmd.Printf(txCalldataHex)
+				cmd.Println(txCalldataHex)
 				return nil
 			}
 
@@ -3731,7 +3731,7 @@ func CreateTransferFromCommand() *cobra.Command {
 
 			if calldata {
 				txCalldataHex := hex.EncodeToString(txCalldata)
-				cmd.Printf(txCalldataHex)
+				cmd.Println(txCalldataHex)
 				return nil
 			}
 
@@ -3951,7 +3951,7 @@ func CreateTransferOwnershipCommand() *cobra.Command {
 
 			if calldata {
 				txCalldataHex := hex.EncodeToString(txCalldata)
-				cmd.Printf(txCalldataHex)
+				cmd.Println(txCalldataHex)
 				return nil
 			}
 
