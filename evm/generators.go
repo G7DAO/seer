@@ -322,6 +322,13 @@ func DeriveMethodArguments(parameters []ABIBoundParameter) ([]MethodArgument, er
 		"simulate":             true,
 		"contractAddress":      true,
 		"name":                 true,
+		"safe":                 true,
+		"safeApi":              true,
+		"safeSalt":             true,
+		"safeCreateCall":       true,
+		"safeNonce":            true,
+		"safeOperation":        true,
+		"calldata":             true,
 	}
 
 	for i, parameter := range parameters {
