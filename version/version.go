@@ -1,3 +1,3 @@
 package version
 
-var SeerVersion string = "0.3.14"
+var SeerVersion string = "0.3.15"
