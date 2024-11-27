@@ -12,6 +12,9 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -125,13 +128,14 @@ type HeaderParameters struct {
 	Foundry     string
 	ABI         string
 	Bytecode    string
+	SourceCode  string
 	StructName  string
 	OutputFile  string
 	NoFormat    bool
 }
 
 // Generates the header comment for the generated code.
-func GenerateHeader(packageName string, cli bool, includeMain bool, foundry string, abi string, bytecode string, structname string, outputfile string, noformat bool) (string, error) {
+func GenerateHeader(packageName string, cli bool, includeMain bool, foundry string, abi string, bytecode string, sourceCode string, structname string, outputfile string, noformat bool) (string, error) {
 	headerTemplate, headerTemplateParseErr := template.New("header").Parse(HeaderTemplate)
 	if headerTemplateParseErr != nil {
 		return "", headerTemplateParseErr
@@ -145,6 +149,7 @@ func GenerateHeader(packageName string, cli bool, includeMain bool, foundry stri
 		Foundry:     foundry,
 		ABI:         abi,
 		Bytecode:    bytecode,
+		SourceCode:  sourceCode,
 		StructName:  structname,
 		OutputFile:  outputfile,
 		NoFormat:    noformat,
@@ -157,6 +162,45 @@ func GenerateHeader(packageName string, cli bool, includeMain bool, foundry stri
 	}
 
 	return b.String(), nil
+}
+
+// Get a flattened source code from a solidity file
+// Get a flattened source code from a solidity file
+func GetFlattenedContractCode(sourceCodePath string) (string, error) {
+	// Create a temporary directory to store the flattened file
+	tmpDir, err := os.MkdirTemp("", "seer-flatten-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Generate the output file path
+	fileName := filepath.Base(sourceCodePath)
+	outputPath := filepath.Join(tmpDir, "flattened_"+fileName)
+
+	// Try Foundry's forge flatten first
+	cmd := exec.Command("forge", "flatten", sourceCodePath, "--output", outputPath)
+	if err := cmd.Run(); err != nil {
+		// If forge fails, try Hardhat's flatten
+		cmd = exec.Command("npx", "hardhat", "flatten", sourceCodePath, "--output", outputPath)
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("failed to flatten contract using either Foundry or Hardhat. Make sure one of them is installed: %v", err)
+		}
+	}
+
+	// Read the flattened file
+	sourceCodeBytes, err := os.ReadFile(outputPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read flattened source code: %v", err)
+	}
+
+	// Process the source code to be a valid Go string
+	sourceCodeString := string(sourceCodeBytes)
+
+	// Escape any backticks in the source code
+	sourceCodeString = strings.ReplaceAll(sourceCodeString, "`", "` + \"`\" + `")
+
+	return sourceCodeString, nil
 }
 
 // ParseBoundParameter parses an ast.Node representing a method parameter (or return value). It inspects
@@ -760,7 +804,7 @@ func ParseCLISpecification(structName string, deployMethod *ast.FuncDecl, viewMe
 // GenerateTypes function. The output of this function *contains* the input, with enrichments (some of
 // then inline). It should not be concatenated with the output of GenerateTypes, but rather be used as
 // part of a chain.
-func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, error) {
+func AddCLI(sourceCode, structName string, noformat, includemain bool, contractCode string) (string, error) {
 	fileset := token.NewFileSet()
 	filename := ""
 	sourceAST, sourceASTErr := parser.ParseFile(fileset, filename, sourceCode, parser.ParseComments)
@@ -813,6 +857,7 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/ethereum/go-ethereum/crypto"`}},
 				)
 			}
+
 			return true
 		case *ast.FuncDecl:
 			if t.Recv != nil {
@@ -863,6 +908,11 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 		return code, transactionMethodsCommandsTemplateErr
 	}
 
+	verifyCommandTemplate, verifyCommandTemplateErr := template.New("verify").Funcs(templateFuncs).Parse(VerifyContractCodeCommandTemplate)
+	if verifyCommandTemplateErr != nil {
+		return code, verifyCommandTemplateErr
+	}
+
 	cliSpec, cliSpecErr := ParseCLISpecification(structName, deployMethod, structViewMethods, structTransactionMethods)
 	if cliSpecErr != nil {
 		return code, cliSpecErr
@@ -896,6 +946,17 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 		return code, cliTemplateErr
 	}
 	code = code + "\n\n" + b.String()
+
+	b.Reset()
+	verifyTemplateErr := verifyCommandTemplate.Execute(&b, cliSpec)
+	if verifyTemplateErr != nil {
+		return code, verifyTemplateErr
+	}
+	code = code + "\n\n" + b.String()
+
+	if contractCode != "" {
+		code = code + "\n\n" + fmt.Sprintf("const %sContractCode = `%s`\n", structName, contractCode)
+	}
 
 	if includemain {
 		mainFormatString := `func main() {
@@ -1057,6 +1118,12 @@ func Create{{.StructName}}Command() *cobra.Command {
 	}
 	cmd.AddGroup(DeployGroup)
 	{{- end}}
+
+	VerifyGroup := &cobra.Group{
+		ID: "verify", Title: "Commands which verify contract code",
+	}
+	cmd.AddGroup(VerifyGroup)
+
 	ViewGroup := &cobra.Group{
 		ID: "view", Title: "Commands which view contract state",
 	}
@@ -1070,6 +1137,10 @@ func Create{{.StructName}}Command() *cobra.Command {
 	cmd{{.DeployHandler.MethodName}}.GroupID = DeployGroup.ID
 	cmd.AddCommand(cmd{{.DeployHandler.MethodName}})
 	{{- end}}
+
+	cmdVerify := VerifyContractCodeCommand()
+	cmdVerify.GroupID = VerifyGroup.ID
+	cmd.AddCommand(cmdVerify)
 
 	{{range .ViewHandlers}}
 	cmdView{{.MethodName}} := {{.HandlerName}}()
@@ -1327,6 +1398,177 @@ func PrintStruct(cmd *cobra.Command, name string, rv reflect.Value, depth int) {
             }
         }
     }
+}
+`
+
+var VerifyContractCodeCommandTemplate string = `
+func VerifyContractCode(
+	contractAddress common.Address, 
+	contractCode string, 
+	blockExplorerAPI string,
+	solidityVersion string,
+	runs uint,
+	optimizationUsed bool,
+	evmVersion string,
+	{{- range .DeployHandler.MethodArgs}}
+		{{.CLIVar}} {{.CLIType}},
+	{{- end}}
+	) error {
+
+	// Pack constructor arguments
+	abiPacked, err := {{.StructName}}MetaData.GetAbi()
+	if err != nil {
+		return fmt.Errorf("failed to get ABI: %v", err)
+	}
+
+	constructorArguments, err := abiPacked.Pack("",
+		{{- range .DeployHandler.MethodArgs}}
+		{{.CLIVar}},
+		{{- end}}
+	)
+	if err != nil {
+		return fmt.Errorf("failed to pack constructor arguments: %v", err)
+	}
+
+    // Prepare the request body
+    requestBody := map[string]interface{}{
+        "address":              contractAddress.Hex(),
+        "sourceCode":           contractCode,
+        "constructorArguments": hex.EncodeToString(constructorArguments),
+        "compilerVersion":      solidityVersion,
+        "optimizationUsed":     optimizationUsed,
+        "runs":                 runs,
+        "evmVersion":           evmVersion,
+        "libraryName1":        "",
+        "libraryAddress1":     "",
+        "libraryName2":        "",
+        "libraryAddress2":     "",
+        "libraryName3":        "",
+		"libraryAddress3":     "",
+        "libraryName4":        "",
+        "libraryAddress4":     "",
+        "libraryName5":        "",
+        "libraryAddress5":     "",
+        "libraryName6":        "",
+        "libraryAddress6":     "",
+        "libraryName7":        "",
+        "libraryAddress7":     "",
+        "libraryName8":        "",
+        "libraryAddress8":     "",
+        "libraryName9":        "",
+        "libraryAddress9":     "",
+        "libraryName10":       "",
+        "libraryAddress10":    "",
+    }
+
+    // Send the verification request
+    jsonData, err := json.Marshal(requestBody)
+    if err != nil {
+        return fmt.Errorf("failed to marshal request body: %v", err)
+    }
+
+    resp, err := http.Post(blockExplorerAPI, "application/json", bytes.NewBuffer(jsonData))
+    if err != nil {
+        return fmt.Errorf("failed to send verification request: %v", err)
+    }
+    defer resp.Body.Close()
+
+    // Read and parse the response
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+        return fmt.Errorf("failed to read response body: %v", err)
+    }
+
+    var response map[string]interface{}
+    if err := json.Unmarshal(body, &response); err != nil {
+        return fmt.Errorf("failed to parse response body: %v", err)
+    }
+
+    // Check the verification result
+    status, ok := response["status"].(string)
+    if !ok {
+        return fmt.Errorf("unexpected response format")
+    }
+
+    if status == "1" {
+        fmt.Println("Contract verification successful!")
+    } else {
+        result, ok := response["result"].(string)
+        if !ok {
+            return fmt.Errorf("unexpected response format")
+        }
+        return fmt.Errorf("contract verification failed: %s", result)
+    }
+
+    return nil
+}
+
+func VerifyContractCodeCommand() *cobra.Command {
+	var contractAddressRaw, blockExplorerAPI string
+	var contractAddress common.Address
+	var solidityVersion string
+	var runs uint
+	var optimizationUsed bool
+	var evmVersion string
+	
+	{{range .DeployHandler.MethodArgs}}
+	var {{.CLIVar}} {{.CLIType}}
+	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
+	{{- end}}
+
+	cmd := &cobra.Command{
+		Use: "verify",
+		Short: "Verify a contract code on a block explorer",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if contractAddressRaw == "" {
+				return fmt.Errorf("--contract not specified")
+			} else if !common.IsHexAddress(contractAddressRaw) {
+				return fmt.Errorf("--contract is not a valid Ethereum address")
+			}
+			contractAddress = common.HexToAddress(contractAddressRaw)
+
+			if solidityVersion == "" {
+				fmt.Println("--solidity-version not specified, using default (v0.8.19+commit.7dd6d404)")
+				solidityVersion = "v0.8.19+commit.7dd6d404"
+			}
+
+			if runs == 0 {
+				fmt.Println("--runs not specified, using default (200)")
+				runs = 200
+			}
+
+			if evmVersion == "" {
+				fmt.Println("--evm-version not specified, using default (london)")
+				evmVersion = "london"
+			}
+
+			if optimizationUsed == false {
+				fmt.Println("--optimization-used not specified, using default (true)")
+				optimizationUsed = true
+			}
+
+			{{range .DeployHandler.MethodArgs}}
+			{{.PreRunE}}
+			{{- end}}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return VerifyContractCode(contractAddress, {{.StructName}}ContractCode, blockExplorerAPI, solidityVersion, runs, optimizationUsed, evmVersion, {{- range .DeployHandler.MethodArgs}}{{.CLIVar}},{{- end}})
+		},
+	}
+
+	cmd.Flags().StringVar(&contractAddressRaw, "contract", "c", "The address of the contract to verify")
+	cmd.Flags().StringVar(&blockExplorerAPI, "api", "a", "The block explorer API to use")
+	cmd.Flags().StringVar(&solidityVersion, "solidity-version", "", "The Solidity compiler version to use")
+	cmd.Flags().UintVar(&runs, "runs", 0, "The number of runs to use for optimization")
+	cmd.Flags().StringVar(&evmVersion, "evm-version", "", "The EVM version to use")
+	cmd.Flags().BoolVar(&optimizationUsed, "optimization-used", false, "Whether optimization is used")
+	{{range .DeployHandler.MethodArgs}}
+	cmd.Flags().{{.Flag}}
+	{{- end}}
+
+	return cmd
 }
 `
 
@@ -1991,5 +2233,5 @@ func {{.HandlerName}}() *cobra.Command {
 // This template should be applied to a EVMHeaderParameters struct.
 var HeaderTemplate string = `// This file was generated by seer: https://github.com/G7DAO/seer.
 // seer version: {{.Version}}
-// seer command: seer evm generate{{if .PackageName}} --package {{.PackageName}}{{end}}{{if .CLI}} --cli{{end}}{{if .IncludeMain}} --includemain{{end}}{{if (ne .Foundry "")}} --foundry {{.Foundry}}{{end}}{{if (ne .ABI "")}} --abi {{.ABI}}{{end}}{{if (ne .Bytecode "")}} --bytecode {{.Bytecode}}{{end}} --struct {{.StructName}}{{if (ne .OutputFile "")}} --output {{.OutputFile}}{{end}}{{if .NoFormat}} --noformat{{end}}
+// seer command: seer evm generate{{if .PackageName}} --package {{.PackageName}}{{end}}{{if .CLI}} --cli{{end}}{{if .IncludeMain}} --includemain{{end}}{{if (ne .Foundry "")}} --foundry {{.Foundry}}{{end}}{{if (ne .ABI "")}} --abi {{.ABI}}{{end}}{{if (ne .Bytecode "")}} --bytecode {{.Bytecode}}{{end}}{{if (ne .SourceCode "")}} --source-code {{.SourceCode}}{{end}} --struct {{.StructName}}{{if (ne .OutputFile "")}} --output {{.OutputFile}}{{end}}{{if .NoFormat}} --noformat{{end}}
 `
