@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/G7DAO/seer/blockchain"
 	seer_blockchain "github.com/G7DAO/seer/blockchain"
 	"github.com/G7DAO/seer/crawler"
 	"github.com/G7DAO/seer/evm"
@@ -48,7 +50,8 @@ func CreateRootCommand() *cobra.Command {
 	abiCmd := CreateAbiCommand()
 	dbCmd := CreateDatabaseOperationCommand()
 	historicalSyncCmd := CreateHistoricalSyncCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd, historicalSyncCmd)
+	genereateGenerateCmd := CreateGenerateCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd, historicalSyncCmd, genereateGenerateCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -138,12 +141,6 @@ func CreateBlockchainCommand() *cobra.Command {
 	return blockchainCmd
 }
 
-type BlockchainTemplateData struct {
-	BlockchainName      string
-	BlockchainNameLower string
-	IsSideChain         bool
-}
-
 func CreateBlockchainGenerateCommand() *cobra.Command {
 	var blockchainNameLower string
 	var sideChain bool
@@ -182,7 +179,7 @@ func CreateBlockchainGenerateCommand() *cobra.Command {
 			defer outputFile.Close()
 
 			// Execute template and write to output file
-			data := BlockchainTemplateData{
+			data := blockchain.BlockchainTemplateData{
 				BlockchainName:      blockchainName,
 				BlockchainNameLower: blockchainNameLower,
 				IsSideChain:         sideChain,
@@ -1301,6 +1298,284 @@ func CreateEVMGenerateCommand() *cobra.Command {
 	evmGenerateCmd.Flags().StringToStringVar(&aliases, "alias", nil, "A map of identifier aliases (e.g. --alias name=somename)")
 
 	return evmGenerateCmd
+}
+
+func CreateGenerateCommand() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:   "generates",
+		Short: "A tool for generating Go bindings, crawlers, and other code",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	evmCmd := CreateEVMCommand()
+	starknetCmd := CreateStarknetCommand()
+
+	rootCmd.AddCommand(evmCmd, starknetCmd)
+	rootCmd.AddCommand(CreateGenerateBlockchainCmd())
+
+	return rootCmd
+}
+
+func CreateGenerateBlockchainCmd() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:   "blockchain",
+		Short: "Generate blockchain definitions and scripts",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Help()
+		},
+	}
+
+	definitionsCmd := CreateDefinitionsCommand()
+
+	rootCmd.AddCommand(definitionsCmd)
+
+	return rootCmd
+}
+
+func CreateDefinitionsCommand() *cobra.Command {
+
+	var rpc, chainName, outputPath string
+	var defenitions, models, clientInteraface, migrations, full, createSubscriptionType, deployScripts, L2Flag bool
+	var alembicLabelsConfig, alembicIndexesConfig string
+
+	definitionsCmd := &cobra.Command{
+		Use:   "chain",
+		Short: "Generate definitions for various blockchains",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := blockchain.CommonClient(rpc)
+			if err != nil {
+				log.Printf("Failed to create client: %s", err)
+				return err
+			}
+
+			chainInfo, err := blockchain.CollectChainInfo(*client)
+			if err != nil {
+				log.Printf("Failed to collect chain info: %s", err)
+				return err
+			}
+
+			// dump chain info as json formated to the output file
+			if outputPath != "" {
+				file, err := os.Create(outputPath)
+				if err != nil {
+					log.Printf("Failed to create output file: %s", err)
+					return err
+				}
+				// dump chain info as json formated to the output file
+				jsonChainInfo, err := json.MarshalIndent(chainInfo, "", "  ")
+				if err != nil {
+					log.Printf("Failed to marshal chain info: %s", err)
+					return err
+				}
+				_, err = file.Write(jsonChainInfo)
+				if err != nil {
+					log.Printf("Failed to write chain info to the output file: %s", err)
+					return err
+				}
+				log.Printf("Chain info written to %s", outputPath)
+			}
+
+			var sideChain bool
+
+			if chainInfo.ChainType == "L2" || L2Flag {
+				sideChain = true
+			}
+
+			var blockchainName string
+			blockchainNameList := strings.Split(chainName, "_")
+			for _, w := range blockchainNameList {
+				blockchainName += strings.Title(w)
+			}
+
+			// Execute template and write to output file
+			data := blockchain.BlockchainTemplateData{
+				BlockchainName:      blockchainName,
+				BlockchainNameLower: chainName,
+				IsSideChain:         sideChain,
+				ChainDashName:       strings.ReplaceAll(chainName, "_", "-"),
+			}
+
+			goPackage := fmt.Sprintf("github.com/moonstream-to/seer/blockchain/%s", strings.ToLower(data.BlockchainNameLower))
+
+			// check if the chain folder exists
+			if _, err := os.Stat(fmt.Sprintf("./blockchain/%s", data.BlockchainNameLower)); os.IsNotExist(err) {
+				err := os.Mkdir(fmt.Sprintf("./blockchain/%s", data.BlockchainNameLower), 0755)
+				if err != nil {
+					return err
+				}
+			}
+
+			// Generate Proto file
+
+			if defenitions || full {
+				// chain folder
+				chainFolder := fmt.Sprintf("./blockchain/%s", data.BlockchainNameLower)
+				// check if the chain folder exists
+				if _, err := os.Stat(chainFolder); os.IsNotExist(err) {
+					err := os.Mkdir(chainFolder, 0755)
+					if err != nil {
+						return err
+					}
+				}
+
+				protoPath := fmt.Sprintf("%s/%s.proto", chainFolder, data.BlockchainNameLower)
+
+				err = blockchain.GenerateProtoFile(data.BlockchainName, goPackage, data.IsSideChain, protoPath)
+				if err != nil {
+					return err
+				}
+			}
+
+			// Generate alembic models
+
+			if models || full {
+
+				modelsPath := "./moonstreamdb-v3/moonstreamdbv3"
+
+				// read the proto file and generate the models
+
+				err = blockchain.GenerateModelsFiles(data, modelsPath)
+				if err != nil {
+					return err
+				}
+
+			}
+
+			// Generate Go code from proto file with custom chain client
+
+			if clientInteraface || full {
+
+				// we need exucute that command protoc --go_out=. --go_opt=paths=source_relative $PROTO
+				protoFilePath := fmt.Sprintf("./blockchain/%s/%s.proto", data.BlockchainNameLower, data.BlockchainNameLower)
+
+				log.Printf("Generating Go code from proto: %s", protoFilePath)
+
+				// Execute protoc command
+				cmd := exec.Command("protoc", "--go_out=.", "--go_opt=paths=source_relative", protoFilePath)
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+
+				if err := cmd.Run(); err != nil {
+					return fmt.Errorf("failed to execute protoc command: %w", err)
+				}
+
+				dirPath := filepath.Join(".", "blockchain", data.BlockchainNameLower)
+				blockchainNameFilePath := filepath.Join(dirPath, fmt.Sprintf("%s.go", data.BlockchainNameLower))
+
+				// Read and parse the template file
+				tmpl, parseErr := template.ParseFiles("blockchain/blockchain.go.tmpl")
+				if parseErr != nil {
+					return parseErr
+				}
+
+				// Create output file
+				if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
+					mkdirErr := os.Mkdir(dirPath, 0775)
+					if mkdirErr != nil {
+						return mkdirErr
+					}
+				}
+
+				outputFile, createErr := os.Create(blockchainNameFilePath)
+				if createErr != nil {
+					return createErr
+				}
+				defer outputFile.Close()
+
+				execErr := tmpl.Execute(outputFile, data)
+				if execErr != nil {
+					return execErr
+				}
+
+				log.Printf("Blockchain file generated successfully: %s", blockchainNameFilePath)
+
+				log.Printf("Generating client interfaces for %s", chainName)
+			}
+
+			// Run Alembic revision --autogenerate
+
+			if migrations || full {
+
+				// Change directory to moonstreamdb-v3 for alembic
+				err = os.Chdir("./moonstreamdb-v3")
+				if err != nil {
+					return fmt.Errorf("failed to change directory: %w", err)
+				}
+
+				if alembicLabelsConfig != "" {
+
+					// Check if database is up to date
+					cmd := exec.Command("alembic", "-c", alembicLabelsConfig, "upgrade", "head")
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+
+					if err := cmd.Run(); err != nil {
+						return fmt.Errorf("failed to upgrade Alembic database: %w", err)
+					}
+
+					log.Println("Generated Alembic labels migration successfully.\n %s", cmd.Stdout)
+
+				}
+
+				// Change directory back to the root
+
+				if alembicIndexesConfig != "" {
+
+					// Execute Alembic revision --autogenerate
+					cmd := exec.Command("alembic", "-c", "alembic_indexes.dev.ini", "revision", "--autogenerate", "-m", fmt.Sprintf("add_%s_tables", data.BlockchainNameLower))
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+
+					if err := cmd.Run(); err != nil {
+						return fmt.Errorf("failed to generate Alembic revision: %w", err)
+					}
+					// return shell output
+					log.Printf("Generate Alembic indexes migration successfully.\n %s", cmd.Stdout)
+				}
+
+				log.Println("Alembic revision generated successfully.")
+			}
+
+			// Generate deploy scripts
+
+			if deployScripts || full {
+				// Create deploy scripts in deploy folder
+				err := blockchain.GenerateDeploy(data, "./deploy")
+
+				if err != nil {
+					return err
+				}
+
+			}
+
+			// Generate bugout resources
+
+			if createSubscriptionType {
+				log.Printf("Generating subscription type for %s", chainName)
+			}
+
+			return nil
+		},
+	}
+
+	definitionsCmd.Flags().StringVar(&rpc, "rpc", "", "The RPC URL for the blockchain")
+	definitionsCmd.Flags().StringVar(&chainName, "chain-name", "", "The name of the blockchain")
+	definitionsCmd.Flags().StringVar(&outputPath, "output", "", "The path to the output file")
+	definitionsCmd.Flags().BoolVar(&defenitions, "definitions", false, "Generate definitions")
+	definitionsCmd.Flags().BoolVar(&models, "models", false, "Generate models")
+	definitionsCmd.Flags().BoolVar(&clientInteraface, "interfaces", false, "Generate interfaces")
+	definitionsCmd.Flags().BoolVar(&migrations, "migrations", false, "Generate migrations")
+	definitionsCmd.Flags().BoolVar(&full, "full", false, "Generate all")
+	definitionsCmd.Flags().BoolVar(&createSubscriptionType, "subscription", false, "Generate subscription type")
+	definitionsCmd.Flags().BoolVar(&deployScripts, "deploy", false, "Generate deploy scripts")
+	definitionsCmd.Flags().BoolVar(&L2Flag, "L2", false, "Set this flag if the chain is a Layer 2 chain")
+	definitionsCmd.Flags().StringVar(&alembicLabelsConfig, "alembic-labels", "", "The path to the alembic labels config file")
+	definitionsCmd.Flags().StringVar(&alembicIndexesConfig, "alembic-indexes", "", "The path to the alembic indexes config file")
+
+	return definitionsCmd
+
 }
 
 func StringPrompt(label string) (string, error) {

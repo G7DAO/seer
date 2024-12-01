@@ -5,8 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html/template"
+	"io/ioutil"
 	"log"
 	"math/big"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -95,6 +100,24 @@ func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
 	} else {
 		return nil, errors.New("unsupported chain type")
 	}
+}
+
+func CommonClient(url string) (*seer_common.EvmClient, error) {
+	client, err := seer_common.NewEvmClient(url, 4)
+	return client, err
+}
+
+type ChainInfo struct {
+	ChainType string                 `json:"chainType"` // L1 or L2
+	ChainID   *big.Int               `json:"chainID"`   // Chain ID
+	Block     *seer_common.BlockJson `json:"block"`
+}
+
+type BlockchainTemplateData struct {
+	BlockchainName      string
+	BlockchainNameLower string
+	ChainDashName       string
+	IsSideChain         bool
 }
 
 type BlockData struct {
@@ -287,4 +310,259 @@ func FindDeployedBlock(client BlockchainClient, address string) (uint64, error) 
 	}
 
 	return left, nil
+}
+
+func CollectChainInfo(client seer_common.EvmClient) (*ChainInfo, error) {
+	ctx := context.Background()
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+
+	defer cancel()
+
+	var chainInfo ChainInfo
+
+	// Get chain id
+	chainID, err := client.GetChainID(ctx)
+
+	if err != nil {
+		log.Printf("Failed to get chain id: %v", err)
+		return nil, err
+	}
+
+	chainInfo.ChainID = chainID
+
+	// Get latest block number
+	latestBlockNumber, err := client.GetLatestBlockNumber()
+
+	if err != nil {
+		log.Printf("Failed to get latest block number: %v", err)
+		return nil, err
+	}
+
+	// Get block by number
+
+	ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+
+	defer cancel()
+
+	block, err := client.GetBlockByNumber(ctx, latestBlockNumber, true)
+
+	if err != nil {
+		log.Printf("Failed to get block by number: %v", err)
+		return nil, err
+	}
+
+	chainInfo.Block = block
+
+	// Initialize a score
+	l2Score := 0
+
+	// Method 1: Check for L2-specific fields
+
+	// Check for L2-specific fields
+	if block.L1BlockNumber != "" {
+		l2Score++
+	}
+	if block.SendRoot != "" {
+		l2Score++
+	}
+
+	if l2Score >= 1 {
+		chainInfo.ChainType = "L2"
+	} else {
+		chainInfo.ChainType = "L1"
+	}
+
+	return &chainInfo, nil
+
+}
+
+func GenerateProtoFile(chainName string, goPackage string, isL2 bool, outputPath string) error {
+	tmplData := seer_common.ProtoTemplateData{
+		GoPackage: goPackage,
+		ChainName: chainName,
+		IsL2:      isL2,
+	}
+
+	// Read the template file
+	tmplContent, err := ioutil.ReadFile("./blockchain/common/evm_proto_template.proto.tmpl")
+	if err != nil {
+		return fmt.Errorf("failed to read template file: %v", err)
+	}
+
+	// Parse the template
+	tmpl, err := template.New("proto").Parse(string(tmplContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %v", err)
+	}
+
+	// Execute the template with data
+	var output bytes.Buffer
+	err = tmpl.Execute(&output, tmplData)
+	if err != nil {
+		return fmt.Errorf("failed to execute template: %v", err)
+	}
+
+	// Write the output to the specified path
+	err = ioutil.WriteFile(outputPath, output.Bytes(), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write proto file: %v", err)
+	}
+
+	fmt.Printf("Protobuf definitions generated successfully at %s.\n", outputPath)
+	return nil
+}
+
+func ProtoKeys(msg proto.Message) []string {
+	m := make([]string, 0)
+	messageReflect := msg.ProtoReflect()
+	fields := messageReflect.Descriptor().Fields()
+	for i := 0; i < fields.Len(); i++ {
+		fieldDesc := fields.Get(i)
+		fieldName := string(fieldDesc.Name())
+		m = append(m, fieldName)
+
+	}
+	return m
+}
+
+func GenerateModelsFiles(data BlockchainTemplateData, modelsPath string) error {
+
+	// Define the directory path
+	//dirPath := filepath.Join(modelsPath, data.BlockchainNameLower)
+
+	// Check if the directory exists
+	// if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+	// 	// Create the directory along with any necessary parents
+	// 	if err := os.MkdirAll(dirPath, 0755); err != nil {
+	// 		return fmt.Errorf("failed to create directory %s: %v", dirPath, err)
+	// 	}
+	// }
+	templateIndexFile := fmt.Sprintf("%s/models_indexes.py.tmpl", modelsPath)
+	templateLabelsFile := fmt.Sprintf("%s/models_labels.py.tmpl", modelsPath)
+
+	// Read the template file
+	tmplIndexContent, err := ioutil.ReadFile(templateIndexFile)
+	if err != nil {
+		return fmt.Errorf("failed to read template file: %v", err)
+	}
+
+	tmplLabelsContent, err := ioutil.ReadFile(templateLabelsFile)
+	if err != nil {
+		return fmt.Errorf("failed to read template file: %v", err)
+	}
+
+	// Parse the template
+	tmplIndex, err := template.New("indexes").Parse(string(tmplIndexContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %v", err)
+	}
+
+	tmplLabels, err := template.New("labels").Parse(string(tmplLabelsContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %v", err)
+	}
+
+	// Execute the template with data
+	var outputIndex bytes.Buffer
+	err = tmplIndex.Execute(&outputIndex, data)
+	if err != nil {
+		return fmt.Errorf("failed to execute template: %v", err)
+	}
+
+	var outputLabels bytes.Buffer
+	err = tmplLabels.Execute(&outputLabels, data)
+	if err != nil {
+		return fmt.Errorf("failed to execute template: %v", err)
+	}
+
+	outputPath := fmt.Sprintf("%s/models_indexes/%s_indexes.py", modelsPath, data.BlockchainNameLower)
+
+	// Write the output to the specified path
+	err = ioutil.WriteFile(outputPath, outputIndex.Bytes(), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write models file: %v", err)
+	}
+
+	outputPath = fmt.Sprintf("%s/models/%s_labels.py", modelsPath, data.BlockchainNameLower)
+	err = ioutil.WriteFile(outputPath, outputLabels.Bytes(), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write models file: %v", err)
+	}
+
+	fmt.Printf("Models generated successfully at %s.\n", outputPath)
+	return nil
+}
+
+func GenerateDeploy(chain BlockchainTemplateData, deployPath string) error {
+	funcMap := template.FuncMap{
+		"replaceUnderscoreWithDash": func(s string) string {
+			return strings.ReplaceAll(s, "_", "-")
+		},
+		"replaceUnderscoreWithSpace": func(s string) string {
+			return strings.ReplaceAll(s, "_", " ")
+		},
+	}
+
+	templateDir := "deploy/templates"
+
+	// Read all entries in the template directory
+	entries, err := os.ReadDir(templateDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue // Skip directories
+		}
+
+		templateFileName := entry.Name()
+		// Only process files with .tmpl extension
+		if !strings.HasSuffix(templateFileName, ".tmpl") {
+			continue
+		}
+
+		templateFilePath := filepath.Join(templateDir, templateFileName)
+
+		// Parse the template file
+		tmpl, parseErr := template.New(templateFileName).Funcs(funcMap).ParseFiles(templateFilePath)
+		if parseErr != nil {
+			return parseErr
+		}
+
+		// Generate the output file name
+		outputFileName := generateOutputFileName(templateFileName, chain.ChainDashName)
+		outputFilePath := filepath.Join(deployPath, outputFileName)
+
+		// Create the output file
+		outputFile, createErr := os.Create(outputFilePath)
+		if createErr != nil {
+			return createErr
+		}
+		defer outputFile.Close()
+
+		// Execute the template and write to the output file
+		if err := tmpl.Execute(outputFile, chain); err != nil {
+			return err
+		}
+
+		log.Printf("File generated successfully: %s", outputFilePath)
+	}
+
+	return nil
+}
+
+// Helper function to generate output file names dynamically
+func generateOutputFileName(templateFileName, chainName string) string {
+	// Remove the .tmpl extension
+	baseFileName := strings.TrimSuffix(templateFileName, ".tmpl")
+
+	// Split the file name into name and extension
+	ext := filepath.Ext(baseFileName)
+	name := strings.TrimSuffix(baseFileName, ext)
+
+	// Insert the chain name before the extension
+	outputFileName := fmt.Sprintf("%s-%s%s", name, chainName, ext)
+	return outputFileName
 }
