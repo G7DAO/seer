@@ -1402,6 +1402,71 @@ func PrintStruct(cmd *cobra.Command, name string, rv reflect.Value, depth int) {
 `
 
 var VerifyContractCodeCommandTemplate string = `
+type CompilerInfo struct {
+    SolidityVersion string
+    EVMVersion      string
+}
+
+func ExtractCompilerInfo(bytecode string) (*CompilerInfo, error) {
+    // Remove "0x" prefix if present
+    bytecode = strings.TrimPrefix(bytecode, "0x")
+    
+    // Check minimum length (we need at least the version identifier)
+    if len(bytecode) < 20 {
+        return nil, fmt.Errorf("bytecode too short")
+    }
+    
+    // Get the last bytes that contain version info (last 20 chars)
+    versionData := bytecode[len(bytecode)-20:]
+    
+    // Check for solc identifier '64736f6c63'
+    if !strings.HasPrefix(versionData, "64736f6c63") {
+        return nil, fmt.Errorf("no solidity version identifier found")
+    }
+    
+    // Extract Solidity version numbers
+    // Skip first 10 chars (64736f6c63) and the following '43' indicator
+    versionHex := versionData[12:18]
+    
+    // Parse major, minor, and patch versions
+    major := int64(0)  // Always 0 for current Solidity versions
+    minor, err := strconv.ParseInt(versionHex[2:4], 16, 64)
+    if err != nil {
+        return nil, fmt.Errorf("failed to parse minor version: %v", err)
+    }
+    patch, err := strconv.ParseInt(versionHex[4:], 16, 64)
+    if err != nil {
+        return nil, fmt.Errorf("failed to parse patch version: %v", err)
+    }
+
+    // Determine EVM version based on Solidity version
+    evmVersion := determineEVMVersion(major, minor, patch)
+    
+    return &CompilerInfo{
+        SolidityVersion: fmt.Sprintf("%d.%d.%d", major, minor, patch),
+        EVMVersion:      evmVersion,
+    }, nil
+}
+
+func determineEVMVersion(major, minor, patch int64) string {
+    // This mapping is based on Solidity's default EVM version per compiler version
+    // Reference: https://docs.soliditylang.org/en/latest/using-the-compiler.html#target-options
+    switch {
+    case minor >= 8:
+        return "london"    // Solidity 0.8.0+ defaults to London
+    case minor == 7:
+        return "istanbul"  // Solidity 0.7.x defaults to Istanbul
+    case minor == 6:
+        return "istanbul"  // Solidity 0.6.x defaults to Istanbul
+    case minor == 5 && patch >= 5:
+        return "petersburg" // Solidity 0.5.5+ defaults to Petersburg
+    case minor == 5:
+        return "byzantium" // Solidity 0.5.0-0.5.4 defaults to Byzantium
+    default:
+        return "homestead" // Earlier versions defaulted to Homestead
+    }
+}
+
 func VerifyContractCode(
 	contractAddress common.Address, 
 	contractCode string, 
@@ -1432,33 +1497,15 @@ func VerifyContractCode(
 
     // Prepare the request body
     requestBody := map[string]interface{}{
-        "address":              contractAddress.Hex(),
-        "sourceCode":           contractCode,
-        "constructorArguments": hex.EncodeToString(constructorArguments),
-        "compilerVersion":      solidityVersion,
-        "optimizationUsed":     optimizationUsed,
-        "runs":                 runs,
-        "evmVersion":           evmVersion,
-        "libraryName1":        "",
-        "libraryAddress1":     "",
-        "libraryName2":        "",
-        "libraryAddress2":     "",
-        "libraryName3":        "",
-		"libraryAddress3":     "",
-        "libraryName4":        "",
-        "libraryAddress4":     "",
-        "libraryName5":        "",
-        "libraryAddress5":     "",
-        "libraryName6":        "",
-        "libraryAddress6":     "",
-        "libraryName7":        "",
-        "libraryAddress7":     "",
-        "libraryName8":        "",
-        "libraryAddress8":     "",
-        "libraryName9":        "",
-        "libraryAddress9":     "",
-        "libraryName10":       "",
-        "libraryAddress10":    "",
+        "compiler_version":            solidityVersion,
+        "source_code":                 contractCode,
+        "is_optimization_enabled":     optimizationUsed,
+        "is_yul_contract":            false,
+        "optimization_runs":           fmt.Sprintf("%d", runs),
+        "evm_version":                evmVersion,
+        "autodetect_constructor_args": false,
+        "constructor_args":            hex.EncodeToString(constructorArguments),
+        "license_type":               "none",
     }
 
     // Send the verification request
@@ -1487,7 +1534,7 @@ func VerifyContractCode(
     // Check the verification result
     status, ok := response["status"].(string)
     if !ok {
-        return fmt.Errorf("unexpected response format")
+        return fmt.Errorf("unexpected response format: %v", response)
     }
 
     if status == "1" {
@@ -1495,7 +1542,7 @@ func VerifyContractCode(
     } else {
         result, ok := response["result"].(string)
         if !ok {
-            return fmt.Errorf("unexpected response format")
+            return fmt.Errorf("unexpected response format: %v", response)
         }
         return fmt.Errorf("contract verification failed: %s", result)
     }
