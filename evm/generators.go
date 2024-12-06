@@ -1408,44 +1408,44 @@ type CompilerInfo struct {
 }
 
 func ExtractCompilerInfo(bytecode string) (*CompilerInfo, error) {
-    // Remove "0x" prefix if present
-    bytecode = strings.TrimPrefix(bytecode, "0x")
-    
-    // Check minimum length (we need at least the version identifier)
-    if len(bytecode) < 20 {
-        return nil, fmt.Errorf("bytecode too short")
-    }
-    
-    // Get the last bytes that contain version info (last 20 chars)
-    versionData := bytecode[len(bytecode)-20:]
-    
-    // Check for solc identifier '64736f6c63'
-    if !strings.HasPrefix(versionData, "64736f6c63") {
-        return nil, fmt.Errorf("no solidity version identifier found")
-    }
-    
-    // Extract Solidity version numbers
-    // Skip first 10 chars (64736f6c63) and the following '43' indicator
-    versionHex := versionData[12:18]
-    
-    // Parse major, minor, and patch versions
-    major := int64(0)  // Always 0 for current Solidity versions
-    minor, err := strconv.ParseInt(versionHex[2:4], 16, 64)
-    if err != nil {
-        return nil, fmt.Errorf("failed to parse minor version: %v", err)
-    }
-    patch, err := strconv.ParseInt(versionHex[4:], 16, 64)
-    if err != nil {
-        return nil, fmt.Errorf("failed to parse patch version: %v", err)
-    }
+	// Remove "0x" prefix if present
+	bytecode = strings.TrimPrefix(bytecode, "0x")
 
-    // Determine EVM version based on Solidity version
-    evmVersion := determineEVMVersion(major, minor, patch)
-    
-    return &CompilerInfo{
-        SolidityVersion: fmt.Sprintf("%d.%d.%d", major, minor, patch),
-        EVMVersion:      evmVersion,
-    }, nil
+	if len(bytecode) < 20 {
+		return nil, fmt.Errorf("bytecode too short (length: %d)", len(bytecode))
+	}
+
+	// Get the last bytes that contain version info
+	versionData := bytecode[len(bytecode)-20:]
+
+	// Check for solc identifier '736f6c6343' (which is 'solcC' in hex)
+	if !strings.HasPrefix(versionData, "736f6c6343") {
+		return nil, fmt.Errorf("no solidity version identifier found in version data: %s", versionData)
+	}
+
+	// Extract version numbers (0008180033)
+	// Skip first 10 chars (736f6c6343)
+	versionHex := versionData[10:18]  // Changed to get 00081800
+
+	// Parse major, minor, and patch versions
+	// Changed parsing logic to correctly handle Solidity versions
+	major := int64(0) // Always 0 for current Solidity versions
+	minor, err := strconv.ParseInt(versionHex[2:4], 16, 64) // Changed from 4:6 to 2:4
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse minor version: %v", err)
+	}
+	patch, err := strconv.ParseInt(versionHex[4:6], 16, 64) // Changed from 6:8 to 4:6
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse patch version: %v", err)
+	}
+
+	// Determine EVM version based on Solidity version
+	evmVersion := determineEVMVersion(major, minor, patch)
+
+	return &CompilerInfo{
+		SolidityVersion: fmt.Sprintf("v0.%d.%d", minor, patch), // Changed format string
+		EVMVersion:      evmVersion,
+	}, nil
 }
 
 func determineEVMVersion(major, minor, patch int64) string {
@@ -1467,13 +1467,94 @@ func determineEVMVersion(major, minor, patch int64) string {
     }
 }
 
+type EtherscanResponse struct {
+    Status  string ` + "`" + `json:"status"` + "`" + `
+    Message string ` + "`" + `json:"message"` + "`" + `
+    Result  string ` + "`" + `json:"result"` + "`" + `
+}
+
+func (r *EtherscanResponse) IsOk() bool {
+    return r.Status == "1"
+}
+
+func (r *EtherscanResponse) IsBytecodeMissingInNetworkError() bool {
+    return strings.Contains(strings.ToLower(r.Message), "missing bytecode")
+}
+
+func (r *EtherscanResponse) IsAlreadyVerified() bool {
+    return strings.Contains(strings.ToLower(r.Message), "already verified")
+}
+
+// SolidityTag represents a tag in the Solidity repository
+type SolidityTag struct {
+    Object struct {
+        SHA string ` + "`" + `json:"sha"` + "`" + `
+    } ` + "`" + `json:"object"` + "`" + `
+}
+
+// GetSolidityCommitHash fetches the commit hash for a specific Solidity version tag
+func GetSolidityCommitHash(version string) (string, error) {
+    // Clean version string (ensure it starts with 'v')
+    if !strings.HasPrefix(version, "v") {
+        version = "v" + version
+    }
+
+    // Create HTTP client with timeout
+    client := &http.Client{Timeout: 10 * time.Second}
+    
+    // Get tag info from GitHub API
+    url := fmt.Sprintf("https://api.github.com/repos/ethereum/solidity/git/refs/tags/%s", version)
+    req, err := http.NewRequest("GET", url, nil)
+    if err != nil {
+        return "", fmt.Errorf("failed to create request: %w", err)
+    }
+
+    // Add User-Agent header to avoid GitHub API limitations
+    req.Header.Set("User-Agent", "seer-contract-verifier")
+
+    resp, err := client.Do(req)
+    if err != nil {
+        return "", fmt.Errorf("failed to fetch tag info: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        return "", fmt.Errorf("GitHub API returned status %d for version %s", resp.StatusCode, version)
+    }
+
+    var tag SolidityTag
+    if err := json.NewDecoder(resp.Body).Decode(&tag); err != nil {
+        return "", fmt.Errorf("failed to decode GitHub response: %w", err)
+    }
+
+    // Return first 8 characters of the commit hash
+    if len(tag.Object.SHA) < 8 {
+        return "", fmt.Errorf("invalid commit hash length")
+    }
+    return tag.Object.SHA[:8], nil
+}
+
+// GetFullCompilerVersion gets the full compiler version with commit hash
+func GetFullCompilerVersion(version string) (string, error) {
+    // Get commit hash from GitHub tag
+    commitHash, err := GetSolidityCommitHash(version)
+    if err != nil {
+        return "", fmt.Errorf("failed to get commit hash: %w", err)
+    }
+
+    // Format full version string
+    fullVersion := fmt.Sprintf("%s+commit.%s", version, commitHash)
+    return fullVersion, nil
+}
+
 func VerifyContractCode(
 	contractAddress common.Address, 
 	contractCode string, 
-	blockExplorerAPI string,
-	solidityVersion string,
+	apiURL string,
+	apiKey string,
+	contractName string,
+	compilerVersion string,
 	runs uint,
-	optimizationUsed bool,
 	evmVersion string,
 	{{- range .DeployHandler.MethodArgs}}
 		{{.CLIVar}} {{.CLIType}},
@@ -1495,68 +1576,139 @@ func VerifyContractCode(
 		return fmt.Errorf("failed to pack constructor arguments: %v", err)
 	}
 
-    // Prepare the request body
-    requestBody := map[string]interface{}{
-        "compiler_version":            solidityVersion,
-        "source_code":                 contractCode,
-        "is_optimization_enabled":     optimizationUsed,
-        "is_yul_contract":            false,
-        "optimization_runs":           fmt.Sprintf("%d", runs),
-        "evm_version":                evmVersion,
-        "autodetect_constructor_args": false,
-        "constructor_args":            hex.EncodeToString(constructorArguments),
-        "license_type":               "none",
-    }
+	fullCompilerVersion, err := GetFullCompilerVersion(compilerVersion)
+	if err != nil {
+		return fmt.Errorf("failed to get full compiler version: %w", err)
+	}
+
+    // Prepare the form data
+    formData := url.Values{}
+    formData.Set("apikey", apiKey)
+    formData.Set("module", "contract")
+    formData.Set("action", "verifysourcecode")
+    formData.Set("contractaddress", contractAddress.Hex())
+    formData.Set("sourceCode", contractCode)
+    formData.Set("codeformat", "solidity-single-file")
+    formData.Set("contractname", contractName)
+    formData.Set("compilerversion", fullCompilerVersion)
+	formData.Set("evmversion", evmVersion)
+	formData.Set("optimizationUsed", fmt.Sprintf("%t", runs > 0))
+	formData.Set("runs", fmt.Sprintf("%d", runs))
+    formData.Set("constructorArguments", hex.EncodeToString(constructorArguments))
 
     // Send the verification request
-    jsonData, err := json.Marshal(requestBody)
-    if err != nil {
-        return fmt.Errorf("failed to marshal request body: %v", err)
+    // Create HTTP client
+    client := &http.Client{
+        Timeout: time.Second * 30,
     }
 
-    resp, err := http.Post(blockExplorerAPI, "application/json", bytes.NewBuffer(jsonData))
+    // Send POST request
+    resp, err := client.PostForm(apiURL, formData)
     if err != nil {
-        return fmt.Errorf("failed to send verification request: %v", err)
+        return fmt.Errorf("network request error: %v", err)
     }
     defer resp.Body.Close()
 
-    // Read and parse the response
+    // Check status code
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+        return fmt.Errorf("invalid status code: %d", resp.StatusCode)
+    }
+
+    // Read and parse response
     body, err := io.ReadAll(resp.Body)
     if err != nil {
         return fmt.Errorf("failed to read response body: %v", err)
     }
 
-    var response map[string]interface{}
+    var response EtherscanResponse
     if err := json.Unmarshal(body, &response); err != nil {
-        return fmt.Errorf("failed to parse response body: %v", err)
+        return fmt.Errorf("failed to parse response: %v", err)
     }
 
-    // Check the verification result
-    status, ok := response["status"].(string)
-    if !ok {
-        return fmt.Errorf("unexpected response format: %v", response)
+    // Check for specific error conditions
+    if response.IsBytecodeMissingInNetworkError() {
+        return fmt.Errorf("contract bytecode not found on network for address %s", contractAddress.Hex())
     }
 
-    if status == "1" {
-        fmt.Println("Contract verification successful!")
-    } else {
-        result, ok := response["result"].(string)
-        if !ok {
-            return fmt.Errorf("unexpected response format: %v", response)
-        }
-        return fmt.Errorf("contract verification failed: %s", result)
+    if response.IsAlreadyVerified() {
+        return fmt.Errorf("contract %s at address %s is already verified", contractName, contractAddress.Hex())
     }
 
-    return nil
+    if !response.IsOk() {
+        return fmt.Errorf("verification failed: %s", response.Message)
+    }
+
+    guid := response.Result
+	fmt.Printf("Contract verification submitted successfully. GUID: %s\n", guid)
+	
+	// Check verification status
+	fmt.Println("Checking verification status...")
+	for i := 0; i < 10; i++ { // Try up to 10 times
+		status, err := CheckVerificationStatus(apiURL, apiKey, guid)
+		if err != nil {
+			return fmt.Errorf("failed to check verification status: %v", err)
+		}
+
+		if status == "Pass - Verified" {
+			fmt.Println("Contract successfully verified!")
+			return nil
+		} else if status == "Fail - Unable to verify" {
+			return fmt.Errorf("contract verification failed")
+		}
+
+		fmt.Println("Verification in progress, waiting 5 seconds...")
+		time.Sleep(5 * time.Second)
+	}
+
+	return fmt.Errorf("verification status check timed out")
+}
+
+func CheckVerificationStatus(apiURL string, apiKey string, guid string) (string, error) {
+	// Prepare the query parameters
+	params := url.Values{}
+	params.Set("apikey", apiKey)
+	params.Set("module", "contract")
+	params.Set("action", "checkverifystatus")
+	params.Set("guid", guid)
+
+	// Create the full URL
+	fullURL := fmt.Sprintf("%s?%s", apiURL, params.Encode())
+
+	// Create HTTP client
+	client := &http.Client{
+		Timeout: time.Second * 10,
+	}
+
+	// Send GET request
+	resp, err := client.Get(fullURL)
+	if err != nil {
+		return "", fmt.Errorf("network request error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check status code
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("invalid status code: %d", resp.StatusCode)
+	}
+
+	// Read and parse response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	var response EtherscanResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return "", fmt.Errorf("failed to parse response: %v", err)
+	}
+
+	return response.Result, nil
 }
 
 func VerifyContractCodeCommand() *cobra.Command {
-	var contractAddressRaw, blockExplorerAPI string
+	var contractAddressRaw, apiURL, apiKey string
 	var contractAddress common.Address
-	var solidityVersion string
 	var runs uint
-	var optimizationUsed bool
-	var evmVersion string
 	
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
@@ -1574,26 +1726,6 @@ func VerifyContractCodeCommand() *cobra.Command {
 			}
 			contractAddress = common.HexToAddress(contractAddressRaw)
 
-			if solidityVersion == "" {
-				fmt.Println("--solidity-version not specified, using default (v0.8.19+commit.7dd6d404)")
-				solidityVersion = "v0.8.19+commit.7dd6d404"
-			}
-
-			if runs == 0 {
-				fmt.Println("--runs not specified, using default (200)")
-				runs = 200
-			}
-
-			if evmVersion == "" {
-				fmt.Println("--evm-version not specified, using default (london)")
-				evmVersion = "london"
-			}
-
-			if optimizationUsed == false {
-				fmt.Println("--optimization-used not specified, using default (true)")
-				optimizationUsed = true
-			}
-
 			{{range .DeployHandler.MethodArgs}}
 			{{.PreRunE}}
 			{{- end}}
@@ -1601,16 +1733,20 @@ func VerifyContractCodeCommand() *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return VerifyContractCode(contractAddress, {{.StructName}}ContractCode, blockExplorerAPI, solidityVersion, runs, optimizationUsed, evmVersion, {{- range .DeployHandler.MethodArgs}}{{.CLIVar}},{{- end}})
+			compilerInfo, err := ExtractCompilerInfo({{.StructName}}Bin)
+			if err != nil {
+				return fmt.Errorf("failed to extract compiler info: %v", err)
+			}
+
+			contractName := "{{.StructName}}"
+			return VerifyContractCode(contractAddress, {{.StructName}}ContractCode, apiURL, apiKey, contractName, compilerInfo.SolidityVersion, runs, compilerInfo.EVMVersion, {{- range .DeployHandler.MethodArgs}}{{.CLIVar}},{{- end}})
 		},
 	}
 
 	cmd.Flags().StringVar(&contractAddressRaw, "contract", "c", "The address of the contract to verify")
-	cmd.Flags().StringVar(&blockExplorerAPI, "api", "a", "The block explorer API to use")
-	cmd.Flags().StringVar(&solidityVersion, "solidity-version", "", "The Solidity compiler version to use")
+	cmd.Flags().StringVar(&apiURL, "api", "a", "The block explorer API to use")
+	cmd.Flags().StringVar(&apiKey, "api-key", "k", "The API key to use for the block explorer")
 	cmd.Flags().UintVar(&runs, "runs", 0, "The number of runs to use for optimization")
-	cmd.Flags().StringVar(&evmVersion, "evm-version", "", "The EVM version to use")
-	cmd.Flags().BoolVar(&optimizationUsed, "optimization-used", false, "Whether optimization is used")
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
 	{{- end}}
