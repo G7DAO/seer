@@ -13,7 +13,6 @@ import (
 	"go/printer"
 	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -165,42 +164,95 @@ func GenerateHeader(packageName string, cli bool, includeMain bool, foundry stri
 }
 
 // Get a flattened source code from a solidity file
-// Get a flattened source code from a solidity file
 func GetFlattenedContractCode(sourceCodePath string) (string, error) {
-	// Create a temporary directory to store the flattened file
-	tmpDir, err := os.MkdirTemp("", "seer-flatten-*")
+	// Read the main source file
+	sourceCode, err := os.ReadFile(sourceCodePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Generate the output file path
-	fileName := filepath.Base(sourceCodePath)
-	outputPath := filepath.Join(tmpDir, "flattened_"+fileName)
-
-	// Try Foundry's forge flatten first
-	cmd := exec.Command("forge", "flatten", sourceCodePath, "--output", outputPath)
-	if err := cmd.Run(); err != nil {
-		// If forge fails, try Hardhat's flatten
-		cmd = exec.Command("npx", "hardhat", "flatten", sourceCodePath, "--output", outputPath)
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("failed to flatten contract using either Foundry or Hardhat. Make sure one of them is installed: %v", err)
-		}
+		return "", fmt.Errorf("failed to read source file: %v", err)
 	}
 
-	// Read the flattened file
-	sourceCodeBytes, err := os.ReadFile(outputPath)
+	// Get the directory containing the main source file
+	baseDir := filepath.Dir(sourceCodePath)
+
+	// Initialize a map to track processed files
+	processedFiles := make(map[string]bool)
+
+	// Process the main file and its imports
+	flattened, err := flattenSourceCode(string(sourceCode), baseDir, processedFiles)
 	if err != nil {
-		return "", fmt.Errorf("failed to read flattened source code: %v", err)
+		return "", err
 	}
-
-	// Process the source code to be a valid Go string
-	sourceCodeString := string(sourceCodeBytes)
 
 	// Escape any backticks in the source code
-	sourceCodeString = strings.ReplaceAll(sourceCodeString, "`", "` + \"`\" + `")
+	sourceCodeString := strings.ReplaceAll(flattened, "`", "` + \"`\" + `")
 
+	// Simply wrap the flattened source in a constant declaration
 	return sourceCodeString, nil
+}
+
+func flattenSourceCode(content, baseDir string, processedFiles map[string]bool) (string, error) {
+	// Find all import statements
+	importRegex := regexp.MustCompile(`import\s+(?:{[^}]+}\s+from\s+)?["']([^"']+)["'];`)
+	imports := importRegex.FindAllStringSubmatch(content, -1)
+
+	// Process each import
+	for _, match := range imports {
+		importPath := match[1]
+
+		// Resolve the full path of the import
+		var fullPath string
+		if strings.HasPrefix(importPath, "@") || strings.HasPrefix(importPath, "hardhat/") {
+			// Node modules import - search up the directory tree
+			currentDir := baseDir
+			for {
+				possiblePath := filepath.Join(currentDir, "node_modules", importPath)
+				if _, err := os.Stat(possiblePath); err == nil {
+					fullPath = possiblePath
+					break
+				}
+				parentDir := filepath.Dir(currentDir)
+				if parentDir == currentDir {
+					return "", fmt.Errorf("could not find node_modules containing %s", importPath)
+				}
+				currentDir = parentDir
+			}
+		} else {
+			// Relative import
+			fullPath = filepath.Join(baseDir, importPath)
+		}
+
+		// Skip if already processed
+		if processedFiles[fullPath] {
+			// Replace the import statement with empty string since we've already included this file
+			content = strings.Replace(content, match[0], "", 1)
+			continue
+		}
+
+		// Read and process the imported file
+		importedContent, err := os.ReadFile(fullPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read imported file %s: %v", fullPath, err)
+		}
+
+		// Process the imported content recursively
+		importedDir := filepath.Dir(fullPath)
+		flattenedImport, err := flattenSourceCode(string(importedContent), importedDir, processedFiles)
+		if err != nil {
+			return "", err
+		}
+
+		// Clean up SPDX and pragma only for imported files
+		flattenedImport = regexp.MustCompile(`//\s*SPDX-License-Identifier:.*\n`).ReplaceAllString(flattenedImport, "")
+		flattenedImport = regexp.MustCompile(`pragma\s+solidity\s+[^;]+;`).ReplaceAllString(flattenedImport, "")
+
+		// Mark as processed
+		processedFiles[fullPath] = true
+
+		// Replace the import statement with the flattened content
+		content = strings.Replace(content, match[0], flattenedImport, 1)
+	}
+
+	return content, nil
 }
 
 // ParseBoundParameter parses an ast.Node representing a method parameter (or return value). It inspects
@@ -1867,7 +1919,6 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to generate deploy bytecode: %v", err)
 			}
-
 			if calldata {
 				deployCalldataHex := hex.EncodeToString(deployCalldata)
 				cmd.Println(deployCalldataHex)
