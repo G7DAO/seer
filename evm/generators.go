@@ -1315,7 +1315,7 @@ func CalculateSafeTxHash(safeAddress common.Address, txData SafeTransactionData,
 	return common.BytesToHash(typedDataHash), nil
 }
 
-func NewLedgerTransactor() (*bind.TransactOpts, accounts.Wallet, accounts.Account) {
+func NewLedgerTransactor(chainID *big.Int) (*bind.TransactOpts, accounts.Wallet, accounts.Account) {
 	ledger, err := usbwallet.NewLedgerHub()
 	if err != nil {
 		fmt.Printf("Failed to create Ledger hub: %v\n", err)
@@ -1347,6 +1347,9 @@ func NewLedgerTransactor() (*bind.TransactOpts, accounts.Wallet, accounts.Accoun
 	_, err = wallet.Derive(derivationPath, true)
 	if err != nil {
 		fmt.Printf("Failed to derive default path: %v\n", err)
+		fmt.Println("Please check your Ledger device - you may need to:")
+		fmt.Println("1. Unlock your Ledger device")
+		fmt.Println("2. Confirm that the Ethereum app is open")
 		return nil, nil, accounts.Account{}
 	}
 
@@ -1389,7 +1392,7 @@ func NewLedgerTransactor() (*bind.TransactOpts, accounts.Wallet, accounts.Accoun
 			fmt.Println("Attempting to sign transaction...")
 			
 			// Always use SignTx for contract deployment
-			signedTx, err := wallet.SignTx(account, tx, nil)
+			signedTx, err := wallet.SignTx(account, tx, chainID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to sign transaction: %v (make sure your Ledger is unlocked and the Ethereum app is open)", err)
 			}
@@ -1435,7 +1438,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var predictAddress bool
 	var safeNonce *big.Int
 	var calldata bool
-	var ledgerPath, ledgerAddress string
+	var ledger bool
 
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
@@ -1448,7 +1451,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 
 			if !calldata {	
-				if keyfile == "" && ledgerAddress == "" {
+				if keyfile == "" && !ledger {
 					return fmt.Errorf("--keystore or --ledger not specified (this should be a path to an Ethereum account keystore file or an Ethereum address from Ledger)")
 				}
 		
@@ -1518,12 +1521,6 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				}
 			}
 
-			if ledgerAddress != "" {
-				if ledgerPath == "" {
-					fmt.Println("--ledger-path not specified, using default (m/44'/60'/0'/0/0)")
-				}
-			}
-
 			{{range .DeployHandler.MethodArgs}}
 			{{.PreRunE}}
 			{{- end}}
@@ -1565,9 +1562,9 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 			var ledgerWallet accounts.Wallet
 			var ledgerAccount accounts.Account
 
-			if ledgerAddress != "" {
+			if ledger {
 				fmt.Println("--ledger specified, using Ledger hardware wallet")
-				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor()
+				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(chainID)
 			} else {
 				transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
 			}
@@ -1668,9 +1665,8 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().BoolVar(&predictAddress, "safe-predict-address", false, "Predict the deployment address (only works for Safe transactions)")
 	cmd.Flags().StringVar(&safeNonceRaw, "safe-nonce", "", "Safe nonce overrider for the transaction (optional)")
 	cmd.Flags().BoolVar(&calldata, "calldata", false, "Set this flag if want to return the calldata instead of sending the transaction")
-	cmd.Flags().StringVar(&ledgerAddress, "ledger", "", "Ethereum address to use from Ledger")
-	cmd.Flags().StringVar(&ledgerPath, "ledger-path", "m/44'/60'/0'/0/0", "Ledger derivation path")
-	
+	cmd.Flags().BoolVar(&ledger, "ledger", false, "Set this flag if you want to use a Ledger hardware wallet")
+		
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
 	{{- end}}
@@ -1808,7 +1804,7 @@ func {{.HandlerName}}() *cobra.Command {
 	var safeOperationType uint8
 	var safeNonce *big.Int
 	var calldata bool
-	var ledgerPath, ledgerAddress string
+	var ledger bool
 
     {{range .MethodArgs}}
     var {{.CLIVar}} {{.CLIType}}
@@ -1827,7 +1823,7 @@ func {{.HandlerName}}() *cobra.Command {
 				}
 				contractAddress = common.HexToAddress(contractAddressRaw)
 
-            if keyfile == "" && ledgerAddress == "" {
+            if keyfile == "" && !ledger {
 				return fmt.Errorf("--keystore or --ledger not specified (this should be a path to an Ethereum account keystore file or an Ethereum address from Ledger)")
 			}
 
@@ -1869,12 +1865,6 @@ func {{.HandlerName}}() *cobra.Command {
 					}
 				}
             }
-
-			if ledgerAddress != "" {
-				if ledgerPath == "" {
-					fmt.Println("--ledger-path not specified, using default (m/44'/60'/0'/0/0)")
-				}
-			}
 
             {{range .MethodArgs}}
             {{.PreRunE}}
@@ -1928,8 +1918,8 @@ func {{.HandlerName}}() *cobra.Command {
 			var key *keystore.Key
 			var ledgerWallet accounts.Wallet
 			var ledgerAccount accounts.Account
-			if ledgerAddress != "" {
-                transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor()
+			if ledger {
+                transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(chainID)
             } else {
                 transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
             }
@@ -2023,8 +2013,7 @@ func {{.HandlerName}}() *cobra.Command {
 	cmd.Flags().StringVar(&safeFunction, "safe-function", "", "Safe function overrider to use for the transaction (optional)")
 	cmd.Flags().StringVar(&safeNonceRaw, "safe-nonce", "", "Safe nonce overrider for the transaction (optional)")
 	cmd.Flags().BoolVar(&calldata, "calldata", false, "Set this flag if want to return the calldata instead of sending the transaction")
-    cmd.Flags().StringVar(&ledgerAddress, "ledger", "", "Ethereum address to use from Ledger")
-    cmd.Flags().StringVar(&ledgerPath, "ledger-path", "m/44'/60'/0'/0/0", "Ledger derivation path")
+    cmd.Flags().BoolVar(&ledger, "ledger", false, "Set this flag if you want to use a Ledger hardware wallet")
 
     {{range .MethodArgs}}
     cmd.Flags().{{.Flag}}
