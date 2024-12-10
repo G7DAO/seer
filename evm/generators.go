@@ -1315,7 +1315,7 @@ func CalculateSafeTxHash(safeAddress common.Address, txData SafeTransactionData,
 	return common.BytesToHash(typedDataHash), nil
 }
 
-func NewLedgerTransactor(path string, address string) (*bind.TransactOpts, accounts.Wallet, accounts.Account) {
+func NewLedgerTransactor() (*bind.TransactOpts, accounts.Wallet, accounts.Account) {
 	ledger, err := usbwallet.NewLedgerHub()
 	if err != nil {
 		fmt.Printf("Failed to create Ledger hub: %v\n", err)
@@ -1350,48 +1350,29 @@ func NewLedgerTransactor(path string, address string) (*bind.TransactOpts, accou
 		return nil, nil, accounts.Account{}
 	}
 
-	// Create the account
-	targetAddress := common.HexToAddress(address)
-	var account accounts.Account
-
 	// Try to find the account with the matching address
 	walletAccounts := wallet.Accounts()
 	fmt.Printf("walletAccounts: %v\n", walletAccounts)
 	fmt.Printf("Found %d accounts\n", len(walletAccounts))
 	
-	// If we don't find the account in the default path, try the provided path
-	if path != "" {
-		derivationPath, err := accounts.ParseDerivationPath(path)
-		if err != nil {
-			fmt.Printf("Failed to parse derivation path: %v\n", err)
-			return nil, nil, accounts.Account{}
-		}
-
-		_, err = wallet.Derive(derivationPath, true)
-		if err != nil {
-			fmt.Printf("Failed to derive custom path: %v\n", err)
-			return nil, nil, accounts.Account{}
-		}
-
-		walletAccounts = wallet.Accounts()
-		fmt.Printf("Found %d accounts after custom derivation\n", len(walletAccounts))
+	// Display accounts and let user choose
+	fmt.Println("\nAvailable accounts in your Ledger:")
+	for i, acc := range walletAccounts {
+		fmt.Printf("[%d] %s\n", i+1, acc.Address.Hex())
 	}
-
-	// Look for the matching account
-	for _, acc := range walletAccounts {
-		fmt.Printf("Checking account: %s\n", acc.Address.Hex())
-		if acc.Address == targetAddress {
-			account = acc
-			break
+	
+	var selection int
+	for {
+		fmt.Print("\nSelect an account (1-", len(walletAccounts), "): ")
+		_, err := fmt.Scanf("%d", &selection)
+		if err == nil && selection > 0 && selection <= len(walletAccounts) {
+				break
 		}
+		fmt.Println("Invalid selection. Please try again.")
 	}
-
-	if account.Address == (common.Address{}) {
-		fmt.Printf("Account %s not found in wallet\n", address)
-		return nil, nil, accounts.Account{}
-	}
-
-	fmt.Printf("Found matching account: %s\n", account.Address.Hex())
+	
+	account := walletAccounts[selection-1]
+	fmt.Printf("\nSelected account: %s\n", account.Address.Hex())
 	fmt.Println("Please check your Ledger device - you may need to:")
 	fmt.Println("1. Confirm that the Ethereum app is open")
 	fmt.Println("2. Enable 'Blind signing' in the Ethereum app settings")
@@ -1399,7 +1380,6 @@ func NewLedgerTransactor(path string, address string) (*bind.TransactOpts, accou
 	fmt.Println("4. Confirm the transaction on your device when prompted")
 
 	// Create a new transactor with explicit chain ID for Sepolia
-	chainID := big.NewInt(11155111) // Sepolia chain ID
 	opts := &bind.TransactOpts{
 		From: account.Address,
 		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
@@ -1409,7 +1389,7 @@ func NewLedgerTransactor(path string, address string) (*bind.TransactOpts, accou
 			fmt.Println("Attempting to sign transaction...")
 			
 			// Always use SignTx for contract deployment
-			signedTx, err := wallet.SignTx(account, tx, chainID)
+			signedTx, err := wallet.SignTx(account, tx, nil)
 			if err != nil {
 				return nil, fmt.Errorf("failed to sign transaction: %v (make sure your Ledger is unlocked and the Ethereum app is open)", err)
 			}
@@ -1587,7 +1567,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 
 			if ledgerAddress != "" {
 				fmt.Println("--ledger specified, using Ledger hardware wallet")
-				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(ledgerPath, ledgerAddress)
+				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor()
 			} else {
 				transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
 			}
@@ -1949,7 +1929,7 @@ func {{.HandlerName}}() *cobra.Command {
 			var ledgerWallet accounts.Wallet
 			var ledgerAccount accounts.Account
 			if ledgerAddress != "" {
-                transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(ledgerPath, ledgerAddress)
+                transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor()
             } else {
                 transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
             }
