@@ -1318,22 +1318,113 @@ func CalculateSafeTxHash(safeAddress common.Address, txData SafeTransactionData,
 func NewLedgerTransactor(path string, address string) (*bind.TransactOpts, accounts.Wallet, accounts.Account) {
 	ledger, err := usbwallet.NewLedgerHub()
 	if err != nil {
+		fmt.Printf("Failed to create Ledger hub: %v\n", err)
 		return nil, nil, accounts.Account{}
 	}
 
 	wallets := ledger.Wallets()
 	if len(wallets) == 0 {
+		fmt.Println("No Ledger wallets found")
 		return nil, nil, accounts.Account{}
 	}
 
 	wallet := wallets[0]
 	if err := wallet.Open(""); err != nil {
+		fmt.Printf("Failed to open wallet: %v\n", err)
+		fmt.Println("Please make sure your Ledger is:")
+		fmt.Println("1. Connected to your computer")
+		fmt.Println("2. Unlocked (enter your PIN)")
+		fmt.Println("3. Has the Ethereum app open")
 		return nil, nil, accounts.Account{}
 	}
 
-	account := accounts.Account{Address: common.HexToAddress(address), URL: accounts.URL{Scheme: "ledger", Path: path}}
+	// Initialize the wallet with default path first
+	derivationPath, err := accounts.ParseDerivationPath(accounts.DefaultBaseDerivationPath.String())
+	if err != nil {
+		fmt.Printf("Failed to parse default derivation path: %v\n", err)
+		return nil, nil, accounts.Account{}
+	}
+	_, err = wallet.Derive(derivationPath, true)
+	if err != nil {
+		fmt.Printf("Failed to derive default path: %v\n", err)
+		return nil, nil, accounts.Account{}
+	}
 
-	return bind.NewClefTransactor(wallet.(*external.ExternalSigner), account), wallet, account
+	// Create the account
+	targetAddress := common.HexToAddress(address)
+	var account accounts.Account
+
+	// Try to find the account with the matching address
+	walletAccounts := wallet.Accounts()
+	fmt.Printf("walletAccounts: %v\n", walletAccounts)
+	fmt.Printf("Found %d accounts\n", len(walletAccounts))
+	
+	// If we don't find the account in the default path, try the provided path
+	if path != "" {
+		derivationPath, err := accounts.ParseDerivationPath(path)
+		if err != nil {
+			fmt.Printf("Failed to parse derivation path: %v\n", err)
+			return nil, nil, accounts.Account{}
+		}
+
+		_, err = wallet.Derive(derivationPath, true)
+		if err != nil {
+			fmt.Printf("Failed to derive custom path: %v\n", err)
+			return nil, nil, accounts.Account{}
+		}
+
+		walletAccounts = wallet.Accounts()
+		fmt.Printf("Found %d accounts after custom derivation\n", len(walletAccounts))
+	}
+
+	// Look for the matching account
+	for _, acc := range walletAccounts {
+		fmt.Printf("Checking account: %s\n", acc.Address.Hex())
+		if acc.Address == targetAddress {
+			account = acc
+			break
+		}
+	}
+
+	if account.Address == (common.Address{}) {
+		fmt.Printf("Account %s not found in wallet\n", address)
+		return nil, nil, accounts.Account{}
+	}
+
+	fmt.Printf("Found matching account: %s\n", account.Address.Hex())
+	fmt.Println("Please check your Ledger device - you may need to:")
+	fmt.Println("1. Confirm that the Ethereum app is open")
+	fmt.Println("2. Enable 'Blind signing' in the Ethereum app settings")
+	fmt.Println("3. Enable 'Debug data' in the Ethereum app settings")
+	fmt.Println("4. Confirm the transaction on your device when prompted")
+
+	// Create a new transactor with explicit chain ID for Sepolia
+	chainID := big.NewInt(11155111) // Sepolia chain ID
+	opts := &bind.TransactOpts{
+		From: account.Address,
+		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			if address != account.Address {
+				return nil, fmt.Errorf("not authorized to sign this account")
+			}
+			fmt.Println("Attempting to sign transaction...")
+			
+			// Always use SignTx for contract deployment
+			signedTx, err := wallet.SignTx(account, tx, chainID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to sign transaction: %v (make sure your Ledger is unlocked and the Ethereum app is open)", err)
+			}
+			
+			// Verify the transaction data is not empty
+			if len(tx.Data()) == 0 {
+				return nil, fmt.Errorf("transaction data is empty")
+			}
+			
+			fmt.Printf("Transaction data length: %d bytes\n", len(tx.Data()))
+			return signedTx, nil
+		},
+	}
+
+	return opts, wallet, account
 }
 
 func NewKeystoreTransactor(chainID *big.Int, keyfile string, password string) (*bind.TransactOpts, *keystore.Key, error) {
@@ -1375,14 +1466,12 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 		Use:  "deploy",
 		Short: "Deploy a new {{.StructName}} contract",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if keyfile == "" && ledgerAddress == "" {
-				return fmt.Errorf("--keystore or --ledger not specified (this should be a path to an Ethereum account keystore file or an Ethereum address from Ledger)")
-			}
 
-			if !calldata {
-				if keyfile == "" {
-					return fmt.Errorf("--keystore not specified (this should be a path to an Ethereum account keystore file)")
+			if !calldata {	
+				if keyfile == "" && ledgerAddress == "" {
+					return fmt.Errorf("--keystore or --ledger not specified (this should be a path to an Ethereum account keystore file or an Ethereum address from Ledger)")
 				}
+		
 
 				if rpc == "" {
 					return fmt.Errorf("--rpc not specified (this should be a URL to an Ethereum JSONRPC API)")
@@ -1530,7 +1619,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					return nil
 				} else {
 					fmt.Println("Creating Safe proposal...")
-					err = DeployWithSafe(client, key, ledgerWallet, ledgerAccount, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployBytecode, SafeOperationType(safeOperationType), salt, safeNonce)
+					err = DeployWithSafe(client, key, ledgerWallet, ledgerAccount, common.HexToAddress(safeAddress), common.HexToAddress(safeCreateCall), value, safeApi, deployCalldata, SafeOperationType(safeOperationType), salt, safeNonce)
 					if err != nil {
 						return fmt.Errorf("failed to create Safe proposal: %v", err)
 					}
@@ -1888,7 +1977,7 @@ func {{.HandlerName}}() *cobra.Command {
 					value = big.NewInt(0)
 				}
 
-				err = CreateSafeProposal(client, key, ledgerWallet, ledgerAccount, common.HexToAddress(safeAddress), contractAddress, transaction, value, safeApi, SafeOperationType(safeOperationType), safeNonce)
+				err = CreateSafeProposal(client, key, ledgerWallet, ledgerAccount, common.HexToAddress(safeAddress), contractAddress, txCalldata, value, safeApi, SafeOperationType(safeOperationType), safeNonce)
                 if err != nil {
                     return fmt.Errorf("failed to create Safe proposal: %v", err)
                 }
