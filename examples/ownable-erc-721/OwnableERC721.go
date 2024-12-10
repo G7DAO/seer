@@ -1445,10 +1445,13 @@ func CreateOwnableERC721DeploymentCommand() *cobra.Command {
 			var key *keystore.Key
 			var ledgerWallet accounts.Wallet
 			var ledgerAccount accounts.Account
-
+			var ledgerErr error
 			if ledger {
 				fmt.Println("--ledger specified, using Ledger hardware wallet")
-				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(chainID)
+				transactionOpts, ledgerWallet, ledgerAccount, ledgerErr = NewLedgerTransactor(chainID)
+				if ledgerErr != nil {
+					return ledgerErr
+				}
 			} else {
 				transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
 			}
@@ -2376,8 +2379,12 @@ func CreateApproveCommand() *cobra.Command {
 			var key *keystore.Key
 			var ledgerWallet accounts.Wallet
 			var ledgerAccount accounts.Account
+			var ledgerErr error
 			if ledger {
-				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(chainID)
+				transactionOpts, ledgerWallet, ledgerAccount, ledgerErr = NewLedgerTransactor(chainID)
+				if ledgerErr != nil {
+					return ledgerErr
+				}
 			} else {
 				transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
 			}
@@ -2610,8 +2617,12 @@ func CreateMintCommand() *cobra.Command {
 			var key *keystore.Key
 			var ledgerWallet accounts.Wallet
 			var ledgerAccount accounts.Account
+			var ledgerErr error
 			if ledger {
-				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(chainID)
+				transactionOpts, ledgerWallet, ledgerAccount, ledgerErr = NewLedgerTransactor(chainID)
+				if ledgerErr != nil {
+					return ledgerErr
+				}
 			} else {
 				transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
 			}
@@ -2824,8 +2835,12 @@ func CreateRenounceOwnershipCommand() *cobra.Command {
 			var key *keystore.Key
 			var ledgerWallet accounts.Wallet
 			var ledgerAccount accounts.Account
+			var ledgerErr error
 			if ledger {
-				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(chainID)
+				transactionOpts, ledgerWallet, ledgerAccount, ledgerErr = NewLedgerTransactor(chainID)
+				if ledgerErr != nil {
+					return ledgerErr
+				}
 			} else {
 				transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
 			}
@@ -3061,8 +3076,12 @@ func CreateSafeTransferFromCommand() *cobra.Command {
 			var key *keystore.Key
 			var ledgerWallet accounts.Wallet
 			var ledgerAccount accounts.Account
+			var ledgerErr error
 			if ledger {
-				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(chainID)
+				transactionOpts, ledgerWallet, ledgerAccount, ledgerErr = NewLedgerTransactor(chainID)
+				if ledgerErr != nil {
+					return ledgerErr
+				}
 			} else {
 				transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
 			}
@@ -3320,8 +3339,12 @@ func CreateSafeTransferFrom0Command() *cobra.Command {
 			var key *keystore.Key
 			var ledgerWallet accounts.Wallet
 			var ledgerAccount accounts.Account
+			var ledgerErr error
 			if ledger {
-				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(chainID)
+				transactionOpts, ledgerWallet, ledgerAccount, ledgerErr = NewLedgerTransactor(chainID)
+				if ledgerErr != nil {
+					return ledgerErr
+				}
 			} else {
 				transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
 			}
@@ -3562,8 +3585,12 @@ func CreateSetApprovalForAllCommand() *cobra.Command {
 			var key *keystore.Key
 			var ledgerWallet accounts.Wallet
 			var ledgerAccount accounts.Account
+			var ledgerErr error
 			if ledger {
-				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(chainID)
+				transactionOpts, ledgerWallet, ledgerAccount, ledgerErr = NewLedgerTransactor(chainID)
+				if ledgerErr != nil {
+					return ledgerErr
+				}
 			} else {
 				transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
 			}
@@ -3806,8 +3833,12 @@ func CreateTransferFromCommand() *cobra.Command {
 			var key *keystore.Key
 			var ledgerWallet accounts.Wallet
 			var ledgerAccount accounts.Account
+			var ledgerErr error
 			if ledger {
-				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(chainID)
+				transactionOpts, ledgerWallet, ledgerAccount, ledgerErr = NewLedgerTransactor(chainID)
+				if ledgerErr != nil {
+					return ledgerErr
+				}
 			} else {
 				transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
 			}
@@ -4033,8 +4064,12 @@ func CreateTransferOwnershipCommand() *cobra.Command {
 			var key *keystore.Key
 			var ledgerWallet accounts.Wallet
 			var ledgerAccount accounts.Account
+			var ledgerErr error
 			if ledger {
-				transactionOpts, ledgerWallet, ledgerAccount = NewLedgerTransactor(chainID)
+				transactionOpts, ledgerWallet, ledgerAccount, ledgerErr = NewLedgerTransactor(chainID)
+				if ledgerErr != nil {
+					return ledgerErr
+				}
 			} else {
 				transactionOpts, key, transactionOptsErr = NewKeystoreTransactor(chainID, keyfile, password)
 			}
@@ -4555,17 +4590,17 @@ func CalculateSafeTxHash(safeAddress common.Address, txData SafeTransactionData,
 	return common.BytesToHash(typedDataHash), nil
 }
 
-func NewLedgerTransactor(chainID *big.Int) (*bind.TransactOpts, accounts.Wallet, accounts.Account) {
+func NewLedgerTransactor(chainID *big.Int) (*bind.TransactOpts, accounts.Wallet, accounts.Account, error) {
 	ledger, err := usbwallet.NewLedgerHub()
 	if err != nil {
 		fmt.Printf("Failed to create Ledger hub: %v\n", err)
-		return nil, nil, accounts.Account{}
+		return nil, nil, accounts.Account{}, err
 	}
 
 	wallets := ledger.Wallets()
 	if len(wallets) == 0 {
 		fmt.Println("No Ledger wallets found")
-		return nil, nil, accounts.Account{}
+		return nil, nil, accounts.Account{}, err
 	}
 
 	wallet := wallets[0]
@@ -4575,14 +4610,14 @@ func NewLedgerTransactor(chainID *big.Int) (*bind.TransactOpts, accounts.Wallet,
 		fmt.Println("1. Connected to your computer")
 		fmt.Println("2. Unlocked (enter your PIN)")
 		fmt.Println("3. Has the Ethereum app open")
-		return nil, nil, accounts.Account{}
+		return nil, nil, accounts.Account{}, err
 	}
 
 	// Initialize the wallet with default path first
 	derivationPath, err := accounts.ParseDerivationPath(accounts.DefaultBaseDerivationPath.String())
 	if err != nil {
 		fmt.Printf("Failed to parse default derivation path: %v\n", err)
-		return nil, nil, accounts.Account{}
+		return nil, nil, accounts.Account{}, err
 	}
 	_, err = wallet.Derive(derivationPath, true)
 	if err != nil {
@@ -4590,13 +4625,11 @@ func NewLedgerTransactor(chainID *big.Int) (*bind.TransactOpts, accounts.Wallet,
 		fmt.Println("Please check your Ledger device - you may need to:")
 		fmt.Println("1. Unlock your Ledger device")
 		fmt.Println("2. Confirm that the Ethereum app is open")
-		return nil, nil, accounts.Account{}
+		return nil, nil, accounts.Account{}, err
 	}
 
 	// Try to find the account with the matching address
 	walletAccounts := wallet.Accounts()
-	fmt.Printf("walletAccounts: %v\n", walletAccounts)
-	fmt.Printf("Found %d accounts\n", len(walletAccounts))
 
 	// Display accounts and let user choose
 	fmt.Println("\nAvailable accounts in your Ledger:")
@@ -4647,7 +4680,7 @@ func NewLedgerTransactor(chainID *big.Int) (*bind.TransactOpts, accounts.Wallet,
 		},
 	}
 
-	return opts, wallet, account
+	return opts, wallet, account, nil
 }
 
 func NewKeystoreTransactor(chainID *big.Int, keyfile string, password string) (*bind.TransactOpts, *keystore.Key, error) {
