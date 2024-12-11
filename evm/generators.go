@@ -198,10 +198,10 @@ func flattenSourceCode(content, baseDir string, processedFiles map[string]bool) 
 	// Process each import
 	for _, match := range imports {
 		importPath := match[1]
+		fullPath := ""
 
-		// Resolve the full path of the import
-		var fullPath string
-		if strings.HasPrefix(importPath, "@") || strings.HasPrefix(importPath, "hardhat/") {
+		// Handle different types of imports
+		if strings.HasPrefix(importPath, "@") {
 			// Node modules import - search up the directory tree
 			currentDir := baseDir
 			for {
@@ -241,12 +241,17 @@ func flattenSourceCode(content, baseDir string, processedFiles map[string]bool) 
 			return "", err
 		}
 
-		// Clean up SPDX and pragma only for imported files
+		// Clean up SPDX only for imported files
 		flattenedImport = regexp.MustCompile(`//\s*SPDX-License-Identifier:.*\n`).ReplaceAllString(flattenedImport, "")
-		flattenedImport = regexp.MustCompile(`pragma\s+solidity\s+[^;]+;`).ReplaceAllString(flattenedImport, "")
+
+		// Clean up redundant empty lines while preserving contract headers
+		flattenedImport = regexp.MustCompile(`\n\s*\n\s*\n+`).ReplaceAllString(flattenedImport, "\n\n")
 
 		// Mark as processed
 		processedFiles[fullPath] = true
+
+		// Add a newline before the flattened import for better readability
+		flattenedImport = "\n" + flattenedImport
 
 		// Replace the import statement with the flattened content
 		content = strings.Replace(content, match[0], flattenedImport, 1)
@@ -1004,11 +1009,7 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool, contractC
 	if verifyTemplateErr != nil {
 		return code, verifyTemplateErr
 	}
-	code = code + "\n\n" + b.String()
-
-	if contractCode != "" {
-		code = code + "\n\n" + fmt.Sprintf("const %sContractCode = `%s`\n", structName, contractCode)
-	}
+	code = code + "\n\n" + b.String() + "\n\n" + fmt.Sprintf("const %sContractCode = `%s`\n", structName, contractCode)
 
 	if includemain {
 		mainFormatString := `func main() {
@@ -1771,6 +1772,10 @@ func VerifyContractCodeCommand() *cobra.Command {
 		Use: "verify",
 		Short: "Verify a contract code on a block explorer",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if {{.StructName}}ContractCode == "" {
+				return fmt.Errorf("contract code is empty, please re-run evm generate passing the --source-code flag")
+			}
+
 			if contractAddressRaw == "" {
 				return fmt.Errorf("--contract not specified")
 			} else if !common.IsHexAddress(contractAddressRaw) {
