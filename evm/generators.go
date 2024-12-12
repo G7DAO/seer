@@ -1476,18 +1476,16 @@ func ExtractCompilerInfo(bytecode string) (*CompilerInfo, error) {
 		return nil, fmt.Errorf("no solidity version identifier found in version data: %s", versionData)
 	}
 
-	// Extract version numbers (0008180033)
 	// Skip first 10 chars (736f6c6343)
-	versionHex := versionData[10:18]  // Changed to get 00081800
+	versionHex := versionData[10:18]
 
 	// Parse major, minor, and patch versions
-	// Changed parsing logic to correctly handle Solidity versions
-	major := int64(0) // Always 0 for current Solidity versions
-	minor, err := strconv.ParseInt(versionHex[2:4], 16, 64) // Changed from 4:6 to 2:4
+	major := int64(0)
+	minor, err := strconv.ParseInt(versionHex[2:4], 16, 64)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse minor version: %v", err)
 	}
-	patch, err := strconv.ParseInt(versionHex[4:6], 16, 64) // Changed from 6:8 to 4:6
+	patch, err := strconv.ParseInt(versionHex[4:6], 16, 64)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse patch version: %v", err)
 	}
@@ -1614,6 +1612,9 @@ func VerifyContractCode(
 	{{- end}}
 	) error {
 
+	fmt.Println("Verifying contract code...")
+	fmt.Println("EVM version:", evmVersion)
+
 	// Pack constructor arguments
 	abiPacked, err := {{.StructName}}MetaData.GetAbi()
 	if err != nil {
@@ -1633,6 +1634,8 @@ func VerifyContractCode(
 	if err != nil {
 		return fmt.Errorf("failed to get full compiler version: %w", err)
 	}
+
+	fmt.Println("Compiler version:", fullCompilerVersion)
 
     // Prepare the form data
     formData := url.Values{}
@@ -1762,7 +1765,8 @@ func VerifyContractCodeCommand() *cobra.Command {
 	var contractAddressRaw, apiURL, apiKey string
 	var contractAddress common.Address
 	var runs uint
-	
+	var evmVersion, compilerVersion string
+
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
 	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
@@ -1795,6 +1799,13 @@ func VerifyContractCodeCommand() *cobra.Command {
 				return fmt.Errorf("failed to extract compiler info: %v", err)
 			}
 
+			if compilerVersion != "" {
+				compilerInfo.SolidityVersion = compilerVersion
+			}
+			if evmVersion != "" {
+				compilerInfo.EVMVersion = evmVersion
+			}
+
 			return VerifyContractCode(contractAddress, {{.StructName}}ContractCode, apiURL, apiKey, "{{.StructName}}", compilerInfo.SolidityVersion, runs, compilerInfo.EVMVersion, {{- range .DeployHandler.MethodArgs}}{{.CLIVar}},{{- end}})
 		},
 	}
@@ -1803,6 +1814,9 @@ func VerifyContractCodeCommand() *cobra.Command {
 	cmd.Flags().StringVar(&apiURL, "api", "a", "The block explorer API to use")
 	cmd.Flags().StringVar(&apiKey, "api-key", "k", "The API key to use for the block explorer")
 	cmd.Flags().UintVar(&runs, "runs", 0, "The number of runs to use for optimization")
+	cmd.Flags().StringVar(&evmVersion, "evm-version", "", "Override the EVM version to use for the contract")
+	cmd.Flags().StringVar(&compilerVersion, "compiler-version", "", "Override the compiler version to use for the contract")
+
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
 	{{- end}}
@@ -1829,6 +1843,7 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var verify bool
 	var apiURL, apiKey string
 	var runs uint
+	var evmVersion, compilerVersion string
 
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
@@ -1911,6 +1926,10 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 			}
 
 			if verify {
+				if {{.StructName}}ContractCode == "" {
+					return fmt.Errorf("Cannot use --verify flag when contract code is empty, please re-run evm generate passing the --source-code flag")
+				}
+
 				if apiURL == "" {
 					return fmt.Errorf("--api not specified")
 				}
@@ -2038,6 +2057,13 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					return fmt.Errorf("failed to extract compiler info: %v", err)
 				}
 
+				if compilerVersion != "" {
+					compilerInfo.SolidityVersion = compilerVersion
+				}
+				if evmVersion != "" {
+					compilerInfo.EVMVersion = evmVersion
+				}
+
 				err = VerifyContractCode(address, {{.StructName}}ContractCode, apiURL, apiKey, "{{.StructName}}", compilerInfo.SolidityVersion, runs, compilerInfo.EVMVersion, {{- range .DeployHandler.MethodArgs}}{{.CLIVar}},{{- end}})
 				if err != nil {
 					fmt.Println("Failed to verify contract code:", err)
@@ -2073,6 +2099,8 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().StringVar(&apiURL, "api", "", "Block explorer API URL")
 	cmd.Flags().StringVar(&apiKey, "api-key", "", "Block explorer API key")
 	cmd.Flags().UintVar(&runs, "runs", 0, "The number of runs to use for optimization")
+	cmd.Flags().StringVar(&evmVersion, "evm-version", "", "Override the EVM version to use for the contract")
+	cmd.Flags().StringVar(&compilerVersion, "compiler-version", "", "Override the compiler version to use for the contract")
 
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
