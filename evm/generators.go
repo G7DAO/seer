@@ -1795,8 +1795,7 @@ func VerifyContractCodeCommand() *cobra.Command {
 				return fmt.Errorf("failed to extract compiler info: %v", err)
 			}
 
-			contractName := "{{.StructName}}"
-			return VerifyContractCode(contractAddress, {{.StructName}}ContractCode, apiURL, apiKey, contractName, compilerInfo.SolidityVersion, runs, compilerInfo.EVMVersion, {{- range .DeployHandler.MethodArgs}}{{.CLIVar}},{{- end}})
+			return VerifyContractCode(contractAddress, {{.StructName}}ContractCode, apiURL, apiKey, "{{.StructName}}", compilerInfo.SolidityVersion, runs, compilerInfo.EVMVersion, {{- range .DeployHandler.MethodArgs}}{{.CLIVar}},{{- end}})
 		},
 	}
 
@@ -1827,6 +1826,9 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var predictAddress bool
 	var safeNonce *big.Int
 	var calldata bool
+	var verify bool
+	var apiURL, apiKey string
+	var runs uint
 
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
@@ -1905,6 +1907,15 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 					if !ok {
 						return fmt.Errorf("--safe-nonce is not a valid big integer")
 					}
+				}
+			}
+
+			if verify {
+				if apiURL == "" {
+					return fmt.Errorf("--api not specified")
+				}
+				if apiKey == "" {
+					return fmt.Errorf("--api-key not specified")
 				}
 			}
 
@@ -2021,6 +2032,20 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				cmd.Println("Transaction submitted")
 			}
 
+			if verify {
+				compilerInfo, err := ExtractCompilerInfo({{.StructName}}Bin)
+				if err != nil {
+					return fmt.Errorf("failed to extract compiler info: %v", err)
+				}
+
+				err = VerifyContractCode(address, {{.StructName}}ContractCode, apiURL, apiKey, "{{.StructName}}", compilerInfo.SolidityVersion, runs, compilerInfo.EVMVersion, {{- range .DeployHandler.MethodArgs}}{{.CLIVar}},{{- end}})
+				if err != nil {
+					fmt.Println("Failed to verify contract code:", err)
+				} else {
+					fmt.Println("Contract code verified successfully")
+				}
+			}
+
 			return nil
 		},
 	}
@@ -2044,7 +2069,11 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().BoolVar(&predictAddress, "safe-predict-address", false, "Predict the deployment address (only works for Safe transactions)")
 	cmd.Flags().StringVar(&safeNonceRaw, "safe-nonce", "", "Safe nonce overrider for the transaction (optional)")
 	cmd.Flags().BoolVar(&calldata, "calldata", false, "Set this flag if want to return the calldata instead of sending the transaction")
-	
+	cmd.Flags().BoolVar(&verify, "verify", false, "Verify the contract code on a block explorer")
+	cmd.Flags().StringVar(&apiURL, "api", "", "Block explorer API URL")
+	cmd.Flags().StringVar(&apiKey, "api-key", "", "Block explorer API key")
+	cmd.Flags().UintVar(&runs, "runs", 0, "The number of runs to use for optimization")
+
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
 	{{- end}}
