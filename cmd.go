@@ -1191,8 +1191,9 @@ func CreateEVMCommand() *cobra.Command {
 
 func CreateEVMGenerateCommand() *cobra.Command {
 	var cli, noformat, includemain bool
-	var infile, packageName, structName, bytecodefile, outfile, foundryBuildFile, hardhatBuildFile string
+	var infile, packageName, structName, bytecodefile, outfile, foundryBuildFile, hardhatBuildFile, contractCodePath string
 	var rawABI, bytecode []byte
+	var contractCode string
 	var readErr error
 	var aliases map[string]string
 
@@ -1262,7 +1263,16 @@ func CreateEVMGenerateCommand() *cobra.Command {
 				return codeErr
 			}
 
-			header, headerErr := evm.GenerateHeader(packageName, cli, includemain, foundryBuildFile, infile, bytecodefile, structName, outfile, noformat)
+			// If source code is provided, add it as a constant
+			if contractCodePath != "" {
+				var contractCodeErr error
+				contractCode, contractCodeErr = evm.GetFlattenedContractCode(contractCodePath)
+				if contractCodeErr != nil {
+					return contractCodeErr
+				}
+			}
+
+			header, headerErr := evm.GenerateHeader(packageName, cli, includemain, foundryBuildFile, infile, bytecodefile, contractCodePath, structName, outfile, noformat)
 			if headerErr != nil {
 				return headerErr
 			}
@@ -1270,7 +1280,7 @@ func CreateEVMGenerateCommand() *cobra.Command {
 			code = header + code
 
 			if cli {
-				code, readErr = evm.AddCLI(code, structName, noformat, includemain)
+				code, readErr = evm.AddCLI(code, structName, noformat, includemain, contractCode)
 				if readErr != nil {
 					return readErr
 				}
@@ -1292,6 +1302,7 @@ func CreateEVMGenerateCommand() *cobra.Command {
 	evmGenerateCmd.Flags().StringVarP(&structName, "struct", "s", "", "The name of the struct to generate")
 	evmGenerateCmd.Flags().StringVarP(&infile, "abi", "a", "", "Path to contract ABI (default stdin)")
 	evmGenerateCmd.Flags().StringVarP(&bytecodefile, "bytecode", "b", "", "Path to contract bytecode (default none - in this case, no deployment method is created)")
+	evmGenerateCmd.Flags().StringVarP(&contractCodePath, "source-code", "", "", "Path to contract source code (default none - in this case, no verify method is created)")
 	evmGenerateCmd.Flags().BoolVarP(&cli, "cli", "c", false, "Add a CLI for interacting with the contract (default false)")
 	evmGenerateCmd.Flags().BoolVar(&noformat, "noformat", false, "Set this flag if you do not want the generated code to be formatted (useful to debug errors)")
 	evmGenerateCmd.Flags().BoolVar(&includemain, "includemain", false, "Set this flag if you want to generate a \"main\" function to execute the CLI and make the generated code self-contained - this option is ignored if --cli is not set")
