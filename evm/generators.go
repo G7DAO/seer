@@ -1324,54 +1324,83 @@ func NewLedgerTransactor(chainID *big.Int) (*bind.TransactOpts, accounts.Wallet,
 
 	wallets := ledger.Wallets()
 	if len(wallets) == 0 {
-		fmt.Println("No Ledger wallets found")
-		return nil, nil, accounts.Account{}, err
+		return nil, nil, accounts.Account{}, fmt.Errorf("No ledger wallets found")
 	}
 
 	wallet := wallets[0]
 	if err := wallet.Open(""); err != nil {
-		fmt.Printf("Failed to open wallet: %v\n", err)
-		fmt.Println("Please make sure your Ledger is:")
-		fmt.Println("1. Connected to your computer")
-		fmt.Println("2. Unlocked (enter your PIN)")
-		fmt.Println("3. Has the Ethereum app open")
-		return nil, nil, accounts.Account{}, err
+		return nil, nil, accounts.Account{}, fmt.Errorf("Failed to open wallet. Make sure Ethereum app is open on your Ledger device")
 	}
 
-	// Initialize the wallet with default path first
-	derivationPath, err := accounts.ParseDerivationPath(accounts.DefaultBaseDerivationPath.String())
-	if err != nil {
-		fmt.Printf("Failed to parse default derivation path: %v\n", err)
-		return nil, nil, accounts.Account{}, err
-	}
-	_, err = wallet.Derive(derivationPath, true)
-	if err != nil {
-		fmt.Printf("Failed to derive default path: %v\n", err)
-		fmt.Println("Please check your Ledger device - you may need to:")
-		fmt.Println("1. Unlock your Ledger device")
-		fmt.Println("2. Confirm that the Ethereum app is open")
-		return nil, nil, accounts.Account{}, err
-	}
+	var walletAccounts []accounts.Account
 
-	// Try to find the account with the matching address
-	walletAccounts := wallet.Accounts()
+	// Derive multiple paths
+	// Standard paths:
+	// m/44'/60'/0'/0/0 - First address
+	// m/44'/60'/0'/0/1 - Second address
+	// m/44'/60'/0'/0/2 - Third address
+	// etc.
 	
+	for i := 0; i < 5; i++ { // Get first 5 addresses
+		path := fmt.Sprintf("m/44'/60'/0'/0/%d", i)
+		derivationPath, err := accounts.ParseDerivationPath(path)
+		if err != nil {
+			fmt.Printf("Failed to parse derivation path %s: %v\n", path, err)
+			continue
+		}
+
+		account, err := wallet.Derive(derivationPath, true)
+		if err != nil {
+			fmt.Printf("Failed to derive path %s: %v\n", path, err)
+			continue
+		}
+
+		walletAccounts = append(walletAccounts, account)
+	}
+
+	// Also try Ledger Live paths:
+	// m/44'/60'/0'/0 - First account
+	// m/44'/60'/1'/0 - Second account
+	// m/44'/60'/2'/0 - Third account
+	// etc.
+	
+	for i := 0; i < 5; i++ { // Get first 5 Ledger Live accounts
+		path := fmt.Sprintf("m/44'/60'/%d'/0/0", i)
+		derivationPath, err := accounts.ParseDerivationPath(path)
+		if err != nil {
+			fmt.Printf("Failed to parse Ledger Live path %s: %v\n", path, err)
+			continue
+		}
+
+		account, err := wallet.Derive(derivationPath, true)
+		if err != nil {
+			fmt.Printf("Failed to derive Ledger Live path %s: %v\n", path, err)
+			continue
+		}
+
+		walletAccounts = append(walletAccounts, account)
+	}
+
+	if len(walletAccounts) == 0 {
+		return nil, nil, accounts.Account{}, fmt.Errorf("No accounts found on Ledger")
+	}
+
 	// Display accounts and let user choose
 	fmt.Println("\nAvailable accounts in your Ledger:")
 	for i, acc := range walletAccounts {
-		fmt.Printf("[%d] %s\n", i+1, acc.Address.Hex())
+		fmt.Printf("[%d] %s (path: %s)\n", i+1, acc.Address.Hex(), acc.URL.Path)
 	}
-	
+
 	var selection int
 	for {
 		fmt.Print("\nSelect an account (1-", len(walletAccounts), "): ")
 		_, err := fmt.Scanf("%d", &selection)
 		if err == nil && selection > 0 && selection <= len(walletAccounts) {
-				break
+			break
 		}
 		fmt.Println("Invalid selection. Please try again.")
 	}
-	
+
 	account := walletAccounts[selection-1]
 	fmt.Printf("\nSelected account: %s\n", account.Address.Hex())
 	fmt.Println("Please check your Ledger device - you may need to:")
