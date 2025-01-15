@@ -19,6 +19,9 @@ import (
 	"github.com/G7DAO/seer/crawler"
 	"github.com/G7DAO/seer/indexer"
 	"github.com/G7DAO/seer/storage"
+	"github.com/bugout-dev/bugout-go/pkg"
+	"github.com/bugout-dev/bugout-go/pkg/spire"
+	"github.com/G7DAO/seer/heartbeat"
 )
 
 type Synchronizer struct {
@@ -33,6 +36,7 @@ type Synchronizer struct {
 	basePath        string
 	threads         int
 	minBlocksToSync int
+	heartbeat       *heartbeat.Manager
 }
 
 // NewSynchronizer creates a new synchronizer instance with the given blockchain handler.
@@ -58,6 +62,17 @@ func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize
 		threads = 1
 	}
 
+	hb, err := heartbeat.NewManager(
+		heartbeat.MOONSTREAM_ADMIN_ACCESS_TOKEN,
+		heartbeat.MOONSTREAM_MOONWORM_TASKS_JOURNAL,
+		"synchronizer",
+		blockchain,
+	)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize heartbeat manager: %v", err)
+		// Continue without heartbeat functionality
+	}
+
 	synchronizer = Synchronizer{
 		Client:          client,
 		StorageInstance: storageInstance,
@@ -70,6 +85,7 @@ func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize
 		basePath:        basePath,
 		threads:         threads,
 		minBlocksToSync: minBlocksToSync,
+		heartbeat:       hb,
 	}
 
 	return &synchronizer, nil
@@ -403,6 +419,22 @@ func (d *Synchronizer) Start(customerDbUriFlag string, cycleTickerWaitTime int) 
 func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	var isEnd bool
 
+	if d.heartbeat != nil {
+		// Send initial heartbeat
+		err := d.heartbeat.SendHeartbeat(
+			heartbeat.MOONSTREAM_ADMIN_ACCESS_TOKEN,
+			"crawling",
+			d.startBlock,
+			d.startBlock,
+			0, 0,
+			false,
+			"",
+		)
+		if err != nil {
+			log.Printf("Failed to send initial heartbeat: %v", err)
+		}
+	}
+
 	customerDBConnections, customerIds, customersErr := d.getCustomers(customerDbUriFlag, nil)
 	if customersErr != nil {
 		return isEnd, customersErr
@@ -517,6 +549,36 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		if isCycleFinished {
 			break
 		}
+	}
+
+	// Handle errors with heartbeat
+	if err != nil {
+		if d.heartbeat != nil {
+			errMsg := fmt.Sprintf("%T: %v\n", err, err)
+			d.heartbeat.SendHeartbeat(
+				heartbeat.MOONSTREAM_ADMIN_ACCESS_TOKEN,
+				"dead",
+				d.startBlock,
+				d.startBlock,
+				len(updates), 0,
+				1,
+				errMsg,
+			)
+		}
+		return isEnd, err
+	}
+
+	// Send success heartbeat
+	if d.heartbeat != nil {
+		d.heartbeat.SendHeartbeat(
+			heartbeat.MOONSTREAM_ADMIN_ACCESS_TOKEN,
+			"crawling",
+			d.startBlock,
+			lastBlockOfChank,
+			len(updates), 0,
+			0,
+			"",
+		)
 	}
 
 	return isEnd, nil
