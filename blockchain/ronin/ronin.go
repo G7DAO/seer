@@ -1,4 +1,4 @@
-package mantle
+package ronin
 
 import (
 	"bytes"
@@ -48,7 +48,7 @@ type Client struct {
 
 // ChainType returns the chain type.
 func (c *Client) ChainType() string {
-	return "mantle"
+	return "ronin"
 }
 
 // Close closes the underlying RPC client.
@@ -290,7 +290,7 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 
 // ParseBlocksWithTransactions parses blocks and their transactions into custom data structure.
 // This method showcases how to handle and transform detailed block and transaction data.
-func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxRequests int) ([]*MantleBlock, error) {
+func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxRequests int) ([]*RoninBlock, error) {
 	var blocksWithTxsJson []*seer_common.BlockJson
 	var fetchErr error
 	if maxRequests > 1 {
@@ -302,7 +302,7 @@ func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxR
 		return nil, fetchErr
 	}
 
-	var parsedBlocks []*MantleBlock
+	var parsedBlocks []*RoninBlock
 	for _, blockAndTxsJson := range blocksWithTxsJson {
 		// Convert BlockJson to Block and Transactions as required.
 		parsedBlock := ToProtoSingleBlock(blockAndTxsJson)
@@ -320,7 +320,7 @@ func (c *Client) ParseBlocksWithTransactions(from, to *big.Int, debug bool, maxR
 	return parsedBlocks, nil
 }
 
-func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*MantleEventLog, error) {
+func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.BlockCache, debug bool) ([]*RoninEventLog, error) {
 
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), c.timeout)
 
@@ -336,7 +336,7 @@ func (c *Client) ParseEvents(from, to *big.Int, blocksCache map[uint64]indexer.B
 		return nil, err
 	}
 
-	var parsedEvents []*MantleEventLog
+	var parsedEvents []*RoninEventLog
 
 	for _, log := range logs {
 		parsedEvent := ToProtoSingleEventLog(log)
@@ -383,7 +383,7 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 		}
 
 		// Prepare blocks to index
-		blocksIndex = append(blocksIndex, indexer.NewBlockIndex("mantle",
+		blocksIndex = append(blocksIndex, indexer.NewBlockIndex("ronin",
 			block.BlockNumber,
 			block.Hash,
 			block.Timestamp,
@@ -401,22 +401,22 @@ func (c *Client) FetchAsProtoBlocksWithEvents(from, to *big.Int, debug bool, max
 }
 
 func (c *Client) ProcessBlocksToBatch(msgs []proto.Message) (proto.Message, error) {
-	var blocks []*MantleBlock
+	var blocks []*RoninBlock
 	for _, msg := range msgs {
-		block, ok := msg.(*MantleBlock)
+		block, ok := msg.(*RoninBlock)
 		if !ok {
-			return nil, fmt.Errorf("failed to type assert proto.Message to *MantleBlock")
+			return nil, fmt.Errorf("failed to type assert proto.Message to *RoninBlock")
 		}
 		blocks = append(blocks, block)
 	}
 
-	return &MantleBlocksBatch{
+	return &RoninBlocksBatch{
 		Blocks:      blocks,
 		SeerVersion: version.SeerVersion,
 	}, nil
 }
 
-func ToEntireBlocksBatchFromLogProto(obj *MantleBlocksBatch) *seer_common.BlocksBatchJson {
+func ToEntireBlocksBatchFromLogProto(obj *RoninBlocksBatch) *seer_common.BlocksBatchJson {
 	blocksBatchJson := seer_common.BlocksBatchJson{
 		Blocks:      []seer_common.BlockJson{},
 		SeerVersion: obj.SeerVersion,
@@ -502,8 +502,8 @@ func ToEntireBlocksBatchFromLogProto(obj *MantleBlocksBatch) *seer_common.Blocks
 	return &blocksBatchJson
 }
 
-func ToProtoSingleBlock(obj *seer_common.BlockJson) *MantleBlock {
-	return &MantleBlock{
+func ToProtoSingleBlock(obj *seer_common.BlockJson) *RoninBlock {
+	return &RoninBlock{
 		BlockNumber:      fromHex(obj.BlockNumber).Uint64(),
 		Difficulty:       fromHex(obj.Difficulty).Uint64(),
 		ExtraData:        obj.ExtraData,
@@ -526,16 +526,16 @@ func ToProtoSingleBlock(obj *seer_common.BlockJson) *MantleBlock {
 	}
 }
 
-func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *MantleTransaction {
-	var accessList []*MantleTransactionAccessList
+func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *RoninTransaction {
+	var accessList []*RoninTransactionAccessList
 	for _, al := range obj.AccessList {
-		accessList = append(accessList, &MantleTransactionAccessList{
+		accessList = append(accessList, &RoninTransactionAccessList{
 			Address:     al.Address,
 			StorageKeys: al.StorageKeys,
 		})
 	}
 
-	return &MantleTransaction{
+	return &RoninTransaction{
 		Hash:                 obj.Hash,
 		BlockNumber:          fromHex(obj.BlockNumber).Uint64(),
 		BlockHash:            obj.BlockHash,
@@ -563,7 +563,7 @@ func ToProtoSingleTransaction(obj *seer_common.TransactionJson) *MantleTransacti
 	}
 }
 
-func ToEvenFromLogProto(obj *MantleEventLog) *seer_common.EventJson {
+func ToEvenFromLogProto(obj *RoninEventLog) *seer_common.EventJson {
 	return &seer_common.EventJson{
 		Address:         obj.Address,
 		Topics:          obj.Topics,
@@ -576,8 +576,8 @@ func ToEvenFromLogProto(obj *MantleEventLog) *seer_common.EventJson {
 	}
 }
 
-func ToProtoSingleEventLog(obj *seer_common.EventJson) *MantleEventLog {
-	return &MantleEventLog{
+func ToProtoSingleEventLog(obj *seer_common.EventJson) *RoninEventLog {
+	return &RoninEventLog{
 		Address:         obj.Address,
 		Topics:          obj.Topics,
 		Data:            obj.Data,
@@ -589,10 +589,10 @@ func ToProtoSingleEventLog(obj *seer_common.EventJson) *MantleEventLog {
 	}
 }
 
-func (c *Client) DecodeProtoEventLogs(data []string) ([]*MantleEventLog, error) {
-	var events []*MantleEventLog
+func (c *Client) DecodeProtoEventLogs(data []string) ([]*RoninEventLog, error) {
+	var events []*RoninEventLog
 	for _, d := range data {
-		var event MantleEventLog
+		var event RoninEventLog
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -605,10 +605,10 @@ func (c *Client) DecodeProtoEventLogs(data []string) ([]*MantleEventLog, error) 
 	return events, nil
 }
 
-func (c *Client) DecodeProtoTransactions(data []string) ([]*MantleTransaction, error) {
-	var transactions []*MantleTransaction
+func (c *Client) DecodeProtoTransactions(data []string) ([]*RoninTransaction, error) {
+	var transactions []*RoninTransaction
 	for _, d := range data {
-		var transaction MantleTransaction
+		var transaction RoninTransaction
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -621,10 +621,10 @@ func (c *Client) DecodeProtoTransactions(data []string) ([]*MantleTransaction, e
 	return transactions, nil
 }
 
-func (c *Client) DecodeProtoBlocks(data []string) ([]*MantleBlock, error) {
-	var blocks []*MantleBlock
+func (c *Client) DecodeProtoBlocks(data []string) ([]*RoninBlock, error) {
+	var blocks []*RoninBlock
 	for _, d := range data {
-		var block MantleBlock
+		var block RoninBlock
 		base64Decoded, err := base64.StdEncoding.DecodeString(d)
 		if err != nil {
 			return nil, err
@@ -638,7 +638,7 @@ func (c *Client) DecodeProtoBlocks(data []string) ([]*MantleBlock, error) {
 }
 
 func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) (*seer_common.BlocksBatchJson, error) {
-	var protoBlocksBatch MantleBlocksBatch
+	var protoBlocksBatch RoninBlocksBatch
 
 	dataBytes := rawData.Bytes()
 
@@ -653,7 +653,7 @@ func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) (*seer_comm
 }
 
 func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap map[string]map[string]*indexer.AbiEntry, threads int) ([]indexer.EventLabel, []indexer.TransactionLabel, error) {
-	var protoBlocksBatch MantleBlocksBatch
+	var protoBlocksBatch RoninBlocksBatch
 
 	dataBytes := rawData.Bytes()
 
@@ -682,7 +682,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 	for _, b := range protoBlocksBatch.Blocks {
 		wg.Add(1)
 		semaphoreChan <- struct{}{}
-		go func(b *MantleBlock) {
+		go func(b *RoninBlock) {
 			defer wg.Done()
 			defer func() { <-semaphoreChan }()
 

@@ -296,7 +296,7 @@ func CreateCrawlerCommand() *cobra.Command {
 
 func CreateSynchronizerCommand() *cobra.Command {
 	var startBlock, endBlock, batchSize uint64
-	var timeout, threads, cycleTickerWaitTime int
+	var timeout, threads, cycleTickerWaitTime, minBlocksToSync int
 	var chain, baseDir, customerDbUriFlag string
 
 	synchronizerCmd := &cobra.Command{
@@ -337,14 +337,14 @@ func CreateSynchronizerCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			indexer.InitDBConnection()
 
-			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout, threads)
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout, threads, minBlocksToSync)
 			if synchonizerErr != nil {
 				return synchonizerErr
 			}
 
 			latestBlockNumber, latestErr := newSynchronizer.Client.GetLatestBlockNumber()
 			if latestErr != nil {
-				return fmt.Errorf("Failed to get latest block number: %v", latestErr)
+				return fmt.Errorf("failed to get latest block number: %v", latestErr)
 			}
 
 			if startBlock > latestBlockNumber.Uint64() {
@@ -368,6 +368,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 	synchronizerCmd.Flags().StringVar(&customerDbUriFlag, "customer-db-uri", "", "Set customer database URI for development. This workflow bypass fetching customer IDs and its database URL connection strings from mdb-v3-controller API")
 	synchronizerCmd.Flags().IntVar(&threads, "threads", 5, "Number of go-routines for concurrent decoding")
 	synchronizerCmd.Flags().IntVar(&cycleTickerWaitTime, "cycle-ticker-wait-time", 10, "The wait time for the synchronizer in seconds before it try to start new cycle")
+	synchronizerCmd.Flags().IntVar(&minBlocksToSync, "min-blocks-to-sync", 10, "The minimum number of blocks to sync before the synchronizer starts decoding")
 
 	return synchronizerCmd
 }
@@ -1011,7 +1012,7 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 	var chain, baseDir, customerDbUriFlag string
 	var addresses, customerIds []string
 	var startBlock, endBlock, batchSize uint64
-	var timeout, threads int
+	var timeout, threads, minBlocksToSync int
 	var auto bool
 
 	historicalSyncCmd := &cobra.Command{
@@ -1038,6 +1039,11 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 				return syncErr
 			}
 
+			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			if blockchainErr != nil {
+				return blockchainErr
+			}
+
 			if chain == "" {
 				return fmt.Errorf("blockchain is required via --chain")
 			}
@@ -1047,7 +1053,7 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			indexer.InitDBConnection()
 
-			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout, threads)
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout, threads, minBlocksToSync)
 			if synchonizerErr != nil {
 				return synchonizerErr
 			}
@@ -1073,6 +1079,7 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 	historicalSyncCmd.Flags().StringSliceVar(&addresses, "addresses", []string{}, "The list of addresses to sync")
 	historicalSyncCmd.Flags().BoolVar(&auto, "auto", false, "Set this flag to sync all unfinished historical crawl from the database (default: false)")
 	historicalSyncCmd.Flags().IntVar(&threads, "threads", 5, "Number of go-routines for concurrent crawling (default: 5)")
+	historicalSyncCmd.Flags().IntVar(&minBlocksToSync, "min-blocks-to-sync", 10, "The minimum number of blocks to sync before the synchronizer starts decoding")
 
 	return historicalSyncCmd
 }

@@ -225,11 +225,11 @@ func (c *Client) FetchBlocksInRange(from, to *big.Int, debug bool) ([]*seer_comm
 // FetchBlocksInRangeAsync fetches blocks within a specified range concurrently.
 func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxRequests int) ([]*seer_common.BlockJson, error) {
 	var (
-		blocks []*seer_common.BlockJson
-
-		mu  sync.Mutex
-		wg  sync.WaitGroup
-		ctx = context.Background()
+		blocks          []*seer_common.BlockJson
+		collectedErrors []error
+		mu              sync.Mutex
+		wg              sync.WaitGroup
+		ctx             = context.Background()
 	)
 
 	var blockNumbersRange []*big.Int
@@ -237,8 +237,8 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 		blockNumbersRange = append(blockNumbersRange, new(big.Int).Set(i))
 	}
 
-	sem := make(chan struct{}, maxRequests) // Semaphore to control concurrency
-	errChan := make(chan error, 1)
+	sem := make(chan struct{}, maxRequests)             // Semaphore to control concurrency
+	errChan := make(chan error, len(blockNumbersRange)) // Channel to collect errors from goroutines
 
 	for _, b := range blockNumbersRange {
 		wg.Add(1)
@@ -274,10 +274,17 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 	close(sem)
 	close(errChan)
 
-	if err := <-errChan; err != nil {
-		return nil, err
+	for err := range errChan {
+		collectedErrors = append(collectedErrors, err)
 	}
 
+	if len(collectedErrors) > 0 {
+		var errStrings []string
+		for _, err := range collectedErrors {
+			errStrings = append(errStrings, err.Error())
+		}
+		return nil, fmt.Errorf("errors occurred during crawling: %s", strings.Join(errStrings, "; "))
+	}
 	return blocks, nil
 }
 

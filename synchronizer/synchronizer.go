@@ -25,17 +25,18 @@ type Synchronizer struct {
 	Client          seer_blockchain.BlockchainClient
 	StorageInstance storage.Storer
 
-	blockchain string
-	startBlock uint64
-	endBlock   uint64
-	batchSize  uint64
-	baseDir    string
-	basePath   string
-	threads    int
+	blockchain      string
+	startBlock      uint64
+	endBlock        uint64
+	batchSize       uint64
+	baseDir         string
+	basePath        string
+	threads         int
+	minBlocksToSync int
 }
 
 // NewSynchronizer creates a new synchronizer instance with the given blockchain handler.
-func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize uint64, timeout int, threads int) (*Synchronizer, error) {
+func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize uint64, timeout int, threads int, minBlocksToSync int) (*Synchronizer, error) {
 	var synchronizer Synchronizer
 
 	basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", blockchain)
@@ -45,7 +46,7 @@ func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize
 		panic(err)
 	}
 
-	client, err := seer_blockchain.NewClient(blockchain, crawler.BlockchainURLs[blockchain], timeout)
+	client, err := seer_blockchain.NewClient(blockchain, seer_blockchain.BlockchainURLs[blockchain], timeout)
 	if err != nil {
 		log.Println("Error initializing blockchain client:", err)
 		log.Fatal(err)
@@ -61,13 +62,14 @@ func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize
 		Client:          client,
 		StorageInstance: storageInstance,
 
-		blockchain: blockchain,
-		startBlock: startBlock,
-		endBlock:   endBlock,
-		batchSize:  batchSize,
-		baseDir:    baseDir,
-		basePath:   basePath,
-		threads:    threads,
+		blockchain:      blockchain,
+		startBlock:      startBlock,
+		endBlock:        endBlock,
+		batchSize:       batchSize,
+		baseDir:         baseDir,
+		basePath:        basePath,
+		threads:         threads,
+		minBlocksToSync: minBlocksToSync,
 	}
 
 	return &synchronizer, nil
@@ -452,7 +454,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 
 		// Read updates from the indexer db
 		// This function will return a list of customer updates 1 update is 1 customer
-		_, lastBlockOfChank, path, updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, customerIds)
+		_, lastBlockOfChank, paths, updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, customerIds, d.minBlocksToSync)
 		if err != nil {
 			return isEnd, fmt.Errorf("error reading updates: %w", err)
 		}
@@ -463,22 +465,30 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		}
 
 		if crawler.SEER_CRAWLER_DEBUG {
-			log.Printf("Read batch key: %s", path)
+			log.Printf("Read batch key: %s", paths)
 		}
 		log.Println("Last block of current chank: ", lastBlockOfChank)
 
 		// Read the raw data from the storage for current path
-		rawData, readErr := d.StorageInstance.Read(path)
+		rawData, readErr := storage.ReadFilesAsync(paths, d.threads, d.StorageInstance)
 		if readErr != nil {
 			return isEnd, fmt.Errorf("error reading raw data: %w", readErr)
 		}
 
 		log.Printf("Read %d users updates from the indexer db in range of blocks %d-%d\n", len(updates), d.startBlock, lastBlockOfChank)
+		// Process customer updates in parallel
 		var wg sync.WaitGroup
 
-		sem := make(chan struct{}, 5)  // Semaphore to control concurrency
-		errChan := make(chan error, 1) // Buffered channel for error handling
+		// count the number of goroutines that will be running
+		var totalGoroutines int
+		for _, update := range updates {
+			totalGoroutines += len(customerDBConnections[update.CustomerID])
+		}
 
+		sem := make(chan struct{}, d.threads)        // Semaphore to control concurrency
+		errChan := make(chan error, totalGoroutines) // Channel to collect errors from goroutines
+
+		var errs []error
 		for _, update := range updates {
 			for instanceId := range customerDBConnections[update.CustomerID] {
 				wg.Add(1)
@@ -487,13 +497,19 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		}
 
 		wg.Wait()
-
-		close(sem)
 		close(errChan) // Close the channel to signal that all goroutines have finished
 
-		// Check for errors from goroutines
-		if err := <-errChan; err != nil {
-			return isEnd, fmt.Errorf("error processing customer updates: %w", err)
+		// Check if there were any errors
+		for err := range errChan {
+			errs = append(errs, err)
+		}
+
+		if len(errs) > 0 {
+			var errMsg string
+			for _, e := range errs {
+				errMsg += e.Error() + "\n"
+			}
+			return isEnd, fmt.Errorf("errors processing customer updates:\n%s", errMsg)
 		}
 
 		d.startBlock = lastBlockOfChank + 1
@@ -635,16 +651,16 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		}
 
 		// Determine the processing strategy (RPC or storage)
-		var path string
+		var paths []string
 		var firstBlockOfChunk uint64
 
 		for {
-			path, firstBlockOfChunk, _, err = indexer.DBConnection.FindBatchPath(d.blockchain, d.startBlock)
+			paths, firstBlockOfChunk, _, err = indexer.DBConnection.RetrievePathsAndBlockBounds(d.blockchain, d.startBlock, d.minBlocksToSync)
 			if err != nil {
 				return fmt.Errorf("error finding batch path: %w", err)
 			}
 
-			if path != "" {
+			if paths != nil {
 				d.endBlock = firstBlockOfChunk
 				break
 			}
@@ -654,8 +670,8 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		}
 
 		// Read raw data from storage or via RPC
-		var rawData bytes.Buffer
-		rawData, err = d.StorageInstance.Read(path)
+		var rawData []bytes.Buffer
+		rawData, err = storage.ReadFilesAsync(paths, d.threads, d.StorageInstance)
 		if err != nil {
 			return fmt.Errorf("error reading events from storage: %w", err)
 		}
@@ -664,8 +680,17 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 		// Process customer updates in parallel
 		var wg sync.WaitGroup
-		sem := make(chan struct{}, d.threads) // Semaphore to control concurrency
-		errChan := make(chan error, 1)        // Buffered channel for error handling
+
+		// count the number of goroutines that will be running
+		var totalGoroutines int
+		for _, update := range customerUpdates {
+			totalGoroutines += len(customerDBConnections[update.CustomerID])
+		}
+
+		sem := make(chan struct{}, d.threads)        // Semaphore to control concurrency
+		errChan := make(chan error, totalGoroutines) // Channel to collect errors from goroutines
+
+		var errs []error
 
 		for _, update := range customerUpdates {
 
@@ -677,18 +702,24 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		}
 
 		wg.Wait()
-		close(sem)
 		close(errChan) // Close the channel to signal that all goroutines have finished
 
-		// Check for errors from goroutines
-		select {
-		case err := <-errChan:
-			log.Printf("Error processing customer updates: %v", err)
-			return err
-		default:
+		// Check if there were any errors
+		for err := range errChan {
+			errs = append(errs, err)
+		}
+
+		if len(errs) > 0 {
+			var errMsg string
+			for _, e := range errs {
+				errMsg += e.Error() + "\n"
+			}
+			return fmt.Errorf("errors processing customer updates:\n%s", errMsg)
 		}
 
 		d.startBlock = d.endBlock - 1
+
+		fmt.Printf("Processed %d customer updates for block range %d-%d\n", len(customerUpdates), d.startBlock, d.endBlock)
 
 		if isCycleFinished || d.startBlock == 0 {
 			if autoJobs {
@@ -713,7 +744,7 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 func (d *Synchronizer) processProtoCustomerUpdate(
 	update indexer.CustomerUpdates,
-	rawData bytes.Buffer,
+	rawDataList []bytes.Buffer,
 	customerDBConnections map[string]map[int]CustomerDBConnection,
 	id int,
 	sem chan struct{},
@@ -723,37 +754,49 @@ func (d *Synchronizer) processProtoCustomerUpdate(
 	// Decode input raw proto data using ABIs
 	// Write decoded data to the user Database
 
-	defer wg.Done()
-	sem <- struct{}{} // Acquire semaphore
+	defer func() {
+		if r := recover(); r != nil {
+			errChan <- fmt.Errorf("panic in goroutine for customer %s, instance %d: %v", update.CustomerID, id, r)
+		}
+		wg.Done()
+	}()
+
+	sem <- struct{}{}        // Acquire semaphore
+	defer func() { <-sem }() // Release semaphore
 
 	customer, exists := customerDBConnections[update.CustomerID][id]
 	if !exists {
 		errChan <- fmt.Errorf("no DB connection for customer %s", update.CustomerID)
-		<-sem // Release semaphore
 		return
 	}
 
 	conn, err := customer.Pgx.GetPool().Acquire(context.Background())
 	if err != nil {
 		errChan <- fmt.Errorf("error acquiring connection for customer %s: %w", update.CustomerID, err)
-		<-sem // Release semaphore
 		return
 	}
 	defer conn.Release()
-	decodedEvents, decodedTransactions, err := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis, d.threads)
-	if err != nil {
-		errChan <- fmt.Errorf("error  %s: %w", update.CustomerID, err)
-		<-sem // Release semaphore
-		return
-	}
 
-	err = customer.Pgx.WriteLabes(d.blockchain, decodedTransactions, decodedEvents)
+	var listDecodedEvents []indexer.EventLabel
+	var listDecodedTransactions []indexer.TransactionLabel
+
+	for _, rawData := range rawDataList {
+		// Decode the raw data to transactions
+		decodedEvents, decodedTransactions, err := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis, d.threads)
+
+		listDecodedEvents = append(listDecodedEvents, decodedEvents...)
+		listDecodedTransactions = append(listDecodedTransactions, decodedTransactions...)
+
+		if err != nil {
+			errChan <- fmt.Errorf("error decoding data for customer %s: %w", update.CustomerID, err)
+			return
+		}
+
+	}
+	err = customer.Pgx.WriteLabes(d.blockchain, listDecodedTransactions, listDecodedEvents)
 
 	if err != nil {
 		errChan <- fmt.Errorf("error writing labels for customer %s: %w", update.CustomerID, err)
-		<-sem // Release semaphore
 		return
 	}
-
-	<-sem // Release semaphore
 }
