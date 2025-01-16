@@ -417,21 +417,25 @@ func CreateInspectorCommand() *cobra.Command {
 			targetFilePath := filepath.Join(basePath, batch, "data.proto")
 			rawData, readErr := storageInstance.Read(targetFilePath)
 			if readErr != nil {
+				log.Printf("Failed to read proto file: %v", readErr)
 				return readErr
 			}
 
 			client, cleintErr := seer_blockchain.NewClient(chain, crawler.BlockchainURLs[chain], timeout)
 			if cleintErr != nil {
+				log.Printf("Failed to create client: %v", cleintErr)
 				return cleintErr
 			}
 
 			output, decErr := client.DecodeProtoEntireBlockToJson(&rawData)
 			if decErr != nil {
+				log.Printf("Failed to decode proto file: %v", decErr)
 				return decErr
 			}
 
 			jsonOutput, marErr := json.Marshal(output)
 			if marErr != nil {
+				log.Printf("Failed to marshal json: %v", marErr)
 				return marErr
 			}
 
