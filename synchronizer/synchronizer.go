@@ -779,13 +779,14 @@ func (d *Synchronizer) processProtoCustomerUpdate(
 
 	var listDecodedEvents []indexer.EventLabel
 	var listDecodedTransactions []indexer.TransactionLabel
-
+	var listRawTransactions []indexer.RawTransaction
 	for _, rawData := range rawDataList {
 		// Decode the raw data to transactions
-		decodedEvents, decodedTransactions, err := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis, d.threads)
+		decodedEvents, decodedTransactions, rawTransactions, err := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis, d.threads)
 
 		listDecodedEvents = append(listDecodedEvents, decodedEvents...)
 		listDecodedTransactions = append(listDecodedTransactions, decodedTransactions...)
+		listRawTransactions = append(listRawTransactions, rawTransactions...)
 
 		if err != nil {
 			errChan <- fmt.Errorf("error decoding data for customer %s: %w", update.CustomerID, err)
@@ -793,7 +794,7 @@ func (d *Synchronizer) processProtoCustomerUpdate(
 		}
 
 	}
-	err = customer.Pgx.WriteLabes(d.blockchain, listDecodedTransactions, listDecodedEvents)
+	err = customer.Pgx.WriteLabes(d.blockchain, listDecodedTransactions, listDecodedEvents, listRawTransactions)
 
 	if err != nil {
 		errChan <- fmt.Errorf("error writing labels for customer %s: %w", update.CustomerID, err)

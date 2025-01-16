@@ -121,24 +121,6 @@ type TransactionLabel struct {
 	BlockTimestamp  uint64
 }
 
-type RawTransaction struct {
-	L1BlockNumber        uint64
-	Hash                 string
-	BlockTimestamp       uint64
-	BlockHash            string
-	FromAddress          string
-	ToAddress            string
-	Gas                  uint64
-	GasPrice             uint64
-	MaxFeePerGas         uint64
-	MaxPriorityFeePerGas uint64
-	Input                string
-	Nonce                uint64
-	TransactionIndex     uint64
-	TransactionType      int
-	Value                uint64
-}
-
 type AbiJobsDeployInfo struct {
 	DeployedBlockNumber uint64
 	IDs                 []string
@@ -150,4 +132,28 @@ type AbiEntry struct {
 	AbiName string `json:"abi_name"`
 	AbiType string `json:"abi_type"`
 	Once    sync.Once
+}
+
+type RawTransaction struct {
+	// Required fields
+	Hash           string `json:"hash"`
+	BlockHash      string `json:"blockHash"`
+	BlockTimestamp uint64 `json:"block_timestamp"`
+	BlockNumber    uint64 `json:"blockNumber"`
+	FromAddress    string `json:"from"`
+	ToAddress      string `json:"to"`
+	Gas            string `json:"gas"`
+	GasPrice       string `json:"gasPrice"`
+	Input          string `json:"input"`
+	Nonce          string `json:"nonce"`
+	Value          string `json:"value"`
+
+	// Optional fields that might be zero/empty
+	MaxFeePerGas         string `json:"maxFeePerGas,omitempty"`
+	MaxPriorityFeePerGas string `json:"maxPriorityFeePerGas,omitempty"`
+	TransactionIndex     uint64 `json:"transactionIndex"`
+	TransactionType      uint64 `json:"transactionType,omitempty"`
+
+	// Chain-specific optional fields
+	L1BlockNumber *uint64 `json:"l1BlockNumber,omitempty"` // L2 chains only
 }

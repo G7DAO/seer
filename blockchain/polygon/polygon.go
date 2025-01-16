@@ -652,19 +652,20 @@ func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) (*seer_comm
 	return blocksBatchJson, nil
 }
 
-func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap map[string]map[string]*indexer.AbiEntry, threads int) ([]indexer.EventLabel, []indexer.TransactionLabel, error) {
+func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap map[string]map[string]*indexer.AbiEntry, threads int) ([]indexer.EventLabel, []indexer.TransactionLabel, []indexer.RawTransaction, error) {
 	var protoBlocksBatch PolygonBlocksBatch
 
 	dataBytes := rawData.Bytes()
 
 	err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal data: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to unmarshal data: %v", err)
 	}
 
 	// Shared slices to collect labels
 	var labels []indexer.EventLabel
 	var txLabels []indexer.TransactionLabel
+	var rawTransactions []indexer.RawTransaction
 	var labelsMutex sync.Mutex
 
 	var decodeErr error
@@ -689,7 +690,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 			// Local slices to collect labels for this block
 			var localEventLabels []indexer.EventLabel
 			var localTxLabels []indexer.TransactionLabel
-
+			localRawTransactions := make(map[string]indexer.RawTransaction)
 			for _, tx := range b.Transactions {
 				var decodedArgsTx map[string]interface{}
 
@@ -755,6 +756,24 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 					if err != nil {
 						errorChan <- fmt.Errorf("error converting decodedArgsTx to JSON for tx %s: %v", tx.Hash, err)
 						continue
+					}
+
+					localRawTransactions[tx.Hash] = indexer.RawTransaction{
+						Hash:                 tx.Hash,
+						BlockHash:            b.Hash,
+						BlockTimestamp:       b.Timestamp,
+						BlockNumber:          tx.BlockNumber,
+						FromAddress:          tx.FromAddress,
+						ToAddress:            tx.ToAddress,
+						Gas:                  tx.Gas,
+						GasPrice:             tx.GasPrice,
+						Input:                tx.Input,
+						Nonce:                tx.Nonce,
+						MaxFeePerGas:         tx.MaxFeePerGas,
+						MaxPriorityFeePerGas: tx.MaxPriorityFeePerGas,
+						TransactionIndex:     tx.TransactionIndex,
+						TransactionType:      tx.TransactionType,
+						Value:                tx.Value,
 					}
 
 					// Convert transaction to label
@@ -825,6 +844,25 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 						errorChan <- fmt.Errorf("error converting decodedArgsLogs to JSON for tx %s: %v", e.TransactionHash, err)
 						continue
 					}
+					if _, exists := localRawTransactions[e.TransactionHash]; !exists {
+						localRawTransactions[e.TransactionHash] = indexer.RawTransaction{
+							Hash:                 tx.Hash,
+							BlockHash:            b.Hash,
+							BlockTimestamp:       b.Timestamp,
+							BlockNumber:          tx.BlockNumber,
+							FromAddress:          tx.FromAddress,
+							ToAddress:            tx.ToAddress,
+							Gas:                  tx.Gas,
+							GasPrice:             tx.GasPrice,
+							Input:                tx.Input,
+							Nonce:                tx.Nonce,
+							MaxFeePerGas:         tx.MaxFeePerGas,
+							MaxPriorityFeePerGas: tx.MaxPriorityFeePerGas,
+							TransactionIndex:     tx.TransactionIndex,
+							TransactionType:      tx.TransactionType,
+							Value:                tx.Value,
+						}
+					}
 					// Convert event to label
 					eventLabel := indexer.EventLabel{
 						Label:           label,
@@ -848,6 +886,9 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 			labelsMutex.Lock()
 			labels = append(labels, localEventLabels...)
 			txLabels = append(txLabels, localTxLabels...)
+			for _, rawTransaction := range localRawTransactions {
+				rawTransactions = append(rawTransactions, rawTransaction)
+			}
 			labelsMutex.Unlock()
 		}(b)
 	}
@@ -863,10 +904,10 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 
 	// If any errors occurred, return them
 	if len(errorMessages) > 0 {
-		return nil, nil, fmt.Errorf("errors occurred during processing:\n%s", strings.Join(errorMessages, "\n"))
+		return nil, nil, nil, fmt.Errorf("errors occurred during processing:\n%s", strings.Join(errorMessages, "\n"))
 	}
 
-	return labels, txLabels, nil
+	return labels, txLabels, rawTransactions, nil
 }
 
 func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCache map[uint64]uint64, abiMap map[string]map[string]*indexer.AbiEntry) ([]indexer.TransactionLabel, error) {
