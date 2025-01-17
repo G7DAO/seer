@@ -19,6 +19,10 @@ import (
 	"github.com/G7DAO/seer/crawler"
 	"github.com/G7DAO/seer/indexer"
 	"github.com/G7DAO/seer/storage"
+	"github.com/bugout-dev/bugout-go/pkg"
+	"github.com/bugout-dev/bugout-go/pkg/spire"
+	"github.com/G7DAO/seer/heartbeat"
+	"github.com/bugout-dev/humbug/go/pkg"
 )
 
 type Synchronizer struct {
@@ -33,6 +37,18 @@ type Synchronizer struct {
 	basePath        string
 	threads         int
 	minBlocksToSync int
+	heartbeat       *heartbeat.Manager
+	reporter        *humbug.HumbugReporter
+	
+	// Just keep track of last heartbeat time and status
+	lastHeartbeat   time.Time
+	lastStatus      struct {
+		status      string
+		startBlock  uint64
+		lastBlock   uint64
+		eventJobs   int
+		functionJobs int
+	}
 }
 
 // NewSynchronizer creates a new synchronizer instance with the given blockchain handler.
@@ -58,6 +74,28 @@ func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize
 		threads = 1
 	}
 
+	hb, err := heartbeat.NewManager(
+		heartbeat.MOONSTREAM_ADMIN_ACCESS_TOKEN,
+		heartbeat.MOONSTREAM_MOONWORM_TASKS_JOURNAL,
+		"synchronizer",
+		blockchain,
+	)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize heartbeat manager: %v", err)
+		// Continue without heartbeat functionality
+	}
+
+	// Initialize Humbug reporter
+	reporter, err := humbug.CreateHumbugReporter(
+		humbug.AlwaysConsent, // or appropriate consent mechanism
+		"seer-synchronizer",  // client ID
+		fmt.Sprintf("%s-%d", blockchain, time.Now().Unix()), // session ID
+		MOONSTREAM_HUMBUG_TOKEN,
+	)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize error reporter: %v", err)
+	}
+
 	synchronizer = Synchronizer{
 		Client:          client,
 		StorageInstance: storageInstance,
@@ -70,9 +108,39 @@ func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize
 		basePath:        basePath,
 		threads:         threads,
 		minBlocksToSync: minBlocksToSync,
+		heartbeat:       hb,
+		reporter:        reporter,
+		lastHeartbeat:   time.Now(),
 	}
 
 	return &synchronizer, nil
+}
+
+func (d *Synchronizer) updateHeartbeatStatus(status string, startBlock, lastBlock uint64, eventJobs, functionJobs int) {
+	// Update status and send heartbeat if enough time has passed
+	d.lastStatus.status = status
+	d.lastStatus.startBlock = startBlock
+	d.lastStatus.lastBlock = lastBlock
+	d.lastStatus.eventJobs = eventJobs
+	d.lastStatus.functionJobs = functionJobs
+
+	// Check if it's time to send a heartbeat (every 5 minutes)
+	if time.Since(d.lastHeartbeat) >= 5*time.Minute {
+		if d.heartbeat != nil {
+			err := d.heartbeat.Send(
+				heartbeat.MOONSTREAM_HEARTBEAT_BUGOUT_ACCESS_TOKEN,
+				status,
+				startBlock,
+				lastBlock,
+				eventJobs,
+				functionJobs,
+			)
+			if err != nil {
+				log.Printf("Failed to send heartbeat: %v", err)
+			}
+			d.lastHeartbeat = time.Now()
+		}
+	}
 }
 
 // Read index storage
@@ -403,6 +471,9 @@ func (d *Synchronizer) Start(customerDbUriFlag string, cycleTickerWaitTime int) 
 func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 	var isEnd bool
 
+	// Update initial status
+	d.updateHeartbeatStatus("crawling", d.startBlock, d.startBlock, 0, 0)
+
 	customerDBConnections, customerIds, customersErr := d.getCustomers(customerDbUriFlag, nil)
 	if customersErr != nil {
 		return isEnd, customersErr
@@ -456,6 +527,15 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		// This function will return a list of customer updates 1 update is 1 customer
 		_, lastBlockOfChank, paths, updates, err := indexer.DBConnection.ReadUpdates(d.blockchain, d.startBlock, customerIds, d.minBlocksToSync)
 		if err != nil {
+			if d.reporter != nil {
+				report := humbug.Report{
+					Title:   fmt.Sprintf("Synchronizer Error - %s", d.blockchain),
+					Content: fmt.Sprintf("Error: %v\nStart Block: %d\nLast Block: %d\nUpdates Count: %d", 
+						err, d.startBlock, lastBlockOfChank, len(updates)),
+					Tags:    []string{"type:error", fmt.Sprintf("blockchain:%s", d.blockchain)},
+				}
+				d.reporter.Publish(report)
+			}
 			return isEnd, fmt.Errorf("error reading updates: %w", err)
 		}
 
@@ -517,6 +597,25 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		if isCycleFinished {
 			break
 		}
+	}
+
+	// Handle errors with heartbeat
+	if err != nil {
+		if d.reporter != nil {
+			report := humbug.Report{
+				Title:   fmt.Sprintf("Synchronizer Error - %s", d.blockchain),
+				Content: fmt.Sprintf("Error: %v\nStart Block: %d\nLast Block: %d\nUpdates Count: %d", 
+					err, d.startBlock, lastBlockOfChank, len(updates)),
+				Tags:    []string{"type:error", fmt.Sprintf("blockchain:%s", d.blockchain)},
+			}
+			d.reporter.Publish(report)
+		}
+		return isEnd, err
+	}
+
+	// Update status after processing
+	if len(updates) > 0 {
+		d.updateHeartbeatStatus("crawling", d.startBlock, lastBlockOfChank, len(updates), 0)
 	}
 
 	return isEnd, nil
