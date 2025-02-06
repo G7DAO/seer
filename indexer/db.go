@@ -113,8 +113,18 @@ func NewPostgreSQLpgx() (*PostgreSQLpgx, error) {
 
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, MOONSTREAM_DB_V3_INDEXES_URI)
+	newURL := fmt.Sprintf("%s?pool_max_conns=10&pool_min_conns=10&pool_max_conn_lifetime=10m&pool_max_conn_idle_time=10m", MOONSTREAM_DB_V3_INDEXES_URI)
+
+	config, err := pgxpool.ParseConfig(newURL)
+
 	if err != nil {
+		log.Println("Error parsing config", err)
+		return nil, err
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		log.Println("Error creating pool", err)
 		return nil, err
 	}
 
@@ -127,12 +137,9 @@ func NewPostgreSQLpgxWithCustomURI(uri string) (*PostgreSQLpgx, error) {
 
 	//  create a connection to the database
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-
-	defer cancel()
-
-	pool, err := pgxpool.New(ctx, uri)
+	pool, err := pgxpool.New(context.Background(), uri)
 	if err != nil {
+		log.Println("Error creating pool", err)
 		return nil, err
 	}
 
@@ -217,7 +224,11 @@ func (p *PostgreSQLpgx) ReadIndexOnRange(tableName string, startBlock uint64, en
 func (p *PostgreSQLpgx) ReadLastLabel(blockchain string) (uint64, error) {
 	pool := p.GetPool()
 
-	conn, err := pool.Acquire(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	defer cancel()
+
+	conn, err := pool.Acquire(ctx)
 
 	if err != nil {
 		return 0, err

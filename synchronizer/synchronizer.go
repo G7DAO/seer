@@ -236,6 +236,14 @@ type CustomerDBConnection struct {
 	Pgx *indexer.PostgreSQLpgx
 }
 
+func (d *Synchronizer) CloseIndexerDBConnections(customerDBConnections map[string]map[int]CustomerDBConnection) {
+	for _, customer := range customerDBConnections {
+		for _, instance := range customer {
+			instance.Pgx.Close()
+		}
+	}
+}
+
 func CustomersLatestBlocks(customerDBConnections map[string]map[int]CustomerDBConnection, blockchain string) (map[string]uint64, error) {
 	latestBlocks := make(map[string]uint64)
 	for id, customerInstances := range customerDBConnections {
@@ -408,6 +416,9 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		return isEnd, customersErr
 	}
 
+	// close the indexer db connection
+	defer d.CloseIndexerDBConnections(customerDBConnections)
+
 	// Set start block if 0
 	if d.startBlock == 0 {
 		startBlock, startErr := d.StartBlockLookUp(customerDBConnections, d.blockchain, crawler.SeerDefaultBlockShift)
@@ -509,6 +520,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 			for _, e := range errs {
 				errMsg += e.Error() + "\n"
 			}
+
 			return isEnd, fmt.Errorf("errors processing customer updates:\n%s", errMsg)
 		}
 
@@ -517,6 +529,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		if isCycleFinished {
 			break
 		}
+		// close the indexer db connection
 	}
 
 	return isEnd, nil
@@ -599,6 +612,9 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 	if err != nil {
 		return fmt.Errorf("error getting customers: %w", err)
 	}
+
+	// close the indexer db connection
+	defer d.CloseIndexerDBConnections(customerDBConnections)
 
 	updateDeadline = time.Now()
 
@@ -793,10 +809,20 @@ func (d *Synchronizer) processProtoCustomerUpdate(
 		}
 
 	}
-	err = customer.Pgx.WriteLabes(d.blockchain, listDecodedTransactions, listDecodedEvents)
+	// make retrying
+	retry := 0
+	for {
+		err = customer.Pgx.WriteLabes(d.blockchain, listDecodedTransactions, listDecodedEvents)
 
-	if err != nil {
-		errChan <- fmt.Errorf("error writing labels for customer %s: %w", update.CustomerID, err)
-		return
+		if err != nil {
+			retry++
+			if retry > 3 {
+				errChan <- fmt.Errorf("error writing labels for customer %s: %w", update.CustomerID, err)
+				return
+			}
+			time.Sleep(1 * time.Second)
+		} else {
+			break
+		}
 	}
 }
