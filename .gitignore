@@ -215,3 +215,4 @@ srv/
 
 # Custom
 scratch/
+.secret/
