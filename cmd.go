@@ -781,7 +781,12 @@ func CreateInspectorCommand() *cobra.Command {
 				}
 			}
 
-			trace.TraceTransaction(block, parentBlock, &block.Transactions[txIndex])
+			trace, traceErr := trace.TraceTransaction(block, parentBlock, &block.Transactions[txIndex])
+			if traceErr != nil {
+				return traceErr
+			}
+
+			fmt.Printf("Trace: %+v\n", trace)
 
 			return nil
 		},
