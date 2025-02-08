@@ -18,12 +18,14 @@ import (
 	"github.com/spf13/cobra"
 
 	seer_blockchain "github.com/G7DAO/seer/blockchain"
+	"github.com/G7DAO/seer/blockchain/common"
 	"github.com/G7DAO/seer/crawler"
 	"github.com/G7DAO/seer/evm"
 	"github.com/G7DAO/seer/indexer"
 	"github.com/G7DAO/seer/starknet"
 	"github.com/G7DAO/seer/storage"
 	"github.com/G7DAO/seer/synchronizer"
+	"github.com/G7DAO/seer/trace"
 	"github.com/G7DAO/seer/version"
 )
 
@@ -384,8 +386,9 @@ func CreateInspectorCommand() *cobra.Command {
 		Short: "Inspect storage and database consistency",
 	}
 
-	var chain, baseDir, delim, returnFunc, batch string
+	var chain, baseDir, delim, returnFunc, batch, txhash string
 	var timeout int
+	var blockNumber uint64
 
 	readCommand := &cobra.Command{
 		Use:   "read",
@@ -420,9 +423,9 @@ func CreateInspectorCommand() *cobra.Command {
 				return readErr
 			}
 
-			client, cleintErr := seer_blockchain.NewClient(chain, crawler.BlockchainURLs[chain], timeout)
-			if cleintErr != nil {
-				return cleintErr
+			client, clientErr := seer_blockchain.NewClient(chain, crawler.BlockchainURLs[chain], timeout)
+			if clientErr != nil {
+				return clientErr
 			}
 
 			output, decErr := client.DecodeProtoEntireBlockToJson(&rawData)
@@ -624,7 +627,171 @@ func CreateInspectorCommand() *cobra.Command {
 	storageCommand.Flags().StringVar(&returnFunc, "return-func", "", "Which function use for return")
 	storageCommand.Flags().IntVar(&timeout, "timeout", 180, "List timeout (default: 180)")
 
-	inspectorCmd.AddCommand(storageCommand, readCommand, dbCommand)
+	blockbatchCommand := &cobra.Command{
+		Use:   "blockbatch",
+		Short: "Find batch for given block number",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if chain == "" {
+				return errors.New("blockchain is required via --chain")
+			}
+
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+			indexer.InitDBConnection()
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var minBlock, maxBlock uint64
+			_, minBlock, maxBlock, err := indexer.DBConnection.FindBatchPath(chain, blockNumber)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("%d-%d\n", minBlock, maxBlock)
+			return nil
+		},
+	}
+
+	blockbatchCommand.Flags().StringVarP(&chain, "chain", "c", "", "The blockchain to crawl")
+	blockbatchCommand.Flags().Uint64VarP(&blockNumber, "block-number", "N", 0, "The block number to find batch for")
+
+	traceCommand := &cobra.Command{
+		Use:   "trace",
+		Short: "Trace transaction from block storage",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if chain == "" {
+				return errors.New("blockchain is required via --chain")
+			}
+			if txhash == "" {
+				return errors.New("transaction hash is required via --txhash")
+			}
+
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+			indexer.InitDBConnection()
+
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var err error
+			indexer.CheckVariablesForIndexer()
+			indexer.InitDBConnection()
+
+			if blockNumber == 0 {
+				return errors.New("positive block number is required")
+			}
+
+			parentBlockNumber := blockNumber - 1
+
+			var minBlock, maxBlock uint64
+			_, minBlock, maxBlock, err = indexer.DBConnection.FindBatchPath(chain, blockNumber)
+			if err != nil {
+				return err
+			}
+			batch := fmt.Sprintf("%d-%d", minBlock, maxBlock)
+
+			_, minBlock, maxBlock, err = indexer.DBConnection.FindBatchPath(chain, parentBlockNumber)
+			if err != nil {
+				return err
+			}
+			parentBatch := fmt.Sprintf("%d-%d", minBlock, maxBlock)
+
+			basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", chain)
+			storageInstance, newStorageErr := storage.NewStorage(storage.SeerCrawlerStorageType, basePath)
+			if newStorageErr != nil {
+				return newStorageErr
+			}
+
+			targetFilePath := filepath.Join(basePath, batch, "data.proto")
+			rawData, readErr := storageInstance.Read(targetFilePath)
+			if readErr != nil {
+				return readErr
+			}
+
+			client, clientErr := seer_blockchain.NewClient(chain, crawler.BlockchainURLs[chain], timeout)
+			if clientErr != nil {
+				return clientErr
+			}
+
+			blocks, decErr := client.DecodeProtoEntireBlockToJson(&rawData)
+			if decErr != nil {
+				return decErr
+			}
+
+			var parentBlocks *common.BlocksBatchJson
+
+			if parentBatch != batch {
+				targetParentFilePath := filepath.Join(basePath, parentBatch, "data.proto")
+				rawParentData, readParentErr := storageInstance.Read(targetParentFilePath)
+				if readParentErr != nil {
+					return readParentErr
+				}
+
+				var parentDecErr error
+				parentBlocks, parentDecErr = client.DecodeProtoEntireBlockToJson(&rawParentData)
+				if parentDecErr != nil {
+					return parentDecErr
+				}
+
+			} else {
+				parentBlocks = blocks
+			}
+
+			if blocks == nil || parentBlocks == nil {
+				return errors.New("failed to decode blocks")
+			}
+
+			var block, parentBlock *common.BlockJson
+
+			for i := range blocks.Blocks {
+				if blocks.Blocks[i].BlockNumber == fmt.Sprintf("%d", blockNumber) {
+					block = &blocks.Blocks[i]
+				}
+			}
+
+			for i := range parentBlocks.Blocks {
+				if parentBlocks.Blocks[i].BlockNumber == fmt.Sprintf("%d", parentBlockNumber) {
+					parentBlock = &parentBlocks.Blocks[i]
+				}
+			}
+
+			if block == nil || parentBlock == nil {
+				return errors.New("block or parent block not found")
+			}
+
+			txIndex := -1
+			for i := range block.Transactions {
+				if block.Transactions[i].Hash == txhash {
+					txIndex = i
+					break
+				}
+			}
+
+			trace.TraceTransaction(block, parentBlock, &block.Transactions[txIndex])
+
+			return nil
+		},
+	}
+
+	traceCommand.Flags().StringVarP(&chain, "chain", "c", "", "The blockchain to crawl")
+	traceCommand.Flags().Uint64VarP(&blockNumber, "block-number", "N", 0, "The block number to find batch for")
+	traceCommand.Flags().StringVarP(&txhash, "txhash", "t", "", "The transaction hash to trace")
+
+	inspectorCmd.AddCommand(storageCommand, readCommand, dbCommand, blockbatchCommand, traceCommand)
 
 	return inspectorCmd
 }
