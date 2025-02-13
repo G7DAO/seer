@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,15 +10,19 @@ import (
 	"go/format"
 	"io"
 	"log"
+	"math/big"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	seer_blockchain "github.com/G7DAO/seer/blockchain"
+	"github.com/G7DAO/seer/blockchain/common"
 	"github.com/G7DAO/seer/crawler"
 	"github.com/G7DAO/seer/evm"
 	"github.com/G7DAO/seer/indexer"
@@ -48,7 +53,9 @@ func CreateRootCommand() *cobra.Command {
 	abiCmd := CreateAbiCommand()
 	dbCmd := CreateDatabaseOperationCommand()
 	historicalSyncCmd := CreateHistoricalSyncCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd, historicalSyncCmd)
+	balancesTrackCmd := BalancesTrackCommand()
+	transactionsTrackCmd := TransactionsTrackCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd, historicalSyncCmd, balancesTrackCmd, transactionsTrackCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -1082,6 +1089,453 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 	historicalSyncCmd.Flags().IntVar(&minBlocksToSync, "min-blocks-to-sync", 10, "The minimum number of blocks to sync before the synchronizer starts decoding")
 
 	return historicalSyncCmd
+}
+
+func TransactionsTrackCommand() *cobra.Command {
+
+	var chain, baseDir, storeFile string
+	var threads, minBlocksToSync, dumpAddressesTimeout, waitTimeout int
+	/// generaly decode all transactions from the blockstorage and extract from_address and to_address
+	/// to_address and value are stored in json file resulted balance of address
+	balancesTrackCmd := &cobra.Command{
+		Use:   "balances-track",
+		Short: "Track balances of addresses",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			bugoutErr := storage.SetBugoutVariablesFromEnv()
+			if bugoutErr != nil {
+				return bugoutErr
+			}
+
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
+			syncErr := synchronizer.CheckVariablesForSynchronizer()
+			if syncErr != nil {
+				return syncErr
+			}
+
+			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			if blockchainErr != nil {
+				return blockchainErr
+			}
+
+			if chain == "" {
+				return fmt.Errorf("blockchain is required via --chain")
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// read latest block from the store file json
+			// is json file exists
+
+			indexer.InitDBConnection()
+
+			type StoreFileData struct {
+				LatestBlock uint64            `json:"latest_block"`
+				Addresses   map[string]string `json:"addresses"` // Changed to store balances as hex strings
+			}
+
+			var storeData StoreFileData
+
+			// Try to read existing store file
+			if _, err := os.Stat(storeFile); err == nil {
+				fileContent, readErr := os.ReadFile(storeFile)
+				if readErr != nil {
+					return fmt.Errorf("failed to read store file: %w", readErr)
+				}
+
+				if err := json.Unmarshal(fileContent, &storeData); err != nil {
+					return fmt.Errorf("failed to parse store file: %w", err)
+				}
+			} else {
+				// Initialize new store data if file doesn't exist
+				storeData = StoreFileData{
+					LatestBlock: 0,
+					Addresses:   make(map[string]string),
+				}
+			}
+
+			latestBlock := storeData.LatestBlock + 1
+
+			log.Printf("Starting balances track for chain: %s, latest block: %d", chain, latestBlock)
+
+			basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", chain)
+			storageInstance, newStorageErr := storage.NewStorage(storage.SeerCrawlerStorageType, basePath)
+			if newStorageErr != nil {
+				return newStorageErr
+			}
+			client, clientErr := seer_blockchain.NewClient(chain, crawler.BlockchainURLs[chain], 5)
+			if clientErr != nil {
+				return clientErr
+			}
+
+			bugoutClient, bugoutErr := storage.NewBugoutAPIClient()
+			if bugoutErr != nil {
+				return bugoutErr
+			}
+
+			var lastDumpTime time.Time
+			var fromAddress, toAddress string
+			var value *big.Int
+
+			lastDumpTime = time.Now()
+
+			for {
+
+				paths, _, maxBlock, err := indexer.DBConnection.RetrievePathsAndBlockBounds(chain, latestBlock, minBlocksToSync)
+				if err != nil {
+					// cannot scan NULL into *uint64
+					// wait for the next block
+					if strings.Contains(err.Error(), "cannot scan NULL into *uint64") {
+						log.Printf("Waiting for the next block")
+						time.Sleep(time.Duration(waitTimeout) * time.Second)
+						continue
+					}
+					return err
+				}
+				if paths == nil {
+					// wait for the next block
+					time.Sleep(time.Duration(waitTimeout) * time.Second)
+					continue
+				}
+
+				var rawData []bytes.Buffer
+				rawData, err = storage.ReadFilesAsync(paths, threads, storageInstance)
+				if err != nil {
+					return err
+				}
+
+				var blocksRaw []common.BlocksBatchJson
+				for _, rawData := range rawData {
+					blockRaw, decErr := client.DecodeProtoEntireBlockToJson(&rawData)
+					if decErr != nil {
+						return decErr
+					}
+					blocksRaw = append(blocksRaw, *blockRaw)
+				}
+
+				var blocks []common.BlockJson
+				// flatten blocks and order by block number ascending
+				for _, block := range blocksRaw {
+					blocks = append(blocks, block.Blocks...)
+				}
+				// block number is string so we need to convert it to uint64
+				sort.Slice(blocks, func(i, j int) bool {
+					blockI, err := strconv.ParseUint(blocks[i].BlockNumber, 10, 64)
+					if err != nil {
+						return false
+					}
+					blockJ, err := strconv.ParseUint(blocks[j].BlockNumber, 10, 64)
+					if err != nil {
+						return false
+					}
+					return blockI < blockJ
+				})
+
+				for _, block := range blocks {
+					for _, tx := range block.Transactions {
+						fromAddress = tx.FromAddress
+						toAddress = tx.ToAddress
+						// Parse hex value
+						value = new(big.Int)
+						valueStr := strings.TrimPrefix(tx.Value, "0x")
+						if valueStr == "" {
+							valueStr = "0"
+						}
+						value.SetString(valueStr, 16)
+
+						// Get current balances
+						fromBalance := new(big.Int)
+						if balStr, exists := storeData.Addresses[fromAddress]; exists {
+							fromBalance.SetString(strings.TrimPrefix(balStr, "0x"), 16)
+						}
+						toBalance := new(big.Int)
+						if balStr, exists := storeData.Addresses[toAddress]; exists {
+							toBalance.SetString(strings.TrimPrefix(balStr, "0x"), 16)
+						}
+
+						// Update balances
+						fromBalance.Sub(fromBalance, value)
+						toBalance.Add(toBalance, value)
+
+						// Store updated balances as hex strings
+						storeData.Addresses[fromAddress] = "0x" + fromBalance.Text(16)
+						storeData.Addresses[toAddress] = "0x" + toBalance.Text(16)
+					}
+					latestBlock, err = strconv.ParseUint(block.BlockNumber, 10, 64)
+					if err != nil {
+						return fmt.Errorf("failed to parse block number: %w", err)
+					}
+					storeData.LatestBlock = latestBlock
+					f, err := os.OpenFile(storeFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+					if err != nil {
+						return fmt.Errorf("failed to open store file: %w", err)
+					}
+					defer f.Close()
+					json.NewEncoder(f).Encode(storeData)
+					log.Printf("Updated store file with latest block: %d", latestBlock)
+				}
+				latestBlock = maxBlock + 1
+
+				if time.Since(lastDumpTime) > time.Duration(dumpAddressesTimeout)*time.Second {
+
+					addressesList := []string{}
+					for address := range storeData.Addresses {
+						addressesList = append(addressesList, address)
+					}
+
+					log.Printf("Dumping addresses to bugout")
+
+					_, err = bugoutClient.UpdateAddressesEntryContent(chain, addressesList)
+					if err != nil {
+						log.Printf("Failed to dump addresses to bugout: %v", err)
+						return err
+					}
+					lastDumpTime = time.Now()
+				}
+			}
+		},
+	}
+
+	balancesTrackCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	balancesTrackCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	balancesTrackCmd.Flags().StringVar(&storeFile, "store-file", "store.json", "The file to store the balances (default: store.json)")
+	balancesTrackCmd.Flags().IntVar(&threads, "threads", 5, "Number of go-routines for concurrent crawling (default: 5)")
+	balancesTrackCmd.Flags().IntVar(&dumpAddressesTimeout, "dump-addresses-timeout", 120, "The timeout for the dump addresses to bugout (default: 120)")
+	balancesTrackCmd.Flags().IntVar(&minBlocksToSync, "min-blocks-to-sync", 10, "The minimum number of blocks to sync before the synchronizer starts decoding")
+	balancesTrackCmd.Flags().IntVar(&waitTimeout, "wait-timeout", 10, "The timeout for the wait between blocks (default: 1)")
+	return balancesTrackCmd
+}
+
+func BalancesTrackCommand() *cobra.Command {
+
+	var chain, baseDir, storeFile string
+	var threads, minBlocksToSync, dumpAddressesTimeout, waitTimeout int
+	var address string
+	var startBlock uint64
+	var force bool
+	/// generaly decode all transactions from the blockstorage and extract from_address and to_address
+	/// to_address and value are stored in json file resulted balance of address
+	balancesTrackCmd := &cobra.Command{
+		Use:   "transactions-track",
+		Short: "Track transactions of address",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			indexerErr := indexer.CheckVariablesForIndexer()
+			if indexerErr != nil {
+				return indexerErr
+			}
+
+			storageErr := storage.CheckVariablesForStorage()
+			if storageErr != nil {
+				return storageErr
+			}
+
+			bugoutErr := storage.SetBugoutVariablesFromEnv()
+			if bugoutErr != nil {
+				return bugoutErr
+			}
+
+			crawlerErr := crawler.CheckVariablesForCrawler()
+			if crawlerErr != nil {
+				return crawlerErr
+			}
+
+			syncErr := synchronizer.CheckVariablesForSynchronizer()
+			if syncErr != nil {
+				return syncErr
+			}
+
+			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			if blockchainErr != nil {
+				return blockchainErr
+			}
+
+			if chain == "" {
+				return fmt.Errorf("blockchain is required via --chain")
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// read latest block from the store file json
+			// is json file exists
+
+			indexer.InitDBConnection()
+
+			type StoreAddressTransactions struct {
+				LatestBlock  uint64                 `json:"latest_block"`
+				Transactions map[string]interface{} `json:"transactions"` // Changed to store balances as hex strings
+			}
+
+			fmt.Println("address", address)
+
+			var storeData StoreAddressTransactions
+
+			// Try to read existing store file
+			if _, err := os.Stat(storeFile); err == nil {
+				fileContent, readErr := os.ReadFile(storeFile)
+				if readErr != nil {
+					return fmt.Errorf("failed to read store file: %w", readErr)
+				}
+
+				if err := json.Unmarshal(fileContent, &storeData); err != nil {
+					return fmt.Errorf("failed to parse store file: %w", err)
+				}
+			} else {
+				// Initialize new store data if file doesn't exist
+				storeData = StoreAddressTransactions{
+					LatestBlock:  startBlock,
+					Transactions: make(map[string]interface{}),
+				}
+			}
+			var latestBlock uint64
+			if force {
+				latestBlock = startBlock
+			} else {
+				latestBlock = storeData.LatestBlock + 1
+			}
+
+			log.Printf("Starting balances track for chain: %s, latest block: %d", chain, latestBlock)
+
+			basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", chain)
+			storageInstance, newStorageErr := storage.NewStorage(storage.SeerCrawlerStorageType, basePath)
+			if newStorageErr != nil {
+				return newStorageErr
+			}
+			client, clientErr := seer_blockchain.NewClient(chain, crawler.BlockchainURLs[chain], 5)
+			if clientErr != nil {
+				return clientErr
+			}
+
+			var value *big.Int
+			fmt.Println("latest block", latestBlock)
+			for {
+
+				paths, _, maxBlock, err := indexer.DBConnection.RetrievePathsAndBlockBounds(chain, latestBlock, minBlocksToSync)
+				if err != nil {
+					fmt.Println("err", err)
+					return err
+				}
+				fmt.Println("maxBlock", maxBlock)
+				if paths == nil {
+					// wait for the next block
+					time.Sleep(time.Duration(waitTimeout) * time.Second)
+					continue
+				}
+
+				var rawData []bytes.Buffer
+				rawData, err = storage.ReadFilesAsync(paths, threads, storageInstance)
+				if err != nil {
+					return err
+				}
+
+				var blocksRaw []common.BlocksBatchJson
+				for _, rawData := range rawData {
+					blockRaw, decErr := client.DecodeProtoEntireBlockToJson(&rawData)
+					if decErr != nil {
+						return decErr
+					}
+					blocksRaw = append(blocksRaw, *blockRaw)
+				}
+
+				var blocks []common.BlockJson
+				// flatten blocks and order by block number ascending
+				for _, block := range blocksRaw {
+					blocks = append(blocks, block.Blocks...)
+				}
+				sort.Slice(blocks, func(i, j int) bool {
+					return blocks[i].BlockNumber < blocks[j].BlockNumber
+				})
+
+				for _, block := range blocks {
+					for _, tx := range block.Transactions {
+
+						if tx.FromAddress == address {
+							// Parse hex value
+							fmt.Println("from address", tx.FromAddress)
+							value = new(big.Int)
+							valueStr := strings.TrimPrefix(tx.Value, "0x")
+							if valueStr == "" {
+								valueStr = "0"
+							}
+							value.SetString(valueStr, 16)
+							tx.Value = value.String()
+							storeData.Transactions[tx.Hash] = tx
+						}
+
+						if tx.ToAddress == address {
+							fmt.Println("to address", tx.ToAddress)
+							// Parse hex value
+							value = new(big.Int)
+							valueStr := strings.TrimPrefix(tx.Value, "0x")
+							if valueStr == "" {
+								valueStr = "0"
+							}
+							value.SetString(valueStr, 16)
+							tx.Value = value.String()
+							storeData.Transactions[tx.Hash] = tx
+						}
+					}
+					latestBlock, err = strconv.ParseUint(block.BlockNumber, 10, 64)
+					if err != nil {
+						return fmt.Errorf("failed to parse block number: %w", err)
+					}
+					storeData.LatestBlock = latestBlock
+				}
+				f, err := os.OpenFile(storeFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+				if err != nil {
+					return fmt.Errorf("failed to open store file: %w", err)
+				}
+
+				defer f.Close()
+				json.NewEncoder(f).Encode(storeData)
+				log.Printf("Updated store file with latest block: %d", latestBlock)
+				latestBlock = maxBlock + 1
+
+				// if time.Since(lastDumpTime) > time.Duration(dumpAddressesTimeout)*time.Second {
+
+				// 	addressesList := []string{}
+				// 	for address := range storeData.Addresses {
+				// 		addressesList = append(addressesList, address)
+				// 	}
+
+				// 	log.Printf("Dumping addresses to bugout")
+
+				// 	_, err = bugoutClient.UpdateAddressesEntryContent(chain, addressesList)
+				// 	if err != nil {
+				// 		log.Printf("Failed to dump addresses to bugout: %v", err)
+				// 		return err
+				// 	}
+				// 	lastDumpTime = time.Now()
+				// }
+			}
+		},
+	}
+
+	balancesTrackCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	balancesTrackCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
+	balancesTrackCmd.Flags().StringVar(&storeFile, "store-file", "transactions.json", "The file to store the balances (default: store.json)")
+	balancesTrackCmd.Flags().StringVar(&address, "address", "", "The address to track (default: '')")
+	balancesTrackCmd.Flags().IntVar(&threads, "threads", 5, "Number of go-routines for concurrent crawling (default: 5)")
+	balancesTrackCmd.Flags().IntVar(&dumpAddressesTimeout, "dump-addresses-timeout", 120, "The timeout for the dump addresses to bugout (default: 120)")
+	balancesTrackCmd.Flags().IntVar(&minBlocksToSync, "min-blocks-to-sync", 10, "The minimum number of blocks to sync before the synchronizer starts decoding")
+	balancesTrackCmd.Flags().IntVar(&waitTimeout, "wait-timeout", 10, "The timeout for the wait between blocks (default: 1)")
+	balancesTrackCmd.Flags().Uint64Var(&startBlock, "start-block", 1, "The block to start from (default: 0)")
+	balancesTrackCmd.Flags().BoolVar(&force, "force", false, "Force the start block (default: false)")
+	return balancesTrackCmd
 }
 
 func CreateStarknetParseCommand() *cobra.Command {
