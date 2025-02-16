@@ -1324,9 +1324,10 @@ func BalancesTrackCommand() *cobra.Command {
 
 	var chain, baseDir, storeFile string
 	var threads, minBlocksToSync, dumpAddressesTimeout, waitTimeout int
-	var address string
+	var addresses []string
 	var startBlock uint64
 	var force bool
+	var humanReadableTime string
 	/// generaly decode all transactions from the blockstorage and extract from_address and to_address
 	/// to_address and value are stored in json file resulted balance of address
 	balancesTrackCmd := &cobra.Command{
@@ -1380,7 +1381,15 @@ func BalancesTrackCommand() *cobra.Command {
 				Transactions map[string]interface{} `json:"transactions"` // Changed to store balances as hex strings
 			}
 
-			fmt.Println("address", address)
+			// split addresses by space
+			addresses = strings.Split(addresses[0], " ")
+
+			addressMap := make(map[string]bool)
+			for _, address := range addresses {
+				addressMap[strings.ToLower(address)] = true
+			}
+
+			fmt.Println("address", addressMap)
 
 			var storeData StoreAddressTransactions
 
@@ -1401,6 +1410,16 @@ func BalancesTrackCommand() *cobra.Command {
 					Transactions: make(map[string]interface{}),
 				}
 			}
+
+			if humanReadableTime != "" {
+				fetchedBlock, err := indexer.DBConnection.GetLatestBlockByHumanReadableTime(chain, humanReadableTime)
+				if err != nil {
+					return err
+				}
+				startBlock = fetchedBlock
+
+			}
+
 			var latestBlock uint64
 			if force {
 				latestBlock = startBlock
@@ -1462,8 +1481,28 @@ func BalancesTrackCommand() *cobra.Command {
 
 				for _, block := range blocks {
 					for _, tx := range block.Transactions {
+						//fmt.Println("tx", tx)
+						if block.BlockNumber == "305598820" {
+							log.Printf("\nTransaction details:")
+							log.Printf("FromAddress: '%s'", tx.FromAddress)
+							log.Printf("ToAddress: '%s'", tx.ToAddress)
 
-						if tx.FromAddress == address {
+							// Check if these exact addresses exist in our map
+							log.Printf("\nMap contains these addresses?")
+							log.Printf("FromAddress in map: %v", addressMap[tx.FromAddress])
+							log.Printf("ToAddress in map: %v", addressMap[tx.ToAddress])
+
+							// Print a few addresses from our map for comparison
+							log.Printf("\nSample from our address map:")
+							count := 0
+							for addr := range addressMap {
+								if count < 3 {
+									log.Printf("Map address: '%s'", addr)
+									count++
+								}
+							}
+						}
+						if addressMap[tx.FromAddress] || addressMap[tx.ToAddress] {
 							// Parse hex value
 							fmt.Println("from address", tx.FromAddress)
 							value = new(big.Int)
@@ -1476,18 +1515,6 @@ func BalancesTrackCommand() *cobra.Command {
 							storeData.Transactions[tx.Hash] = tx
 						}
 
-						if tx.ToAddress == address {
-							fmt.Println("to address", tx.ToAddress)
-							// Parse hex value
-							value = new(big.Int)
-							valueStr := strings.TrimPrefix(tx.Value, "0x")
-							if valueStr == "" {
-								valueStr = "0"
-							}
-							value.SetString(valueStr, 16)
-							tx.Value = value.String()
-							storeData.Transactions[tx.Hash] = tx
-						}
 					}
 					latestBlock, err = strconv.ParseUint(block.BlockNumber, 10, 64)
 					if err != nil {
@@ -1528,13 +1555,14 @@ func BalancesTrackCommand() *cobra.Command {
 	balancesTrackCmd.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
 	balancesTrackCmd.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
 	balancesTrackCmd.Flags().StringVar(&storeFile, "store-file", "transactions.json", "The file to store the balances (default: store.json)")
-	balancesTrackCmd.Flags().StringVar(&address, "address", "", "The address to track (default: '')")
+	balancesTrackCmd.Flags().StringArrayVar(&addresses, "addresses", []string{}, "The addresses to track (default: '')")
 	balancesTrackCmd.Flags().IntVar(&threads, "threads", 5, "Number of go-routines for concurrent crawling (default: 5)")
 	balancesTrackCmd.Flags().IntVar(&dumpAddressesTimeout, "dump-addresses-timeout", 120, "The timeout for the dump addresses to bugout (default: 120)")
 	balancesTrackCmd.Flags().IntVar(&minBlocksToSync, "min-blocks-to-sync", 10, "The minimum number of blocks to sync before the synchronizer starts decoding")
 	balancesTrackCmd.Flags().IntVar(&waitTimeout, "wait-timeout", 10, "The timeout for the wait between blocks (default: 1)")
 	balancesTrackCmd.Flags().Uint64Var(&startBlock, "start-block", 1, "The block to start from (default: 0)")
 	balancesTrackCmd.Flags().BoolVar(&force, "force", false, "Force the start block (default: false)")
+	balancesTrackCmd.Flags().StringVar(&humanReadableTime, "human-readable-time", "", "Readble format for select start block from database like 10 days ago or 1 month")
 	return balancesTrackCmd
 }
 

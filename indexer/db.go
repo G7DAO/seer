@@ -1449,18 +1449,6 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 	var minBlockNumber uint64
 	var maxBlockNumber uint64
 
-	// var left uint64
-
-	// if blockNumber < uint64(minBlocksToSync) {
-	// 	left = uint64(minBlocksToSync)
-	// } else {
-	// 	left = blockNumber - uint64(minBlocksToSync)
-	// }
-
-	// if minBlocksToSync == 0 {
-	// 	return nil, 0, 0, nil
-	// }
-
 	query := fmt.Sprintf(`WITH path as (
         SELECT
             path,
@@ -1502,6 +1490,24 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 	}
 
 	return paths, minBlockNumber, maxBlockNumber, nil
+}
+
+func (p *PostgreSQLpgx) GetLatestBlockByHumanReadableTime(blockchain string, humanReadableTime string) (uint64, error) {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Release()
+
+	var blockNumber uint64
+	err = conn.QueryRow(context.Background(), fmt.Sprintf("SELECT block_number FROM %s WHERE block_timestamp <= extract(epoch from now() - interval '%s') order by block_number desc limit 1", BlocksTableName(blockchain), humanReadableTime)).Scan(&blockNumber)
+	if err != nil {
+		return 0, err
+	}
+
+	return blockNumber, nil
 }
 
 func (p *PostgreSQLpgx) GetAbiJobsWithoutDeployBlocks(blockchain string) (map[string]map[string][]string, error) {
