@@ -17,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/G7DAO/seer/blockchain"
 	seer_blockchain "github.com/G7DAO/seer/blockchain"
 	"github.com/G7DAO/seer/crawler"
 	"github.com/G7DAO/seer/evm"
@@ -245,7 +246,7 @@ func CreateCrawlerCommand() *cobra.Command {
 				return crawlerErr
 			}
 
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			blockchainErr := blockchain.CheckVariablesForBlockchains(chain)
 			if blockchainErr != nil {
 				return blockchainErr
 			}
@@ -303,33 +304,8 @@ func CreateSynchronizerCommand() *cobra.Command {
 		Use:   "synchronizer",
 		Short: "Decode the crawled data from various blockchains",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			indexerErr := indexer.CheckVariablesForIndexer()
-			if indexerErr != nil {
-				return indexerErr
-			}
-
-			storageErr := storage.CheckVariablesForStorage()
-			if storageErr != nil {
-				return storageErr
-			}
-
-			crawlerErr := crawler.CheckVariablesForCrawler()
-			if crawlerErr != nil {
-				return crawlerErr
-			}
-
-			syncErr := synchronizer.CheckVariablesForSynchronizer()
-			if syncErr != nil {
-				return syncErr
-			}
-
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
-			if blockchainErr != nil {
-				return blockchainErr
-			}
-
-			if chain == "" {
-				return fmt.Errorf("blockchain is required via --chain")
+			if err := validateEnvVarsForStorageSync(chain); err != nil {
+				return err
 			}
 
 			return nil
@@ -420,7 +396,7 @@ func CreateInspectorCommand() *cobra.Command {
 				return readErr
 			}
 
-			client, cleintErr := seer_blockchain.NewClient(chain, crawler.BlockchainURLs[chain], timeout)
+			client, cleintErr := blockchain.NewClient(chain, blockchain.BlockchainURLs[chain], timeout)
 			if cleintErr != nil {
 				return cleintErr
 			}
@@ -785,7 +761,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 			if indexerErr != nil {
 				return indexerErr
 			}
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			blockchainErr := blockchain.CheckVariablesForBlockchains(chain)
 			if blockchainErr != nil {
 				return blockchainErr
 			}
@@ -820,7 +796,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 
 			indexer.InitDBConnection()
 
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			blockchainErr := blockchain.CheckVariablesForBlockchains(jobChain)
 			if blockchainErr != nil {
 				return blockchainErr
 			}
@@ -879,7 +855,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 
 			indexer.InitDBConnection()
 
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			blockchainErr := blockchain.CheckVariablesForBlockchains(jobChain)
 			if blockchainErr != nil {
 				return blockchainErr
 			}
@@ -941,7 +917,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 
 			indexer.InitDBConnection()
 
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
+			blockchainErr := blockchain.CheckVariablesForBlockchains(chain)
 			if blockchainErr != nil {
 				return blockchainErr
 			}
@@ -1019,38 +995,17 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 		Use:   "historical-sync",
 		Short: "Decode the historical data from various blockchains",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			indexerErr := indexer.CheckVariablesForIndexer()
-			if indexerErr != nil {
-				return indexerErr
-			}
-
-			storageErr := storage.CheckVariablesForStorage()
-			if storageErr != nil {
-				return storageErr
-			}
-
-			crawlerErr := crawler.CheckVariablesForCrawler()
-			if crawlerErr != nil {
-				return crawlerErr
-			}
-
-			syncErr := synchronizer.CheckVariablesForSynchronizer()
-			if syncErr != nil {
-				return syncErr
-			}
-
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
-			if blockchainErr != nil {
-				return blockchainErr
-			}
-
-			if chain == "" {
-				return fmt.Errorf("blockchain is required via --chain")
+			if err := validateEnvVarsForStorageSync(chain); err != nil {
+				return err
 			}
 
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := checkSpaceSeparatedAddresses(addresses); err != nil {
+				return err
+			}
+
 			indexer.InitDBConnection()
 
 			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout, threads, minBlocksToSync)
@@ -1315,4 +1270,41 @@ func StringPrompt(label string) (string, error) {
 	}
 
 	return strings.TrimSpace(output), nil
+}
+
+// validateEnvVarsForHistoricalSync checks environment variables needed for historical sync
+func validateEnvVarsForStorageSync(chain string) error {
+	if err := indexer.CheckVariablesForIndexer(); err != nil {
+		return err
+	}
+	if err := storage.CheckVariablesForStorage(); err != nil {
+		return err
+	}
+	if err := crawler.CheckVariablesForCrawler(); err != nil {
+		return err
+	}
+	if err := synchronizer.CheckVariablesForSynchronizer(); err != nil {
+		return err
+	}
+	if err := blockchain.CheckVariablesForBlockchains(chain); err != nil {
+		return err
+	}
+	if chain == "" {
+		return fmt.Errorf("blockchain is required via --chain")
+	}
+	return nil
+}
+
+// checkSpaceSeparatedAddresses ensures the user didn’t pass all addresses in one space-separated string
+func checkSpaceSeparatedAddresses(addrs []string) error {
+	if len(addrs) == 1 && strings.Contains(addrs[0], " ") {
+		return fmt.Errorf(
+			"it looks like you used space-separated addresses in one flag:\n  %s\n\n"+
+				"Use commas or repeated flags instead, for example:\n"+
+				"  --addresses=0xABC...,0xDEF...\n"+
+				"  --addresses=0xABC... --addresses=0xDEF...",
+			addrs[0],
+		)
+	}
+	return nil
 }
