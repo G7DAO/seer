@@ -1440,17 +1440,13 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 	pool := p.GetPool()
 
 	conn, err := pool.Acquire(context.Background())
-
 	if err != nil {
 		return nil, 0, 0, err
 	}
-
 	defer conn.Release()
 
 	var paths []string
-
 	var minBlockNumber uint64
-
 	var maxBlockNumber uint64
 
 	query := fmt.Sprintf(`WITH path as (
@@ -1460,7 +1456,7 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
         from
             %s
         WHERE
-            block_number >= $2 and block_number <= $1
+            block_number >= $1 and block_number <= $2
     ), latest_block_of_path as (
 		SELECT
 			block_number as latest_block_number
@@ -1483,21 +1479,35 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 	select  ARRAY_AGG( DISTINCT path) as paths, (SELECT first_block_number FROM earliest_block_of_path) as min_block_number, (SELECT latest_block_number FROM latest_block_of_path) as max_block_number from path
 	`, BlocksTableName(blockchain), BlocksTableName(blockchain), BlocksTableName(blockchain))
 
-	err = conn.QueryRow(context.Background(), query, blockNumber, blockNumber-uint64(minBlocksToSync)).Scan(&paths, &minBlockNumber, &maxBlockNumber)
-
+	err = conn.QueryRow(context.Background(), query, blockNumber, blockNumber+uint64(minBlocksToSync)).Scan(&paths, &minBlockNumber, &maxBlockNumber)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			// Blocks not indexed yet
+			// If the database returns 0 values, it means no blocks are indexed yet within the specified range.
+			// In this case, the function will return nil for paths, and 0 for both minBlockNumber and maxBlockNumber.
 			return nil, 0, 0, nil
 		}
-		return nil,
-			0,
-			0,
-			err
+		return nil, 0, 0, err
 	}
 
 	return paths, minBlockNumber, maxBlockNumber, nil
+}
 
+func (p *PostgreSQLpgx) GetLatestBlockByHumanReadableTime(blockchain string, humanReadableTime string) (uint64, error) {
+	pool := p.GetPool()
+
+	conn, err := pool.Acquire(context.Background())
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Release()
+
+	var blockNumber uint64
+	err = conn.QueryRow(context.Background(), fmt.Sprintf("SELECT block_number FROM %s WHERE block_timestamp <= extract(epoch from now() - interval '%s') order by block_number desc limit 1", BlocksTableName(blockchain), humanReadableTime)).Scan(&blockNumber)
+	if err != nil {
+		return 0, err
+	}
+
+	return blockNumber, nil
 }
 
 func (p *PostgreSQLpgx) GetAbiJobsWithoutDeployBlocks(blockchain string) (map[string]map[string][]string, error) {

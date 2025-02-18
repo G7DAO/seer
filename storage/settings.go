@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 )
 
 var (
@@ -55,6 +56,76 @@ func CheckVariablesForStorage() error {
 		log.Printf("Default seer crawler storage path set to '%s'", SeerCrawlerStoragePath)
 	}
 
+	return nil
+}
+
+var (
+	BugoutBroodAPIURL    string
+	BugoutSpireAPIURL    string
+	SeerBugoutAPITimeout int
+	BugoutAddressTag     string
+	BugoutAmountTag      string
+	BugoutChainTag       string
+	BugoutBlockTag       string
+	BugoutAccessTokens   string
+	BugoutStoreJournalID string
+)
+
+func SetBugoutVariablesFromEnv() error {
+	// Environment variable keys
+	BugoutBroodAPIURL = os.Getenv("BROOD_API_URL")
+	if BugoutBroodAPIURL == "" {
+		BugoutBroodAPIURL = "https://auth.bugout.dev"
+		log.Printf("BUGOUT_BROOD_API_URL environment variable is not set, using default: %s", BugoutBroodAPIURL)
+	}
+	BugoutSpireAPIURL = os.Getenv("SPIRE_API_URL")
+	if BugoutSpireAPIURL == "" {
+		BugoutSpireAPIURL = "https://spire.bugout.dev"
+		log.Printf("BUGOUT_SPIRE_API_URL environment variable is not set, using default: %s", BugoutSpireAPIURL)
+	}
+	SeerBugoutAPITimeoutRaw := os.Getenv("SEER_BUGOUT_API_TIMEOUT_SECONDS")
+	if SeerBugoutAPITimeoutRaw == "" {
+		SeerBugoutAPITimeout = 10
+		log.Printf("SEER_BUGOUT_API_TIMEOUT_SECONDS environment variable is not set, using default: %d", SeerBugoutAPITimeout)
+	} else {
+		timeout, err := strconv.Atoi(SeerBugoutAPITimeoutRaw)
+		if err != nil {
+			SeerBugoutAPITimeout = 10
+			log.Printf("SEER_BUGOUT_API_TIMEOUT_SECONDS environment variable is invalid, using default: %d", SeerBugoutAPITimeout)
+		} else {
+			SeerBugoutAPITimeout = timeout
+		}
+	}
+
+	BugoutAccessTokens = os.Getenv("SEER_BUGOUT_ACCESS_TOKENS")
+	if BugoutAccessTokens == "" {
+		return fmt.Errorf("SEER_BUGOUT_ACCESS_TOKENS environment variable is required")
+	}
+	BugoutStoreJournalID = os.Getenv("SEER_BUGOUT_STORE_JOURNAL_ID")
+	if BugoutStoreJournalID == "" {
+		return fmt.Errorf("SEER_BUGOUT_STORE_JOURNAL_ID environment variable is required")
+	}
+
+	BugoutAddressTag = os.Getenv("SEER_BUGOUT_ADDRESS_TAG")
+	if BugoutAddressTag == "" {
+		BugoutAddressTag = "address"
+		log.Printf("SEER_BUGOUT_ADDRESS_TAG environment variable is not set, using default: %s", BugoutAddressTag)
+	}
+	BugoutAmountTag = os.Getenv("SEER_BUGOUT_AMOUNT_TAG")
+	if BugoutAmountTag == "" {
+		BugoutAmountTag = "amount"
+		log.Printf("SEER_BUGOUT_AMOUNT_TAG environment variable is not set, using default: %s", BugoutAmountTag)
+	}
+	BugoutChainTag = os.Getenv("SEER_BUGOUT_CHAIN_TAG")
+	if BugoutChainTag == "" {
+		BugoutChainTag = "chain"
+		log.Printf("SEER_BUGOUT_CHAIN_TAG environment variable is not set, using default: %s", BugoutChainTag)
+	}
+	BugoutBlockTag = os.Getenv("SEER_BUGOUT_BLOCK_TAG")
+	if BugoutBlockTag == "" {
+		BugoutBlockTag = "block"
+		log.Printf("SEER_BUGOUT_BLOCK_TAG environment variable is not set, using default: %s", BugoutBlockTag)
+	}
 	return nil
 }
 
