@@ -1302,7 +1302,6 @@ func TransactionsTrackCommand() *cobra.Command {
 					_, err = bugoutClient.UpdateAddressesEntryContent(chain, addressesList)
 					if err != nil {
 						log.Printf("Failed to dump addresses to bugout: %v", err)
-						return err
 					}
 					lastDumpTime = time.Now()
 				}
