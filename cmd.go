@@ -1280,14 +1280,14 @@ func TransactionsTrackCommand() *cobra.Command {
 						return fmt.Errorf("failed to parse block number: %w", err)
 					}
 					storeData.LatestBlock = latestBlock
-					f, err := os.OpenFile(storeFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-					if err != nil {
-						return fmt.Errorf("failed to open store file: %w", err)
-					}
-					defer f.Close()
-					json.NewEncoder(f).Encode(storeData)
-					log.Printf("Updated store file with latest block: %d", latestBlock)
 				}
+				f, err := os.OpenFile(storeFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+				if err != nil {
+					return fmt.Errorf("failed to open store file: %w", err)
+				}
+				defer f.Close()
+				json.NewEncoder(f).Encode(storeData)
+				log.Printf("Updated store file with latest block: %d", latestBlock)
 				latestBlock = maxBlock + 1
 
 				if time.Since(lastDumpTime) > time.Duration(dumpAddressesTimeout)*time.Second {

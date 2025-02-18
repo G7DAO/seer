@@ -85,7 +85,7 @@ func (c *BugoutAPIClient) GetAllEntriesAndAddresses() (map[string]string, error)
 func (c *BugoutAPIClient) UpdateAddressesEntryContent(blockchain string, addresses []string) (string, error) {
 
 	/// find entry with all addresses
-	query := fmt.Sprintf("#%s:%s #addressesStorage #test", BugoutChainTag, blockchain)
+	query := fmt.Sprintf("#%s:%s #addressesStorage", BugoutChainTag, blockchain)
 	params := map[string]string{"content": "true"}
 
 	entries, err := c.BugoutSpireClient.SearchEntries(c.Token, c.JournalID, query, 1, 0, params)
@@ -118,13 +118,13 @@ func (c *BugoutAPIClient) UpdateAddressesEntryContent(blockchain string, address
 	}
 
 	// update existing entry
-	entryID := entries.Results[0].Id
+	entryID := strings.Split(entries.Results[0].Url, "/")[len(strings.Split(entries.Results[0].Url, "/"))-1]
 	log.Printf("Updating existing entry: %s", entryID)
 	content, err := json.Marshal(addresses)
 	if err != nil {
 		return entryID, fmt.Errorf("failed to marshal addresses: %w", err)
 	}
-	_, err = c.BugoutSpireClient.UpdateEntry(c.Token, c.JournalID, entryID, entries.Results[0].Title, string(content))
+	_, err = c.BugoutSpireClient.UpdateEntry(c.Token, c.JournalID, entryID, "", string(content))
 	if err != nil {
 		return entryID, fmt.Errorf("failed to update entry: %w", err)
 	}
