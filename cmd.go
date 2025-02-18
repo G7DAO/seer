@@ -1444,6 +1444,11 @@ func BalancesTrackCommand() *cobra.Command {
 
 				paths, _, maxBlock, err := indexer.DBConnection.RetrievePathsAndBlockBounds(chain, latestBlock, minBlocksToSync)
 				if err != nil {
+					if strings.Contains(err.Error(), "cannot scan NULL into *uint64") {
+						log.Printf("Waiting for the next block")
+						time.Sleep(time.Duration(waitTimeout) * time.Second)
+						continue
+					}
 					fmt.Println("err", err)
 					return err
 				}
