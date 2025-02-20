@@ -36,7 +36,7 @@ type Synchronizer struct {
 }
 
 // NewSynchronizer creates a new synchronizer instance with the given blockchain handler.
-func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize uint64, timeout int, threads int, minBlocksToSync int) (*Synchronizer, error) {
+func NewSynchronizer(blockchain, rpcUrl, baseDir string, startBlock, endBlock, batchSize uint64, timeout int, threads int, minBlocksToSync int) (*Synchronizer, error) {
 	var synchronizer Synchronizer
 
 	basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", blockchain)
@@ -46,7 +46,7 @@ func NewSynchronizer(blockchain, baseDir string, startBlock, endBlock, batchSize
 		panic(err)
 	}
 
-	client, err := seer_blockchain.NewClient(blockchain, seer_blockchain.BlockchainURLs[blockchain], timeout)
+	client, err := seer_blockchain.NewClient(blockchain, rpcUrl, timeout)
 	if err != nil {
 		log.Println("Error initializing blockchain client:", err)
 		log.Fatal(err)
