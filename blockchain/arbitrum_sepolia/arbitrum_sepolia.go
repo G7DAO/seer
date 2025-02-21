@@ -250,7 +250,7 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 
 			defer func() {
 				if r := recover(); r != nil {
-					errChan <- fmt.Errorf("panic in goroutine for block %d: %v", b.BlockNumber, r)
+					errChan <- fmt.Errorf("panic in goroutine for block %s: %v", b.String(), r)
 				}
 			}()
 
