@@ -1006,6 +1006,7 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 	historicalSyncCmd.Flags().BoolVar(&auto, "auto", false, "Set this flag to sync all unfinished historical crawl from the database (default: false)")
 	historicalSyncCmd.Flags().IntVar(&threads, "threads", 5, "Number of go-routines for concurrent crawling (default: 5)")
 	historicalSyncCmd.Flags().IntVar(&minBlocksToSync, "min-blocks-to-sync", 10, "The minimum number of blocks to sync before the synchronizer starts decoding")
+	historicalSyncCmd.Flags().StringVar(&rpcUrl, "rpc-url", "", "The RPC URL to use for the blockchain")
 
 	return historicalSyncCmd
 }
