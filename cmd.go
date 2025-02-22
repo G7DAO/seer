@@ -9,6 +9,7 @@ import (
 	"go/format"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -21,6 +22,7 @@ import (
 	"github.com/G7DAO/seer/crawler"
 	"github.com/G7DAO/seer/evm"
 	"github.com/G7DAO/seer/indexer"
+	"github.com/G7DAO/seer/server"
 	"github.com/G7DAO/seer/starknet"
 	"github.com/G7DAO/seer/storage"
 	"github.com/G7DAO/seer/synchronizer"
@@ -48,7 +50,8 @@ func CreateRootCommand() *cobra.Command {
 	abiCmd := CreateAbiCommand()
 	dbCmd := CreateDatabaseOperationCommand()
 	historicalSyncCmd := CreateHistoricalSyncCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd, historicalSyncCmd)
+	serverCmd := CreateServerCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd, historicalSyncCmd, serverCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -1301,6 +1304,60 @@ func CreateEVMGenerateCommand() *cobra.Command {
 	evmGenerateCmd.Flags().StringToStringVar(&aliases, "alias", nil, "A map of identifier aliases (e.g. --alias name=somename)")
 
 	return evmGenerateCmd
+}
+
+func CreateServerCommand() *cobra.Command {
+	inspectorCmd := &cobra.Command{
+		Use:   "server",
+		Short: "API server related functionality",
+	}
+
+	var hostFlag, corsFlag string
+	var portFlag int
+
+	runCommand := &cobra.Command{
+		Use:   "run",
+		Short: "Run API HTTP server",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			corsWhitelistRaw := strings.Split(strings.ReplaceAll(corsFlag, " ", ""), ",")
+
+			corsWhitelist := make(map[string]bool)
+			for _, uri := range corsWhitelistRaw {
+				if uri == "*" {
+					corsWhitelist["*"] = true
+					break
+				}
+				valid, err := url.ParseRequestURI(uri)
+				if err != nil {
+					log.Printf("Ignoring incorrect URI %s", uri)
+					continue
+				}
+				corsWhitelist[valid.String()] = true
+			}
+
+			corsSlice := make([]string, 0, len(corsWhitelist))
+			for k := range corsWhitelist {
+				corsSlice = append(corsSlice, k)
+			}
+
+			log.Printf("Starting API HTTP server at %s:%d and whitelisted CORS %v", hostFlag, portFlag, corsSlice)
+
+			server.ServerRun(hostFlag, portFlag, corsWhitelist)
+
+			return nil
+		},
+	}
+
+	runCommand.Flags().StringVar(&hostFlag, "host", "127.0.0.1", "Server host")
+	runCommand.Flags().IntVar(&portFlag, "base-dir", 9322, "Server port")
+	runCommand.Flags().StringVar(&corsFlag, "cors", "*", "List of comma separated domains for CORS")
+
+	inspectorCmd.AddCommand(runCommand)
+
+	return inspectorCmd
 }
 
 func StringPrompt(label string) (string, error) {
