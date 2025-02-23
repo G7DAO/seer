@@ -15,7 +15,9 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
 	seer_blockchain "github.com/G7DAO/seer/blockchain"
@@ -1312,16 +1314,40 @@ func CreateServerCommand() *cobra.Command {
 		Short: "API server related functionality",
 	}
 
-	var hostFlag, corsFlag string
+	var hostFlag, corsFlag, dbUriFlag string
 	var portFlag int
 
 	runCommand := &cobra.Command{
 		Use:   "run",
 		Short: "Run API HTTP server",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if dbUriFlag == "" {
+				return errors.New("database uri is required via --db-uri flag")
+			}
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Setup database pool
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+
+			defer cancel()
+
+			newURL := fmt.Sprintf("%s?pool_max_conns=10&pool_min_conns=10&pool_max_conn_lifetime=10m&pool_max_conn_idle_time=10m", dbUriFlag)
+
+			config, err := pgxpool.ParseConfig(newURL)
+
+			if err != nil {
+				log.Println("Error parsing config", err)
+				return err
+			}
+
+			pool, err := pgxpool.NewWithConfig(ctx, config)
+			if err != nil {
+				log.Println("Error creating pool", err)
+				return err
+			}
+
+			// Parse CORS whitelist
 			corsWhitelistRaw := strings.Split(strings.ReplaceAll(corsFlag, " ", ""), ",")
 
 			corsWhitelist := make(map[string]bool)
@@ -1343,9 +1369,16 @@ func CreateServerCommand() *cobra.Command {
 				corsSlice = append(corsSlice, k)
 			}
 
+			serverInst := server.Server{
+				Host:          hostFlag,
+				Port:          portFlag,
+				CORSWhitelist: corsWhitelist,
+				DbPool:        pool,
+			}
+
 			log.Printf("Starting API HTTP server at %s:%d and whitelisted CORS %v", hostFlag, portFlag, corsSlice)
 
-			server.ServerRun(hostFlag, portFlag, corsWhitelist)
+			serverInst.Run(hostFlag, portFlag, corsWhitelist)
 
 			return nil
 		},
@@ -1354,6 +1387,7 @@ func CreateServerCommand() *cobra.Command {
 	runCommand.Flags().StringVar(&hostFlag, "host", "127.0.0.1", "Server host")
 	runCommand.Flags().IntVar(&portFlag, "base-dir", 9322, "Server port")
 	runCommand.Flags().StringVar(&corsFlag, "cors", "*", "List of comma separated domains for CORS")
+	runCommand.Flags().StringVar(&dbUriFlag, "db-uri", "", "Set database URI")
 
 	inspectorCmd.AddCommand(runCommand)
 
