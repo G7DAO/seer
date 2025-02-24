@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/G7DAO/seer/indexer"
 )
@@ -60,6 +61,9 @@ type GraphLinks struct {
 }
 
 type GraphResponse struct {
+	SourceAddress     string `json:"source_address"`
+	LowestBlockNumber uint64 `json:"lowest_block_number"`
+
 	Nodes []GraphNode  `json:"nodes"`
 	Links []GraphLinks `json:"links"`
 }
@@ -69,6 +73,45 @@ func (server *Server) nowRoute(w http.ResponseWriter, r *http.Request) {
 	serverTime := time.Now().Format("2006-01-02 15:04:05.999999-07")
 	response := NowResponse{ServerTime: serverTime}
 	json.NewEncoder(w).Encode(response)
+}
+
+func weiToEther(wei *big.Int) *big.Float {
+	return new(big.Float).Quo(new(big.Float).SetInt(wei), big.NewFloat(params.Ether))
+}
+
+func ProcessGraphNodes(txs []indexer.Transaction, graphNodes map[string]uint64, graphLinks map[string]*big.Int) (uint64, []string) {
+	var subAddressSls []string
+
+	lowestBlockNum := txs[0].BlockNumber
+	for _, tx := range txs {
+		// Keep track of the lowest block number
+		if tx.BlockNumber < lowestBlockNum {
+			lowestBlockNum = tx.BlockNumber
+		}
+
+		// Initialize the source node if not already present in set
+		if _, exists := graphNodes[tx.FromAddress]; !exists {
+			graphNodes[tx.FromAddress] = 0
+		}
+
+		graphNodes[tx.FromAddress]++
+
+		// Initialize the target node if not already present and increment subnodes for the source
+		if _, exists := graphNodes[tx.ToAddress]; !exists {
+			graphNodes[tx.ToAddress] = 0
+
+			subAddressSls = append(subAddressSls, tx.ToAddress)
+		}
+
+		// Any bidirectional transfers are calculated under one link (link both from->to and to->from)
+		if _, exists := graphLinks[fmt.Sprintf("%s-%s", tx.ToAddress, tx.FromAddress)]; !exists {
+			if _, reversExists := graphLinks[fmt.Sprintf("%s-%s", tx.FromAddress, tx.ToAddress)]; !reversExists {
+				graphLinks[fmt.Sprintf("%s-%s", tx.FromAddress, tx.ToAddress)] = tx.Value
+			}
+		}
+	}
+
+	return lowestBlockNum, subAddressSls
 }
 
 func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
@@ -89,59 +132,64 @@ func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	txs, txsErr := server.DbPool.GetTransactionsV2(blockchain, sourceAddress)
+	// TODO: decide, do we want to track where source_address appears in to_address or not
+
+	limitTxs := 100
+	// Fetch all unique nodes
+	// It does not return all transactions between nodes, but only first
+	// Also it gives us lowest block_number for this address, so we do not
+	// query transactions for subnodes which were executed this address
+	// appeared in blockchain
+	txs, txsErr := server.DbPool.GetTransactionsV2(blockchain, []string{sourceAddress}, limitTxs, 0, true)
 	if txsErr != nil {
 		log.Printf("Unable to query rows, err: %v", txsErr)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Parse list of data to graph structure
-	var graphData GraphResponse
+	graphResponse := GraphResponse{
+		SourceAddress: sourceAddress,
+		Nodes:         []GraphNode{},
+		Links:         []GraphLinks{},
+	}
 
+	if len(txs) == 0 {
+		json.NewEncoder(w).Encode(graphResponse)
+		return
+	}
+
+	// First iteration of parse unique list of txs to nodes graph structure
+	// According to DISTINCT ON (to_address) we assume there is only one
+	// transaction for one from-to pair
 	graphNodes := make(map[string]uint64)
 	graphLinks := make(map[string]*big.Int)
-	subnodesTracker := make(map[string]map[string]bool) // Tracks unique subnodes per FromAddress
+	lowestBlockNum, subAddressSls := ProcessGraphNodes(txs, graphNodes, graphLinks)
 
-	for _, tx := range txs {
-		if _, exists := graphNodes[tx.FromAddress]; !exists {
-			graphNodes[tx.FromAddress] = 0
-		}
-		if _, exists := graphNodes[tx.ToAddress]; !exists {
-			graphNodes[tx.ToAddress] = 0
-		}
+	graphResponse.LowestBlockNumber = lowestBlockNum
 
-		// Ensure unique subnodes are counted
-		if _, exists := subnodesTracker[tx.FromAddress]; !exists {
-			subnodesTracker[tx.FromAddress] = make(map[string]bool)
-		}
-		if !subnodesTracker[tx.FromAddress][tx.ToAddress] { // Only count if this ToAddress is new for FromAddress
-			subnodesTracker[tx.FromAddress][tx.ToAddress] = true
-			graphNodes[tx.FromAddress]++
-		}
+	// Second iteration of parse depth equal 2
+	// Query subnodes for source address with txs greater then first tx of source address
+	subTxs, subTxsErr := server.DbPool.GetTransactionsV2(blockchain, subAddressSls, limitTxs, lowestBlockNum, true)
+	if subTxsErr != nil {
+		log.Printf("Unable to query rows, err: %v", subTxsErr)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
-		// Any bidirectional transfers are calculated under one link
-		if _, exists := graphLinks[fmt.Sprintf("%s-%s", tx.ToAddress, tx.FromAddress)]; !exists {
-			graphLinks[fmt.Sprintf("%s-%s", tx.FromAddress, tx.ToAddress)] = tx.Value
-		} else {
-			fromToAddress := fmt.Sprintf("%s-%s", tx.FromAddress, tx.ToAddress)
-
-			log.Printf("Appended to %s additional %s", fromToAddress, tx.Value.String()) // TODO: debug, delete
-
-			val := new(big.Int).Add(graphLinks[fromToAddress], tx.Value)
-			graphLinks[fromToAddress] = val
-		}
+	if len(subTxs) != 0 {
+		ProcessGraphNodes(subTxs, graphNodes, graphLinks)
 	}
 
 	for node, subNodes := range graphNodes {
-		graphData.Nodes = append(graphData.Nodes, GraphNode{Id: node, SubNodes: subNodes})
+		graphResponse.Nodes = append(graphResponse.Nodes, GraphNode{Id: node, SubNodes: subNodes})
 	}
 	for link, value := range graphLinks {
 		linkSls := strings.Split(link, "-")
-		graphData.Links = append(graphData.Links, GraphLinks{Source: linkSls[0], Target: linkSls[1], Value: value.String()})
+		valueEth := weiToEther(value)
+		graphResponse.Links = append(graphResponse.Links, GraphLinks{Source: linkSls[0], Target: linkSls[1], Value: fmt.Sprintf("%.2f ETH", valueEth)})
 	}
 
-	json.NewEncoder(w).Encode(graphData)
+	json.NewEncoder(w).Encode(graphResponse)
 }
 
 func (server *Server) Run(host string, port int, corsWhitelist map[string]bool) {

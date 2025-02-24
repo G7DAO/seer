@@ -1068,10 +1068,32 @@ type Transaction struct {
 	FromAddress string   `json:"from_address"`
 	ToAddress   string   `json:"to_address"`
 	Value       *big.Int `json:"value"`
-	Depth       int      `json:"depth"`
 }
 
-func (p *PostgreSQLpgx) GetTransactionsV2(blockchain, sourceAddress string) ([]Transaction, error) {
+// Fetch all unique nodes
+// It does not return all transactions between nodes, but only first
+func getSelectClause(toAddrDistinct bool) string {
+	if toAddrDistinct {
+		return "DISTINCT ON (to_address) "
+	}
+	return ""
+}
+
+func getOrderClause(toAddrDistinct bool) string {
+	if toAddrDistinct {
+		return "to_address, block_number"
+	}
+	return "block_number"
+}
+
+func getWhereClause(lowestBlockNum uint64) string {
+	if lowestBlockNum > 0 {
+		return fmt.Sprintf("AND block_number >= %d ", lowestBlockNum)
+	}
+	return ""
+}
+
+func (p *PostgreSQLpgx) GetTransactionsV2(blockchain string, sourceAddress []string, limit int, lowestBlockNum uint64, toAddrDistinct bool) ([]Transaction, error) {
 	txTableName, txTableErr := TransactionsTableName(blockchain)
 	if txTableErr != nil {
 		return nil, txTableErr
@@ -1086,38 +1108,19 @@ func (p *PostgreSQLpgx) GetTransactionsV2(blockchain, sourceAddress string) ([]T
 	}
 	defer conn.Release()
 
-	// rows, err := conn.Query(context.Background(), "SELECT block_number, from_address, to_address, value, 1 AS depth FROM ethereum_transactions WHERE from_address = $1 ORDER BY block_number", sourceAddress)
+	query := fmt.Sprintf(`
+		SELECT %s
+			block_number, 
+			from_address, 
+			to_address, 
+			value
+		FROM %s 
+		WHERE from_address = ANY($1)
+		%s
+		ORDER BY %s
+		LIMIT $2`, getSelectClause(toAddrDistinct), txTableName, getWhereClause(lowestBlockNum), getOrderClause(toAddrDistinct))
 
-	query := fmt.Sprintf(`WITH RECURSIVE address_chain AS (
-		-- Base case starting with specified 'from_address'
-		SELECT
-			block_number,
-			from_address,
-			to_address,
-			value,
-			1 AS depth
-		FROM %s
-		WHERE from_address = $1
-	
-		UNION ALL
-		
-		-- Recursive case
-		SELECT
-			e.block_number,
-			e.from_address,
-			e.to_address,
-			e.value,
-			ac.depth + 1
-		FROM %s e
-		JOIN address_chain ac
-			ON e.from_address = ac.to_address
-		WHERE ac.depth < 3  -- Limit depth up to
-	)
-	-- Return the entire chain of addresses with depth
-	SELECT * FROM address_chain;`, txTableName, txTableName)
-
-	// TODO: Add block_number to lower then first transaction at source_address
-	rows, qErr := conn.Query(context.Background(), query, sourceAddress)
+	rows, qErr := conn.Query(context.Background(), query, sourceAddress, limit)
 	if qErr != nil {
 		return nil, qErr
 	}
@@ -1127,7 +1130,7 @@ func (p *PostgreSQLpgx) GetTransactionsV2(blockchain, sourceAddress string) ([]T
 		var tx Transaction
 		var valueStr string
 
-		err = rows.Scan(&tx.BlockNumber, &tx.FromAddress, &tx.ToAddress, &valueStr, &tx.Depth)
+		err = rows.Scan(&tx.BlockNumber, &tx.FromAddress, &tx.ToAddress, &valueStr)
 		if err != nil {
 			log.Printf("Unable to scan row, err: %v", err)
 		}

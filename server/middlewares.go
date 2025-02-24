@@ -67,7 +67,12 @@ func (server *Server) logMiddleware(next http.Handler) http.Handler {
 			ip = realIp[0]
 		}
 
-		log.Printf("%s %s %s", ip, r.Method, r.URL.Path)
+		fullURL := r.URL.Path
+		if len(r.URL.RawQuery) > 0 {
+			fullURL += "?" + r.URL.RawQuery
+		}
+
+		log.Printf("%s %s %s", ip, r.Method, fullURL)
 	})
 }
 
