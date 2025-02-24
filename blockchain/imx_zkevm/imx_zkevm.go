@@ -246,6 +246,13 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 			defer wg.Done()
 
 			sem <- struct{}{} // Acquire semaphore
+			defer func() { <-sem }()
+
+			defer func() {
+				if r := recover(); r != nil {
+					errChan <- fmt.Errorf("panic in goroutine for block %s: %v", b.String(), r)
+				}
+			}()
 
 			ctxWithTimeout, cancel := context.WithTimeout(ctx, c.timeout)
 
@@ -266,7 +273,6 @@ func (c *Client) FetchBlocksInRangeAsync(from, to *big.Int, debug bool, maxReque
 				log.Printf("Fetched block number: %d", b)
 			}
 
-			<-sem
 		}(b)
 	}
 
@@ -685,6 +691,11 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 		go func(b *ImxZkevmBlock) {
 			defer wg.Done()
 			defer func() { <-semaphoreChan }()
+			defer func() {
+				if r := recover(); r != nil {
+					errorChan <- fmt.Errorf("panic in goroutine for block %d: %v", b.BlockNumber, r)
+				}
+			}()
 
 			// Local slices to collect labels for this block
 			var localEventLabels []indexer.EventLabel
