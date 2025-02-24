@@ -15,9 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
-	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
 	seer_blockchain "github.com/G7DAO/seer/blockchain"
@@ -1327,24 +1325,10 @@ func CreateServerCommand() *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Setup database pool
-			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-
-			defer cancel()
-
-			newURL := fmt.Sprintf("%s?pool_max_conns=10&pool_min_conns=10&pool_max_conn_lifetime=10m&pool_max_conn_idle_time=10m", dbUriFlag)
-
-			config, err := pgxpool.ParseConfig(newURL)
-
-			if err != nil {
-				log.Println("Error parsing config", err)
-				return err
-			}
-
-			pool, err := pgxpool.NewWithConfig(ctx, config)
-			if err != nil {
-				log.Println("Error creating pool", err)
-				return err
+			dbConn, dbErr := indexer.NewPostgreSQLpgx(dbUriFlag)
+			if dbErr != nil {
+				log.Println("Error creating database pool", dbErr)
+				return dbErr
 			}
 
 			// Parse CORS whitelist
@@ -1373,7 +1357,7 @@ func CreateServerCommand() *cobra.Command {
 				Host:          hostFlag,
 				Port:          portFlag,
 				CORSWhitelist: corsWhitelist,
-				DbPool:        pool,
+				DbPool:        dbConn,
 			}
 
 			log.Printf("Starting API HTTP server at %s:%d and whitelisted CORS %v", hostFlag, portFlag, corsSlice)

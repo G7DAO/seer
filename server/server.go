@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/G7DAO/seer/indexer"
 )
@@ -23,7 +21,7 @@ type Server struct {
 	Host          string
 	Port          int
 	CORSWhitelist map[string]bool
-	DbPool        *pgxpool.Pool
+	DbPool        *indexer.PostgreSQLpgx
 }
 
 type PingResponse struct {
@@ -48,14 +46,6 @@ func (server *Server) versionRoute(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	response := VersionResponse{Version: SERVER_API_VERSION}
 	json.NewEncoder(w).Encode(response)
-}
-
-type Transaction struct {
-	BlockNumber uint64   `json:"block_number"`
-	FromAddress string   `json:"from_address"`
-	ToAddress   string   `json:"to_address"`
-	Value       *big.Int `json:"value"`
-	Depth       int      `json:"depth"`
 }
 
 type GraphNode struct {
@@ -99,78 +89,11 @@ func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	txTableName, txTableErr := indexer.TransactionsTableName(blockchain)
-	if txTableErr != nil {
-		http.Error(w, "Unsupported blockchain provided", http.StatusBadRequest)
-		return
-	}
-
-	conn, err := server.DbPool.Acquire(context.Background())
-	if err != nil {
-		log.Println(err)
+	txs, txsErr := server.DbPool.GetTransactionsV2(blockchain, sourceAddress)
+	if txsErr != nil {
+		log.Printf("Unable to query rows, err: %v", txsErr)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
-	}
-
-	defer conn.Release()
-
-	// rows, err := conn.Query(context.Background(), "SELECT block_number, from_address, to_address, value, 1 AS depth FROM ethereum_transactions WHERE from_address = $1 ORDER BY block_number", sourceAddress)
-
-	query := fmt.Sprintf(`WITH RECURSIVE address_chain AS (
-		-- Base case starting with specified 'from_address'
-		SELECT
-			block_number,
-			from_address,
-			to_address,
-			value,
-			1 AS depth
-		FROM %s
-		WHERE from_address = $1
-	
-		UNION ALL
-		
-		-- Recursive case
-		SELECT
-			e.block_number,
-			e.from_address,
-			e.to_address,
-			e.value,
-			ac.depth + 1
-		FROM %s e
-		JOIN address_chain ac
-			ON e.from_address = ac.to_address
-		WHERE ac.depth < 3  -- Limit depth up to
-	)
-	-- Return the entire chain of addresses with depth
-	SELECT * FROM address_chain;`, txTableName, txTableName)
-
-	// TODO: Add block_number to lower then first transaction at source_address
-	rows, err := conn.Query(context.Background(), query, sourceAddress)
-
-	if err != nil {
-		log.Println(err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	var txs []Transaction
-	for rows.Next() {
-		var tx Transaction
-		var valueStr string
-
-		// Scan the values into the struct fields
-		err = rows.Scan(&tx.BlockNumber, &tx.FromAddress, &tx.ToAddress, &valueStr, &tx.Depth)
-		if err != nil {
-			log.Println(err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
-
-		tx.Value = new(big.Int)
-		tx.Value.SetString(valueStr, 10)
-
-		// Append the transaction to the slice
-		txs = append(txs, tx)
 	}
 
 	// Parse list of data to graph structure

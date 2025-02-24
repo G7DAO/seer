@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/big"
 	"os"
 	"strconv"
 	"strings"
@@ -185,13 +186,13 @@ type PostgreSQLpgx struct {
 	pool *pgxpool.Pool
 }
 
-func NewPostgreSQLpgx() (*PostgreSQLpgx, error) {
+func NewPostgreSQLpgx(dbUri string) (*PostgreSQLpgx, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 
 	defer cancel()
 
-	newURL := fmt.Sprintf("%s?pool_max_conns=10&pool_min_conns=10&pool_max_conn_lifetime=10m&pool_max_conn_idle_time=10m", MOONSTREAM_DB_V3_INDEXES_URI)
+	newURL := fmt.Sprintf("%s?pool_max_conns=10&pool_min_conns=10&pool_max_conn_lifetime=10m&pool_max_conn_idle_time=10m", dbUri)
 
 	config, err := pgxpool.ParseConfig(newURL)
 
@@ -1060,6 +1061,85 @@ func (p *PostgreSQLpgx) WriteEvents(tx pgx.Tx, blockchain string, events []Event
 	log.Printf("Saved %d events records into %s table", len(events), tableName)
 
 	return nil
+}
+
+type Transaction struct {
+	BlockNumber uint64   `json:"block_number"`
+	FromAddress string   `json:"from_address"`
+	ToAddress   string   `json:"to_address"`
+	Value       *big.Int `json:"value"`
+	Depth       int      `json:"depth"`
+}
+
+func (p *PostgreSQLpgx) GetTransactionsV2(blockchain, sourceAddress string) ([]Transaction, error) {
+	txTableName, txTableErr := TransactionsTableName(blockchain)
+	if txTableErr != nil {
+		return nil, txTableErr
+	}
+
+	pool := p.GetPool()
+
+	ctx := context.Background()
+	conn, acquireErr := pool.Acquire(ctx)
+	if acquireErr != nil {
+		return nil, acquireErr
+	}
+	defer conn.Release()
+
+	// rows, err := conn.Query(context.Background(), "SELECT block_number, from_address, to_address, value, 1 AS depth FROM ethereum_transactions WHERE from_address = $1 ORDER BY block_number", sourceAddress)
+
+	query := fmt.Sprintf(`WITH RECURSIVE address_chain AS (
+		-- Base case starting with specified 'from_address'
+		SELECT
+			block_number,
+			from_address,
+			to_address,
+			value,
+			1 AS depth
+		FROM %s
+		WHERE from_address = $1
+	
+		UNION ALL
+		
+		-- Recursive case
+		SELECT
+			e.block_number,
+			e.from_address,
+			e.to_address,
+			e.value,
+			ac.depth + 1
+		FROM %s e
+		JOIN address_chain ac
+			ON e.from_address = ac.to_address
+		WHERE ac.depth < 3  -- Limit depth up to
+	)
+	-- Return the entire chain of addresses with depth
+	SELECT * FROM address_chain;`, txTableName, txTableName)
+
+	// TODO: Add block_number to lower then first transaction at source_address
+	rows, qErr := conn.Query(context.Background(), query, sourceAddress)
+	if qErr != nil {
+		return nil, qErr
+	}
+
+	var txs []Transaction
+	for rows.Next() {
+		var tx Transaction
+		var valueStr string
+
+		err = rows.Scan(&tx.BlockNumber, &tx.FromAddress, &tx.ToAddress, &valueStr, &tx.Depth)
+		if err != nil {
+			log.Printf("Unable to scan row, err: %v", err)
+		}
+
+		tx.Value = new(big.Int)
+		tx.Value.SetString(valueStr, 10)
+
+		// Append the transaction to the slice
+		txs = append(txs, tx)
+	}
+
+	return txs, nil
 }
 
 func (p *PostgreSQLpgx) WriteTransactions(tx pgx.Tx, blockchain string, transactions []TransactionLabel) error {
