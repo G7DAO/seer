@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -115,21 +116,32 @@ func ProcessGraphNodes(txs []indexer.Transaction, graphNodes map[string]uint64, 
 }
 
 func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
-	sourceAddress := r.URL.Query().Get("source_address")
-	if sourceAddress == "" {
+	sourceAddressQe := r.URL.Query().Get("source_address")
+	if sourceAddressQe == "" {
 		http.Error(w, "Address is required", http.StatusBadRequest)
 		return
 	}
 
-	if !common.IsHexAddress(sourceAddress) {
+	if !common.IsHexAddress(sourceAddressQe) {
 		http.Error(w, "Incorrect address type", http.StatusBadRequest)
 		return
 	}
 
-	blockchain := r.URL.Query().Get("blockchain")
-	if blockchain == "" {
+	blockchainQe := r.URL.Query().Get("blockchain")
+	if blockchainQe == "" {
 		http.Error(w, "Blockchain is required", http.StatusBadRequest)
 		return
+	}
+
+	var lowestBlockNumQeUint uint64
+	lowestBlockNumQe := r.URL.Query().Get("lowest_block_number")
+	if lowestBlockNumQe != "" {
+		var parseUintErr error
+		lowestBlockNumQeUint, parseUintErr = strconv.ParseUint(lowestBlockNumQe, 10, 64)
+		if parseUintErr != nil {
+			http.Error(w, "lowest_block_number should be an integer", http.StatusBadRequest)
+			return
+		}
 	}
 
 	// TODO: decide, do we want to track where source_address appears in to_address or not
@@ -140,7 +152,7 @@ func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
 	// Also it gives us lowest block_number for this address, so we do not
 	// query transactions for subnodes which were executed this address
 	// appeared in blockchain
-	txs, txsErr := server.DbPool.GetTransactionsV2(blockchain, []string{sourceAddress}, limitTxs, 0, true)
+	txs, txsErr := server.DbPool.GetTransactionsV2(blockchainQe, []string{sourceAddressQe}, limitTxs, lowestBlockNumQeUint, true)
 	if txsErr != nil {
 		log.Printf("Unable to query rows, err: %v", txsErr)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -148,9 +160,10 @@ func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	graphResponse := GraphResponse{
-		SourceAddress: sourceAddress,
-		Nodes:         []GraphNode{},
-		Links:         []GraphLinks{},
+		SourceAddress:     sourceAddressQe,
+		LowestBlockNumber: lowestBlockNumQeUint,
+		Nodes:             []GraphNode{},
+		Links:             []GraphLinks{},
 	}
 
 	if len(txs) == 0 {
@@ -169,7 +182,7 @@ func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
 
 	// Second iteration of parse depth equal 2
 	// Query subnodes for source address with txs greater then first tx of source address
-	subTxs, subTxsErr := server.DbPool.GetTransactionsV2(blockchain, subAddressSls, limitTxs, lowestBlockNum, true)
+	subTxs, subTxsErr := server.DbPool.GetTransactionsV2(blockchainQe, subAddressSls, limitTxs, lowestBlockNum, true)
 	if subTxsErr != nil {
 		log.Printf("Unable to query rows, err: %v", subTxsErr)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
