@@ -115,10 +115,79 @@ func ProcessGraphNodes(txs []indexer.Transaction, graphNodes map[string]uint64, 
 	return lowestBlockNum, subAddressSls
 }
 
+type TransactionsVolumeResponse struct {
+	FromAddress    string `json:"from_address"`
+	ToAddress      string `json:"to_address"`
+	MinBlockNumber uint64 `json:"min_block_number"`
+	MaxBlockNumber uint64 `json:"max_block_number"`
+	Volume         string `json:"volume"`
+	TxsCount       uint64 `json:"txs_count"`
+}
+
+func (server *Server) graphsV2VolumeRoute(w http.ResponseWriter, r *http.Request) {
+	fromAddressQe := r.URL.Query().Get("from_address")
+	if fromAddressQe == "" {
+		http.Error(w, "from_address is required", http.StatusBadRequest)
+		return
+	}
+
+	if !common.IsHexAddress(fromAddressQe) {
+		http.Error(w, "Incorrect address type", http.StatusBadRequest)
+		return
+	}
+
+	toAddressQe := r.URL.Query().Get("to_address")
+	if toAddressQe == "" {
+		http.Error(w, "to_address is required", http.StatusBadRequest)
+		return
+	}
+
+	if !common.IsHexAddress(toAddressQe) {
+		http.Error(w, "Incorrect address type", http.StatusBadRequest)
+		return
+	}
+
+	blockchainQe := r.URL.Query().Get("blockchain")
+	if blockchainQe == "" {
+		http.Error(w, "Blockchain is required", http.StatusBadRequest)
+		return
+	}
+
+	var lowestBlockNumQeUint uint64
+	lowestBlockNumQe := r.URL.Query().Get("lowest_block_number")
+	if lowestBlockNumQe != "" {
+		var parseUintErr error
+		lowestBlockNumQeUint, parseUintErr = strconv.ParseUint(lowestBlockNumQe, 10, 64)
+		if parseUintErr != nil {
+			http.Error(w, "lowest_block_number should be an integer", http.StatusBadRequest)
+			return
+		}
+	}
+
+	limitTxs := 1000000
+	txsVol, txsErr := server.DbPool.GetTransactionsVolumeV2(blockchainQe, fromAddressQe, toAddressQe, limitTxs, lowestBlockNumQeUint, false)
+	if txsErr != nil {
+		log.Printf("Unable to row, err: %v", txsErr)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	response := TransactionsVolumeResponse{
+		FromAddress:    fromAddressQe,
+		ToAddress:      toAddressQe,
+		MinBlockNumber: txsVol.MinBlockNumber,
+		MaxBlockNumber: txsVol.MaxBlockNumber,
+		Volume:         fmt.Sprintf("%.2f ETH", weiToEther(txsVol.Volume)),
+		TxsCount:       txsVol.TxsCount,
+	}
+
+	json.NewEncoder(w).Encode(response)
+}
+
 func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
 	sourceAddressQe := r.URL.Query().Get("source_address")
 	if sourceAddressQe == "" {
-		http.Error(w, "Address is required", http.StatusBadRequest)
+		http.Error(w, "source_address is required", http.StatusBadRequest)
 		return
 	}
 
@@ -129,7 +198,7 @@ func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
 
 	blockchainQe := r.URL.Query().Get("blockchain")
 	if blockchainQe == "" {
-		http.Error(w, "Blockchain is required", http.StatusBadRequest)
+		http.Error(w, "blockchain is required", http.StatusBadRequest)
 		return
 	}
 
@@ -208,6 +277,7 @@ func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
 func (server *Server) Run(host string, port int, corsWhitelist map[string]bool) {
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/graphs/v2/txs", server.graphsV2TxsRoute)
+	serveMux.HandleFunc("/graphs/v2/volume", server.graphsV2VolumeRoute)
 	serveMux.HandleFunc("/now", server.nowRoute)
 	serveMux.HandleFunc("/ping", server.pingRoute)
 	serveMux.HandleFunc("/version", server.versionRoute)

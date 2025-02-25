@@ -1070,6 +1070,13 @@ type Transaction struct {
 	Value       *big.Int `json:"value"`
 }
 
+type TransactionsVolume struct {
+	MinBlockNumber uint64   `json:"min_block_number"`
+	MaxBlockNumber uint64   `json:"max_block_number"`
+	Volume         *big.Int `json:"volume"`
+	TxsCount       uint64   `json:"txs_count"`
+}
+
 // Fetch all unique nodes
 // It does not return all transactions between nodes, but only first
 func getSelectClause(toAddrDistinct bool) string {
@@ -1086,11 +1093,109 @@ func getOrderClause(toAddrDistinct bool) string {
 	return "block_number"
 }
 
-func getWhereClause(lowestBlockNum uint64) string {
+func getAndBlockNumClause(lowestBlockNum uint64) string {
 	if lowestBlockNum > 0 {
 		return fmt.Sprintf("AND block_number >= %d ", lowestBlockNum)
 	}
 	return ""
+}
+
+func getWhereBidiVolClause(isBidirectional bool) string {
+	if isBidirectional {
+		return fmt.Sprintf("WHERE from_address IN ($1, $2) AND to_address IN ($1, $2) ")
+	}
+	return "WHERE from_address = $1 AND to_address = $2 "
+}
+
+func (p *PostgreSQLpgx) GetTransactionsVolumeV2(blockchain, fromAddress, toAddress string, limit int, lowestBlockNum uint64, isBidirectional bool) (*TransactionsVolume, error) {
+	txTableName, txTableErr := TransactionsTableName(blockchain)
+	if txTableErr != nil {
+		return nil, txTableErr
+	}
+
+	pool := p.GetPool()
+
+	ctx := context.Background()
+	conn, acquireErr := pool.Acquire(ctx)
+	if acquireErr != nil {
+		return nil, acquireErr
+	}
+	defer conn.Release()
+
+	query := fmt.Sprintf(`
+		SELECT 
+			MIN(block_number) AS min_block_number,
+			MAX(block_number) AS max_block_number,
+			SUM(value) AS volume,
+			COUNT(*) AS txs_count
+		FROM (
+			SELECT block_number, from_address, to_address, value
+			FROM %s
+			%s
+			%s
+			ORDER BY block_number
+			LIMIT $3
+		) AS limited_transactions;
+	`, txTableName, getWhereBidiVolClause(isBidirectional), getAndBlockNumClause(lowestBlockNum))
+
+	var txsVol TransactionsVolume
+	var volStr string
+
+	qErr := conn.QueryRow(context.Background(), query, fromAddress, toAddress, limit).Scan(&txsVol.MinBlockNumber, &txsVol.MaxBlockNumber, &volStr, &txsVol.TxsCount)
+	if qErr != nil {
+		return nil, qErr
+	}
+
+	txsVol.Volume = new(big.Int)
+	txsVol.Volume.SetString(volStr, 10)
+
+	return &txsVol, nil
+}
+
+func (p *PostgreSQLpgx) GetTransactionsVolumeBidirectionalV2(blockchain, fromAddress, toAddress string, limit int, lowestBlockNum uint64) (*TransactionsVolume, error) {
+	txTableName, txTableErr := TransactionsTableName(blockchain)
+	if txTableErr != nil {
+		return nil, txTableErr
+	}
+
+	pool := p.GetPool()
+
+	ctx := context.Background()
+	conn, acquireErr := pool.Acquire(ctx)
+	if acquireErr != nil {
+		return nil, acquireErr
+	}
+	defer conn.Release()
+
+	query := fmt.Sprintf(`
+		SELECT 
+			MIN(block_number) AS min_block_number,
+			MAX(block_number) AS max_block_number,
+			SUM(value) AS volume,
+			COUNT(*) AS txs_count
+		FROM (
+			SELECT block_number, from_address, to_address, value
+			FROM %s
+			WHERE from_address IN ($1, $2)
+			AND to_address IN ($1, $2)
+			%s
+			ORDER BY block_number
+			LIMIT $3
+		) AS limited_transactions;
+	`, txTableName, getAndBlockNumClause(lowestBlockNum))
+
+	var txsVol TransactionsVolume
+	var volStr string
+
+	qErr := conn.QueryRow(context.Background(), query, fromAddress, toAddress, limit).Scan(&txsVol.MinBlockNumber, &txsVol.MaxBlockNumber, &volStr, &txsVol.TxsCount)
+	if qErr != nil {
+		return nil, qErr
+	}
+
+	txsVol.Volume = new(big.Int)
+	txsVol.Volume.SetString(volStr, 10)
+
+	return &txsVol, nil
 }
 
 func (p *PostgreSQLpgx) GetTransactionsV2(blockchain string, sourceAddress []string, limit int, lowestBlockNum uint64, toAddrDistinct bool) ([]Transaction, error) {
@@ -1118,7 +1223,7 @@ func (p *PostgreSQLpgx) GetTransactionsV2(blockchain string, sourceAddress []str
 		WHERE from_address = ANY($1)
 		%s
 		ORDER BY %s
-		LIMIT $2`, getSelectClause(toAddrDistinct), txTableName, getWhereClause(lowestBlockNum), getOrderClause(toAddrDistinct))
+		LIMIT $2`, getSelectClause(toAddrDistinct), txTableName, getAndBlockNumClause(lowestBlockNum), getOrderClause(toAddrDistinct))
 
 	rows, qErr := conn.Query(context.Background(), query, sourceAddress, limit)
 	if qErr != nil {
