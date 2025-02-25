@@ -750,6 +750,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 	indexCommand.AddCommand(cleanCommand)
 
 	var rpcUrl string
+	var rpcTimeout int
 
 	deploymentBlocksCommand := &cobra.Command{
 		Use:   "deployment-blocks",
@@ -765,7 +766,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			deploymentBlocksErr := seer_blockchain.DeployBlocksLookUpAndUpdate(chain, rpcUrl)
+			deploymentBlocksErr := seer_blockchain.DeployBlocksLookUpAndUpdate(chain, rpcUrl, rpcTimeout)
 			if deploymentBlocksErr != nil {
 				return deploymentBlocksErr
 			}
@@ -776,6 +777,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 
 	deploymentBlocksCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
 	deploymentBlocksCommand.Flags().StringVar(&rpcUrl, "rpc-url", "", "The RPC URL to use for the blockchain")
+	deploymentBlocksCommand.Flags().IntVar(&rpcTimeout, "rpc-timeout", 10, "The RPC timeout to use for the blockchain")
 
 	var jobChain, address, abiFile, customerId, userId string
 	var deployBlock uint64
@@ -794,7 +796,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, clientErr := seer_blockchain.NewClient(jobChain, rpcUrl, 30)
+			client, clientErr := seer_blockchain.NewClient(jobChain, rpcUrl, rpcTimeout)
 			if clientErr != nil {
 				return clientErr
 			}
@@ -826,7 +828,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 	createJobsCommand.Flags().StringVar(&userId, "user-id", "00000000-0000-0000-0000-000000000000", "The user ID to create jobs for (default: '00000000-0000-0000-0000-000000000000')")
 	createJobsCommand.Flags().Uint64Var(&deployBlock, "deploy-block", 0, "The block number to deploy contract (default: 0)")
 	createJobsCommand.Flags().StringVar(&rpcUrl, "rpc-url", "", "The RPC URL to use for the blockchain")
-
+	createJobsCommand.Flags().IntVar(&rpcTimeout, "rpc-timeout", 10, "The RPC timeout to use for the blockchain")
 	var jobIds, jobAddresses, jobCustomerIds []string
 	var silentFlag bool
 

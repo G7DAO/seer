@@ -338,11 +338,11 @@ func (d *Synchronizer) getCustomers(customerDbUriFlag string, customerIds []stri
 		var dbConnErr error
 
 		// get list of customer ids
-
 		instances, instancesErr := GetCustomerInstances(id)
 
 		if instancesErr != nil {
 			log.Printf("Error getting customer instances for customer %s, err: %v", id, instancesErr)
+			log.Println("Skipping customer", id)
 			continue
 		}
 
@@ -434,11 +434,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		return isEnd, idxLatestErr
 	}
 
-	if d.endBlock > 0 && indexedLatestBlock > d.endBlock {
-		indexedLatestBlock = d.endBlock
-	}
-
-	if d.startBlock > indexedLatestBlock {
+	if d.startBlock > indexedLatestBlock && d.endBlock == 0 {
 		log.Printf("Value in startBlock %d greater then indexedLatestBlock %d, waiting next iteration..", d.startBlock, indexedLatestBlock)
 		return isEnd, nil
 	}
@@ -539,6 +535,9 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 	var isCycleFinished bool
 	var updateDeadline time.Time
 	var initialStartBlock uint64
+	var initialEndBlock uint64
+
+	initialEndBlock = d.endBlock
 
 	// Initialize start block if 0
 	if d.startBlock == 0 {
@@ -607,7 +606,6 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 	for id := range customerIdsMap {
 		customerIdsList = append(customerIdsList, id)
 	}
-
 	customerDBConnections, _, err := d.getCustomers(customerDbUriFlag, customerIdsList)
 	if err != nil {
 		return fmt.Errorf("error getting customers: %w", err)
@@ -663,6 +661,12 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 		}
 
 		if len(addressesAbisInfo) == 0 {
+			log.Println("No addresses to crawl")
+			break
+		}
+
+		if d.startBlock <= initialEndBlock {
+			log.Println("Targeted end block reached finish history sync")
 			break
 		}
 
@@ -677,12 +681,14 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 			}
 
 			if paths != nil {
-				d.endBlock = firstBlockOfChunk
-				break
+				if d.endBlock <= firstBlockOfChunk {
+					break
+				}
 			}
 
-			log.Printf("No batch path found for block %d, retrying...\n", d.startBlock)
-			time.Sleep(30 * time.Second) // Wait for 5 seconds before retrying (adjust the duration as needed)
+			log.Printf("No batch path found for block %d, finish history sync", d.startBlock)
+			// as older block is not available, we finish history sync
+			return nil
 		}
 
 		// Read raw data from storage or via RPC

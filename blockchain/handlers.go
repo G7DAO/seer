@@ -165,7 +165,7 @@ func DecodeTransactionInputData(contractABI *abi.ABI, data []byte) {
 	fmt.Printf("Method inputs: %v\n", inputsMap)
 }
 
-func DeployBlocksLookUpAndUpdate(blockchain string, rpcUrl string) error {
+func DeployBlocksLookUpAndUpdate(blockchain string, rpcUrl string, rpcTimeout int) error {
 
 	// get all abi jobs without deployed block
 
@@ -198,7 +198,7 @@ func DeployBlocksLookUpAndUpdate(blockchain string, rpcUrl string) error {
 				sem <- struct{}{}
 				defer func() { <-sem }()
 
-				client, err := NewClient(chain, rpcUrl, 4)
+				client, err := NewClient(chain, rpcUrl, rpcTimeout)
 
 				if err != nil {
 					errChan <- err
