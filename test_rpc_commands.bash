@@ -56,7 +56,7 @@ echo
 
 # test case when chain ID mismatch in crawler
 echo -e "${green}Testing chain ID mismatch in crawler...${reset}"
-./seer crawler \
+echo "n" | ./seer crawler \
     --chain arbitrum_one \
     --rpc-url "$MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI" \
     --start-block 1000 \
@@ -65,7 +65,7 @@ echo -e "${green}Testing chain ID mismatch in crawler...${reset}"
     --timeout 5 \
     --batch-size 2 \
     --confirmations 1 \
-    --base-dir /tmp/your-data-dir
+    --base-dir /tmp/your-data-dir || true
 echo -e "Testing chain ID mismatch succeeded.${green}(6/12)${reset}"
 sleep 2
 echo

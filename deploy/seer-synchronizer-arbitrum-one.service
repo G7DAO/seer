@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer synchronizer --chain arbitrum_one
+ExecStart=/home/ubuntu/seer/seer synchronizer --chain arbitrum_one --rpc-url $MOONSTREAM_NODE_ARBITRUM_ONE_A_EXTERNAL_URI
 SyslogIdentifier=seer-synchronizer-arbitrum-one
 
 [Install]
