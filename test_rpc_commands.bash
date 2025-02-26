@@ -20,30 +20,29 @@ reset='\033[0m'
 
 echo -e "${green}Building seer...${reset}"
 go build
-echo -e "Building seer succeeded.${green}(1/11)${reset}"
+echo -e "Building seer succeeded.${green}(1/12)${reset}"
 sleep 2
 echo
 
 echo -e "${green}Testing seer version...${reset}"
 seer version
-echo -e "Testing seer version succeeded.${green}(2/11)${reset}"
+echo -e "Testing seer version succeeded.${green}(2/12)${reset}"
 sleep 2
 echo
 
 echo -e "${green}Testing shell completion subcommands...${reset}"
 seer completion bash > /dev/null
 seer completion zsh > /dev/null
-echo -e "Shell completion generation succeeded.${green}(3/11)${reset}"
+echo -e "Shell completion generation succeeded.${green}(3/12)${reset}"
 sleep 2
 echo
 
 echo -e "${green}Testing seer blockchain subcommands...${reset}"
 ./seer blockchain generate --name ethereum
 go fmt ./blockchain/ethereum/ethereum.go
-echo -e "Generated ethereum. Check ./blockchain/ethereum/ethereum.go.${green}(4/11)${reset}"
+echo -e "Generated ethereum. Check ./blockchain/ethereum/ethereum.go.${green}(4/12)${reset}"
 sleep 2
 echo
-
 
 ERC20_TRANSFER_ABI='[{"type":"event","name":"Transfer","inputs":[{"name":"from","type":"address","indexed":true},{"name":"to","type":"address","indexed":true},{"name":"value","type":"uint256","indexed":false}],"anonymous":false}]'
 
@@ -51,7 +50,23 @@ ERC20_TRANSFER_ABI='[{"type":"event","name":"Transfer","inputs":[{"name":"from",
 echo -e "${green}Verifying required env variables are set...${reset}"
 : "${MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI:?Environment variable MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI not set}"
 : "${MOONSTREAM_DB_URL:?Environment variable MOONSTREAM_DB_URL not set}"
-echo -e "All required env variables are set.${green}(5/11)${reset}"
+echo -e "All required env variables are set.${green}(5/12)${reset}"
+sleep 2
+echo
+
+# test case when chain ID mismatch in crawler
+echo -e "${green}Testing chain ID mismatch in crawler...${reset}"
+./seer crawler \
+    --chain arbitrum_one \
+    --rpc-url "$MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI" \
+    --start-block 1000 \
+    --final-block 1010 \
+    --threads 2 \
+    --timeout 5 \
+    --batch-size 2 \
+    --confirmations 1 \
+    --base-dir /tmp/your-data-dir
+echo -e "Testing chain ID mismatch succeeded.${green}(6/12)${reset}"
 sleep 2
 echo
 
@@ -66,7 +81,7 @@ echo "Testing existing crawler (dry run/example) - adjust flags for your RPC or 
     --confirmations 1 \
     --base-dir /tmp/your-data-dir \
     --rpc-url "$MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI"	
-echo -e "Testing crawler succeeded.${green}(6/11)${reset}"
+echo -e "Testing crawler succeeded.${green}(7/12)${reset}"
 sleep 2
 echo
 
@@ -78,7 +93,7 @@ echo -e "${green}Testing storages/inspector subcommands...${reset}"
     --delim '' \
     --return-func '' \
     --timeout 10
-echo -e "Testing storages/inspector subcommands succeeded.${green}(7/11)${reset}"
+echo -e "Testing storages/inspector subcommands succeeded.${green}(8/12)${reset}"
 sleep 2
 echo
 
@@ -95,7 +110,7 @@ echo -e "${green}Testing synchronizer subcommand (dry run/example)...${reset}"
     --base-dir /tmp/your-data-dir \
     --rpc-url "$MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI" \
     --customer-db-uri "$MOONSTREAM_DB_URL"
-echo -e "Testing historical-sync command succeeded.${green}(8/11)${reset}"
+echo -e "Testing historical-sync command succeeded.${green}(9/12)${reset}"
 sleep 2
 echo
 
@@ -111,7 +126,7 @@ echo -e "${green}Testing historical-sync command...${reset}"
     --threads 2 \
     --batch-size 2 \
     --timeout 10
-echo -e "Testing historical-sync command succeeded.${green}(9/11)${reset}"
+echo -e "Testing historical-sync command succeeded.${green}(10/12)${reset}"
 sleep 2
 echo
 
@@ -120,7 +135,7 @@ echo -e "${green}Testing deployment-blocks command...${reset}"
 ./seer databases index deployment-blocks \
     --chain ethereum \
     --rpc-url "$MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI"
-echo -e "Testing deployment-blocks command succeeded.${green}(10/11)${reset}"
+echo -e "Testing deployment-blocks command succeeded.${green}(11/12)${reset}"
 sleep 2
 echo
 
@@ -134,11 +149,11 @@ echo "$ERC20_TRANSFER_ABI" | ./seer databases index create-jobs \
     --customer-id "00000000-0000-0000-0000-000000000000" \
     --user-id "00000000-0000-0000-0000-000000000000" \
     --rpc-url "$MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI"
-echo -e "Testing create-jobs command succeeded.${green}(11/11)${reset}"
+echo -e "Testing create-jobs command succeeded.${green}(12/12)${reset}"
 sleep 2
 echo
 
 
 echo
-echo -e "All test commands completed successfully!${green}(11/11)${reset}"
+echo -e "All test commands completed successfully!${green}(12/12)${reset}"
 exit 0
