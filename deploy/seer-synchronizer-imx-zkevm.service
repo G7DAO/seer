@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer synchronizer --chain imx_zkevm
+ExecStart=/home/ubuntu/seer/seer synchronizer --chain imx_zkevm --rpc-url $MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI
 SyslogIdentifier=seer-synchronizer-imx-zkevm
 
 [Install]

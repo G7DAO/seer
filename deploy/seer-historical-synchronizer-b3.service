@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer historical-sync --auto --chain b3
+ExecStart=/home/ubuntu/seer/seer historical-sync --auto --chain b3 --rpc-url $MOONSTREAM_NODE_B3_A_EXTERNAL_URI
 SyslogIdentifier=seer-historical-synchronizer-b3
 
 [Install]

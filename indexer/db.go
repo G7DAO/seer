@@ -3,6 +3,7 @@ package indexer
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -1449,9 +1450,9 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 
 	var paths []string
 
-	var minBlockNumber uint64
+	var minBlockNumber sql.NullInt64
 
-	var maxBlockNumber uint64
+	var maxBlockNumber sql.NullInt64
 
 	query := fmt.Sprintf(`WITH path as (
         SELECT
@@ -1496,7 +1497,7 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 			err
 	}
 
-	return paths, minBlockNumber, maxBlockNumber, nil
+	return paths, uint64(minBlockNumber.Int64), uint64(maxBlockNumber.Int64), nil
 
 }
 

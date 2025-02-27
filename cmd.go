@@ -17,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/G7DAO/seer/blockchain"
 	seer_blockchain "github.com/G7DAO/seer/blockchain"
 	"github.com/G7DAO/seer/crawler"
 	"github.com/G7DAO/seer/evm"
@@ -224,7 +225,7 @@ func CreateCrawlerCommand() *cobra.Command {
 	var startBlock, finalBlock, confirmations, batchSize int64
 	var timeout, threads, protoTimeLimit, retryWait, retryMultiplier int
 	var protoSizeLimit uint64
-	var chain, baseDir string
+	var chain, baseDir, rpcUrl string
 
 	crawlerCmd := &cobra.Command{
 		Use:   "crawler",
@@ -245,18 +246,13 @@ func CreateCrawlerCommand() *cobra.Command {
 				return crawlerErr
 			}
 
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
-			if blockchainErr != nil {
-				return blockchainErr
-			}
-
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 
 			indexer.InitDBConnection()
 
-			newCrawler, crawlerError := crawler.NewCrawler(chain, startBlock, finalBlock, confirmations, batchSize, timeout, baseDir, protoSizeLimit, protoTimeLimit, retryWait, retryMultiplier)
+			newCrawler, crawlerError := crawler.NewCrawler(chain, rpcUrl, startBlock, finalBlock, confirmations, batchSize, timeout, baseDir, protoSizeLimit, protoTimeLimit, retryWait, retryMultiplier)
 			if crawlerError != nil {
 				return crawlerError
 			}
@@ -290,6 +286,7 @@ func CreateCrawlerCommand() *cobra.Command {
 	crawlerCmd.Flags().IntVar(&protoTimeLimit, "proto-time-limit", 300, "Proto time limit in seconds")
 	crawlerCmd.Flags().IntVar(&retryWait, "retry-wait", 5000, "The wait time for the crawler in milliseconds before it try to fetch new block")
 	crawlerCmd.Flags().IntVar(&retryMultiplier, "retry-multiplier", 24, "Multiply wait time to get max waiting time before fetch new block")
+	crawlerCmd.Flags().StringVar(&rpcUrl, "rpc-url", "", "The RPC URL to use for the blockchain")
 
 	return crawlerCmd
 }
@@ -297,39 +294,14 @@ func CreateCrawlerCommand() *cobra.Command {
 func CreateSynchronizerCommand() *cobra.Command {
 	var startBlock, endBlock, batchSize uint64
 	var timeout, threads, cycleTickerWaitTime, minBlocksToSync int
-	var chain, baseDir, customerDbUriFlag string
+	var chain, baseDir, customerDbUriFlag, rpcUrl string
 
 	synchronizerCmd := &cobra.Command{
 		Use:   "synchronizer",
 		Short: "Decode the crawled data from various blockchains",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			indexerErr := indexer.CheckVariablesForIndexer()
-			if indexerErr != nil {
-				return indexerErr
-			}
-
-			storageErr := storage.CheckVariablesForStorage()
-			if storageErr != nil {
-				return storageErr
-			}
-
-			crawlerErr := crawler.CheckVariablesForCrawler()
-			if crawlerErr != nil {
-				return crawlerErr
-			}
-
-			syncErr := synchronizer.CheckVariablesForSynchronizer()
-			if syncErr != nil {
-				return syncErr
-			}
-
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
-			if blockchainErr != nil {
-				return blockchainErr
-			}
-
-			if chain == "" {
-				return fmt.Errorf("blockchain is required via --chain")
+			if err := validateEnvVarsForStorageSync(chain); err != nil {
+				return err
 			}
 
 			return nil
@@ -337,7 +309,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			indexer.InitDBConnection()
 
-			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout, threads, minBlocksToSync)
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, rpcUrl, baseDir, startBlock, endBlock, batchSize, timeout, threads, minBlocksToSync)
 			if synchonizerErr != nil {
 				return synchonizerErr
 			}
@@ -369,7 +341,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 	synchronizerCmd.Flags().IntVar(&threads, "threads", 5, "Number of go-routines for concurrent decoding")
 	synchronizerCmd.Flags().IntVar(&cycleTickerWaitTime, "cycle-ticker-wait-time", 10, "The wait time for the synchronizer in seconds before it try to start new cycle")
 	synchronizerCmd.Flags().IntVar(&minBlocksToSync, "min-blocks-to-sync", 10, "The minimum number of blocks to sync before the synchronizer starts decoding")
-
+	synchronizerCmd.Flags().StringVar(&rpcUrl, "rpc-url", "", "The RPC URL to use for the blockchain")
 	return synchronizerCmd
 }
 
@@ -384,7 +356,7 @@ func CreateInspectorCommand() *cobra.Command {
 		Short: "Inspect storage and database consistency",
 	}
 
-	var chain, baseDir, delim, returnFunc, batch string
+	var chain, baseDir, delim, returnFunc, batch, rpcUrl string
 	var timeout int
 
 	readCommand := &cobra.Command{
@@ -420,7 +392,7 @@ func CreateInspectorCommand() *cobra.Command {
 				return readErr
 			}
 
-			client, cleintErr := seer_blockchain.NewClient(chain, crawler.BlockchainURLs[chain], timeout)
+			client, cleintErr := blockchain.NewClient(chain, rpcUrl, timeout)
 			if cleintErr != nil {
 				return cleintErr
 			}
@@ -444,7 +416,7 @@ func CreateInspectorCommand() *cobra.Command {
 	readCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
 	readCommand.Flags().StringVar(&baseDir, "base-dir", "", "The base directory to store the crawled data (default: '')")
 	readCommand.Flags().StringVar(&batch, "batch", "", "What batch to read")
-
+	readCommand.Flags().StringVar(&rpcUrl, "rpc-url", "", "The RPC URL to use for the blockchain")
 	var storageVerify bool
 
 	dbCommand := &cobra.Command{
@@ -777,6 +749,9 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 
 	indexCommand.AddCommand(cleanCommand)
 
+	var rpcUrl string
+	var rpcTimeout int
+
 	deploymentBlocksCommand := &cobra.Command{
 		Use:   "deployment-blocks",
 		Short: "Get deployment blocks from address in abi jobs",
@@ -785,17 +760,13 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 			if indexerErr != nil {
 				return indexerErr
 			}
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
-			if blockchainErr != nil {
-				return blockchainErr
-			}
 			indexer.InitDBConnection()
 
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			deploymentBlocksErr := seer_blockchain.DeployBlocksLookUpAndUpdate(chain)
+			deploymentBlocksErr := seer_blockchain.DeployBlocksLookUpAndUpdate(chain, rpcUrl, rpcTimeout)
 			if deploymentBlocksErr != nil {
 				return deploymentBlocksErr
 			}
@@ -805,6 +776,8 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 	}
 
 	deploymentBlocksCommand.Flags().StringVar(&chain, "chain", "ethereum", "The blockchain to crawl (default: ethereum)")
+	deploymentBlocksCommand.Flags().StringVar(&rpcUrl, "rpc-url", "", "The RPC URL to use for the blockchain")
+	deploymentBlocksCommand.Flags().IntVar(&rpcTimeout, "rpc-timeout", 10, "The RPC timeout to use for the blockchain")
 
 	var jobChain, address, abiFile, customerId, userId string
 	var deployBlock uint64
@@ -820,20 +793,10 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 
 			indexer.InitDBConnection()
 
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
-			if blockchainErr != nil {
-				return blockchainErr
-			}
-
-			// Check if the chain is supported
-			if _, ok := seer_blockchain.BlockchainURLs[jobChain]; !ok {
-				return fmt.Errorf("chain %s is not supported", jobChain)
-			}
-
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, clientErr := seer_blockchain.NewClient(jobChain, seer_blockchain.BlockchainURLs[jobChain], 30)
+			client, clientErr := seer_blockchain.NewClient(jobChain, rpcUrl, rpcTimeout)
 			if clientErr != nil {
 				return clientErr
 			}
@@ -864,7 +827,8 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 	createJobsCommand.Flags().StringVar(&customerId, "customer-id", "", "The customer ID to create jobs for (default: '')")
 	createJobsCommand.Flags().StringVar(&userId, "user-id", "00000000-0000-0000-0000-000000000000", "The user ID to create jobs for (default: '00000000-0000-0000-0000-000000000000')")
 	createJobsCommand.Flags().Uint64Var(&deployBlock, "deploy-block", 0, "The block number to deploy contract (default: 0)")
-
+	createJobsCommand.Flags().StringVar(&rpcUrl, "rpc-url", "", "The RPC URL to use for the blockchain")
+	createJobsCommand.Flags().IntVar(&rpcTimeout, "rpc-timeout", 10, "The RPC timeout to use for the blockchain")
 	var jobIds, jobAddresses, jobCustomerIds []string
 	var silentFlag bool
 
@@ -878,11 +842,6 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 			}
 
 			indexer.InitDBConnection()
-
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
-			if blockchainErr != nil {
-				return blockchainErr
-			}
 
 			return nil
 		},
@@ -941,18 +900,8 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 
 			indexer.InitDBConnection()
 
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
-			if blockchainErr != nil {
-				return blockchainErr
-			}
-
 			if sourceCustomerId == "" || destCustomerId == "" {
 				return fmt.Errorf("values for --source-customer-id and --dest-customer-id should be set")
-			}
-
-			// Check if the chain is supported
-			if _, ok := seer_blockchain.BlockchainURLs[jobChain]; !ok {
-				return fmt.Errorf("chain %s is not supported", jobChain)
 			}
 
 			return nil
@@ -1009,7 +958,7 @@ func CreateDatabaseOperationCommand() *cobra.Command {
 
 func CreateHistoricalSyncCommand() *cobra.Command {
 
-	var chain, baseDir, customerDbUriFlag string
+	var chain, baseDir, customerDbUriFlag, rpcUrl string
 	var addresses, customerIds []string
 	var startBlock, endBlock, batchSize uint64
 	var timeout, threads, minBlocksToSync int
@@ -1019,41 +968,20 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 		Use:   "historical-sync",
 		Short: "Decode the historical data from various blockchains",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			indexerErr := indexer.CheckVariablesForIndexer()
-			if indexerErr != nil {
-				return indexerErr
-			}
-
-			storageErr := storage.CheckVariablesForStorage()
-			if storageErr != nil {
-				return storageErr
-			}
-
-			crawlerErr := crawler.CheckVariablesForCrawler()
-			if crawlerErr != nil {
-				return crawlerErr
-			}
-
-			syncErr := synchronizer.CheckVariablesForSynchronizer()
-			if syncErr != nil {
-				return syncErr
-			}
-
-			blockchainErr := seer_blockchain.CheckVariablesForBlockchains()
-			if blockchainErr != nil {
-				return blockchainErr
-			}
-
-			if chain == "" {
-				return fmt.Errorf("blockchain is required via --chain")
+			if err := validateEnvVarsForStorageSync(chain); err != nil {
+				return err
 			}
 
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := checkSpaceSeparatedAddresses(addresses); err != nil {
+				return err
+			}
+
 			indexer.InitDBConnection()
 
-			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, baseDir, startBlock, endBlock, batchSize, timeout, threads, minBlocksToSync)
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, rpcUrl, baseDir, startBlock, endBlock, batchSize, timeout, threads, minBlocksToSync)
 			if synchonizerErr != nil {
 				return synchonizerErr
 			}
@@ -1080,6 +1008,7 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 	historicalSyncCmd.Flags().BoolVar(&auto, "auto", false, "Set this flag to sync all unfinished historical crawl from the database (default: false)")
 	historicalSyncCmd.Flags().IntVar(&threads, "threads", 5, "Number of go-routines for concurrent crawling (default: 5)")
 	historicalSyncCmd.Flags().IntVar(&minBlocksToSync, "min-blocks-to-sync", 10, "The minimum number of blocks to sync before the synchronizer starts decoding")
+	historicalSyncCmd.Flags().StringVar(&rpcUrl, "rpc-url", "", "The RPC URL to use for the blockchain")
 
 	return historicalSyncCmd
 }
@@ -1315,4 +1244,38 @@ func StringPrompt(label string) (string, error) {
 	}
 
 	return strings.TrimSpace(output), nil
+}
+
+// validateEnvVarsForHistoricalSync checks environment variables needed for historical sync
+func validateEnvVarsForStorageSync(chain string) error {
+	if err := indexer.CheckVariablesForIndexer(); err != nil {
+		return err
+	}
+	if err := storage.CheckVariablesForStorage(); err != nil {
+		return err
+	}
+	if err := crawler.CheckVariablesForCrawler(); err != nil {
+		return err
+	}
+	if err := synchronizer.CheckVariablesForSynchronizer(); err != nil {
+		return err
+	}
+	if chain == "" {
+		return fmt.Errorf("blockchain is required via --chain")
+	}
+	return nil
+}
+
+// checkSpaceSeparatedAddresses ensures the user didn’t pass all addresses in one space-separated string
+func checkSpaceSeparatedAddresses(addrs []string) error {
+	if len(addrs) == 1 && strings.Contains(addrs[0], " ") {
+		return fmt.Errorf(
+			"it looks like you used space-separated addresses in one flag:\n  %s\n\n"+
+				"Use commas or repeated flags instead, for example:\n"+
+				"  --addresses=0xABC...,0xDEF...\n"+
+				"  --addresses=0xABC... --addresses=0xDEF...",
+			addrs[0],
+		)
+	}
+	return nil
 }
