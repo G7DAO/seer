@@ -658,19 +658,20 @@ func (c *Client) DecodeProtoEntireBlockToJson(rawData *bytes.Buffer) (*seer_comm
 	return blocksBatchJson, nil
 }
 
-func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap map[string]map[string]*indexer.AbiEntry, threads int) ([]indexer.EventLabel, []indexer.TransactionLabel, error) {
+func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap map[string]map[string]*indexer.AbiEntry, addRawTransactions bool, threads int) ([]indexer.EventLabel, []indexer.TransactionLabel, []indexer.RawTransaction, error) {
 	var protoBlocksBatch PolygonBlocksBatch
 
 	dataBytes := rawData.Bytes()
 
 	err := proto.Unmarshal(dataBytes, &protoBlocksBatch)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal data: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to unmarshal data: %v", err)
 	}
 
 	// Shared slices to collect labels
 	var labels []indexer.EventLabel
 	var txLabels []indexer.TransactionLabel
+	var rawTransactions []indexer.RawTransaction
 	var labelsMutex sync.Mutex
 
 	var decodeErr error
@@ -700,11 +701,31 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 			// Local slices to collect labels for this block
 			var localEventLabels []indexer.EventLabel
 			var localTxLabels []indexer.TransactionLabel
-
+			var localRawTransactions []indexer.RawTransaction
 			for _, tx := range b.Transactions {
 				var decodedArgsTx map[string]interface{}
 
 				label := indexer.SeerCrawlerLabel
+
+				if addRawTransactions {
+					localRawTransactions = append(localRawTransactions, indexer.RawTransaction{
+						Hash:                 tx.Hash,
+						BlockHash:            tx.BlockHash,
+						FromAddress:          tx.FromAddress,
+						ToAddress:            tx.ToAddress,
+						Input:                tx.Input,
+						Gas:                  tx.Gas,
+						GasPrice:             tx.GasPrice,
+						Nonce:                tx.Nonce,
+						Value:                tx.Value,
+						MaxFeePerGas:         tx.MaxFeePerGas,
+						MaxPriorityFeePerGas: tx.MaxPriorityFeePerGas,
+						BlockTimestamp:       b.Timestamp,
+						BlockNumber:          b.BlockNumber,
+						TransactionIndex:     tx.TransactionIndex,
+						TransactionType:      tx.TransactionType,
+					})
+				}
 
 				if len(tx.Input) < 10 { // If input is less than 3 characters then it direct transfer
 					continue
@@ -859,6 +880,7 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 			labelsMutex.Lock()
 			labels = append(labels, localEventLabels...)
 			txLabels = append(txLabels, localTxLabels...)
+			rawTransactions = append(rawTransactions, localRawTransactions...)
 			labelsMutex.Unlock()
 		}(b)
 	}
@@ -874,10 +896,10 @@ func (c *Client) DecodeProtoEntireBlockToLabels(rawData *bytes.Buffer, abiMap ma
 
 	// If any errors occurred, return them
 	if len(errorMessages) > 0 {
-		return nil, nil, fmt.Errorf("errors occurred during processing:\n%s", strings.Join(errorMessages, "\n"))
+		return nil, nil, nil, fmt.Errorf("errors occurred during processing:\n%s", strings.Join(errorMessages, "\n"))
 	}
 
-	return labels, txLabels, nil
+	return labels, txLabels, rawTransactions, nil
 }
 
 func (c *Client) DecodeProtoTransactionsToLabels(transactions []string, blocksCache map[uint64]uint64, abiMap map[string]map[string]*indexer.AbiEntry) ([]indexer.TransactionLabel, error) {

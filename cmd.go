@@ -295,7 +295,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 	var startBlock, endBlock, batchSize uint64
 	var timeout, threads, cycleTickerWaitTime, minBlocksToSync int
 	var chain, baseDir, customerDbUriFlag, rpcUrl string
-
+	var addRawTransactions bool
 	synchronizerCmd := &cobra.Command{
 		Use:   "synchronizer",
 		Short: "Decode the crawled data from various blockchains",
@@ -309,7 +309,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			indexer.InitDBConnection()
 
-			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, rpcUrl, baseDir, startBlock, endBlock, batchSize, timeout, threads, minBlocksToSync)
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, rpcUrl, baseDir, startBlock, endBlock, batchSize, timeout, threads, minBlocksToSync, addRawTransactions)
 			if synchonizerErr != nil {
 				return synchonizerErr
 			}
@@ -342,6 +342,7 @@ func CreateSynchronizerCommand() *cobra.Command {
 	synchronizerCmd.Flags().IntVar(&cycleTickerWaitTime, "cycle-ticker-wait-time", 10, "The wait time for the synchronizer in seconds before it try to start new cycle")
 	synchronizerCmd.Flags().IntVar(&minBlocksToSync, "min-blocks-to-sync", 10, "The minimum number of blocks to sync before the synchronizer starts decoding")
 	synchronizerCmd.Flags().StringVar(&rpcUrl, "rpc-url", "", "The RPC URL to use for the blockchain")
+	synchronizerCmd.Flags().BoolVar(&addRawTransactions, "add-raw-transactions", false, "Set this flag to add raw transactions to the output (default: false)")
 	return synchronizerCmd
 }
 
@@ -962,7 +963,7 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 	var addresses, customerIds []string
 	var startBlock, endBlock, batchSize uint64
 	var timeout, threads, minBlocksToSync int
-	var auto bool
+	var auto, addRawTransactions bool
 
 	historicalSyncCmd := &cobra.Command{
 		Use:   "historical-sync",
@@ -981,7 +982,7 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 
 			indexer.InitDBConnection()
 
-			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, rpcUrl, baseDir, startBlock, endBlock, batchSize, timeout, threads, minBlocksToSync)
+			newSynchronizer, synchonizerErr := synchronizer.NewSynchronizer(chain, rpcUrl, baseDir, startBlock, endBlock, batchSize, timeout, threads, minBlocksToSync, addRawTransactions)
 			if synchonizerErr != nil {
 				return synchonizerErr
 			}
@@ -1009,6 +1010,7 @@ func CreateHistoricalSyncCommand() *cobra.Command {
 	historicalSyncCmd.Flags().IntVar(&threads, "threads", 5, "Number of go-routines for concurrent crawling (default: 5)")
 	historicalSyncCmd.Flags().IntVar(&minBlocksToSync, "min-blocks-to-sync", 10, "The minimum number of blocks to sync before the synchronizer starts decoding")
 	historicalSyncCmd.Flags().StringVar(&rpcUrl, "rpc-url", "", "The RPC URL to use for the blockchain")
+	historicalSyncCmd.Flags().BoolVar(&addRawTransactions, "add-raw-transactions", false, "Set this flag to add raw transactions to the output (default: false)")
 
 	return historicalSyncCmd
 }
