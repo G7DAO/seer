@@ -35,7 +35,7 @@ func TransactionsTableName(blockchain string) string {
 	return fmt.Sprintf(blockchain + "_transactions")
 }
 
-func UsersDBTransactionsTableName(blockchain string) string {
+func CustomerDBTransactionsTableName(blockchain string) string {
 	return fmt.Sprintf(blockchain + "_transactions")
 }
 
@@ -826,7 +826,7 @@ func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool
 	return nil
 }
 
-func (p *PostgreSQLpgx) WriteLabes(
+func (p *PostgreSQLpgx) WriteDataToCustomerDB(
 	blockchain string,
 	txCalls []TransactionLabel,
 	events []EventLabel,
@@ -1130,7 +1130,7 @@ func (p *PostgreSQLpgx) WriteTransactions(tx pgx.Tx, blockchain string, transact
 }
 
 func (p *PostgreSQLpgx) WriteRawTransactions(tx pgx.Tx, blockchain string, rawTransactions []RawTransaction) error {
-	tableName := UsersDBTransactionsTableName(blockchain)
+	tableName := CustomerDBTransactionsTableName(blockchain)
 	isBlockchainWithL1Chain := IsBlockchainWithL1Chain(blockchain)
 
 	columns := []string{"hash", "block_hash", "block_timestamp", "block_number",

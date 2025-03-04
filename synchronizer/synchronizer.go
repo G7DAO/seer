@@ -821,7 +821,7 @@ func (d *Synchronizer) processProtoCustomerUpdate(
 	// make retrying
 	retry := 0
 	for {
-		err = customer.Pgx.WriteLabes(d.blockchain, listDecodedTransactions, listDecodedEvents, listDecodedRawTransactions)
+		err = customer.Pgx.WriteDataToCustomerDB(d.blockchain, listDecodedTransactions, listDecodedEvents, listDecodedRawTransactions)
 
 		if err != nil {
 			retry++
