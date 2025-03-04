@@ -25,18 +25,19 @@ type Synchronizer struct {
 	Client          seer_blockchain.BlockchainClient
 	StorageInstance storage.Storer
 
-	blockchain      string
-	startBlock      uint64
-	endBlock        uint64
-	batchSize       uint64
-	baseDir         string
-	basePath        string
-	threads         int
-	minBlocksToSync int
+	blockchain         string
+	startBlock         uint64
+	endBlock           uint64
+	batchSize          uint64
+	baseDir            string
+	basePath           string
+	threads            int
+	minBlocksToSync    int
+	addRawTransactions bool
 }
 
 // NewSynchronizer creates a new synchronizer instance with the given blockchain handler.
-func NewSynchronizer(blockchain, rpcUrl, baseDir string, startBlock, endBlock, batchSize uint64, timeout int, threads int, minBlocksToSync int) (*Synchronizer, error) {
+func NewSynchronizer(blockchain, rpcUrl, baseDir string, startBlock, endBlock, batchSize uint64, timeout int, threads int, minBlocksToSync int, addRawTransactions bool) (*Synchronizer, error) {
 	var synchronizer Synchronizer
 
 	basePath := filepath.Join(baseDir, crawler.SeerCrawlerStoragePrefix, "data", blockchain)
@@ -62,14 +63,15 @@ func NewSynchronizer(blockchain, rpcUrl, baseDir string, startBlock, endBlock, b
 		Client:          client,
 		StorageInstance: storageInstance,
 
-		blockchain:      blockchain,
-		startBlock:      startBlock,
-		endBlock:        endBlock,
-		batchSize:       batchSize,
-		baseDir:         baseDir,
-		basePath:        basePath,
-		threads:         threads,
-		minBlocksToSync: minBlocksToSync,
+		blockchain:         blockchain,
+		startBlock:         startBlock,
+		endBlock:           endBlock,
+		batchSize:          batchSize,
+		baseDir:            baseDir,
+		basePath:           basePath,
+		threads:            threads,
+		minBlocksToSync:    minBlocksToSync,
+		addRawTransactions: addRawTransactions,
 	}
 
 	return &synchronizer, nil
@@ -499,7 +501,7 @@ func (d *Synchronizer) SyncCycle(customerDbUriFlag string) (bool, error) {
 		for _, update := range updates {
 			for instanceId := range customerDBConnections[update.CustomerID] {
 				wg.Add(1)
-				go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, instanceId, sem, errChan, &wg)
+				go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, instanceId, sem, errChan, &wg, d.addRawTransactions)
 			}
 		}
 
@@ -718,7 +720,7 @@ func (d *Synchronizer) HistoricalSyncRef(customerDbUriFlag string, addresses []s
 
 			for instanceId := range customerDBConnections[update.CustomerID] {
 				wg.Add(1)
-				go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, instanceId, sem, errChan, &wg)
+				go d.processProtoCustomerUpdate(update, rawData, customerDBConnections, instanceId, sem, errChan, &wg, d.addRawTransactions)
 			}
 
 		}
@@ -772,6 +774,7 @@ func (d *Synchronizer) processProtoCustomerUpdate(
 	sem chan struct{},
 	errChan chan error,
 	wg *sync.WaitGroup,
+	addRawTransactions bool,
 ) {
 	// Decode input raw proto data using ABIs
 	// Write decoded data to the user Database
@@ -801,14 +804,14 @@ func (d *Synchronizer) processProtoCustomerUpdate(
 
 	var listDecodedEvents []indexer.EventLabel
 	var listDecodedTransactions []indexer.TransactionLabel
-
+	var listDecodedRawTransactions []indexer.RawTransaction
 	for _, rawData := range rawDataList {
 		// Decode the raw data to transactions
-		decodedEvents, decodedTransactions, err := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis, d.threads)
+		decodedEvents, decodedTransactions, decodedRawTransactions, err := d.Client.DecodeProtoEntireBlockToLabels(&rawData, update.Abis, addRawTransactions, d.threads)
 
 		listDecodedEvents = append(listDecodedEvents, decodedEvents...)
 		listDecodedTransactions = append(listDecodedTransactions, decodedTransactions...)
-
+		listDecodedRawTransactions = append(listDecodedRawTransactions, decodedRawTransactions...)
 		if err != nil {
 			errChan <- fmt.Errorf("error decoding data for customer %s: %w", update.CustomerID, err)
 			return
@@ -818,7 +821,7 @@ func (d *Synchronizer) processProtoCustomerUpdate(
 	// make retrying
 	retry := 0
 	for {
-		err = customer.Pgx.WriteLabes(d.blockchain, listDecodedTransactions, listDecodedEvents)
+		err = customer.Pgx.WriteDataToCustomerDB(d.blockchain, listDecodedTransactions, listDecodedEvents, listDecodedRawTransactions)
 
 		if err != nil {
 			retry++
