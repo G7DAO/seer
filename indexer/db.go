@@ -1124,7 +1124,7 @@ func (p *PostgreSQLpgx) WriteTransactions(tx pgx.Tx, blockchain string, transact
 		return err
 	}
 
-	log.Printf("Saved %d transactions records into %s table", len(transactions), tableName)
+	log.Printf("Saved %d tx_calls records into %s table", len(transactions), tableName)
 
 	return nil
 }
