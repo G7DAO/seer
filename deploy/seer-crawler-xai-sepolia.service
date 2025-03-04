@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer crawler --chain xai_sepolia --confirmations 10 --threads 4 --batch-size 20
+ExecStart=/home/ubuntu/seer/seer crawler --chain xai_sepolia --confirmations 10 --threads 4 --batch-size 20 --rpc-url $MOONSTREAM_NODE_XAI_SEPOLIA_A_EXTERNAL_URI
 SyslogIdentifier=seer-crawler-xai-sepolia
 
 [Install]

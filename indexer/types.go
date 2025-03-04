@@ -133,3 +133,27 @@ type AbiEntry struct {
 	AbiType string `json:"abi_type"`
 	Once    sync.Once
 }
+
+type RawTransaction struct {
+	// Required fields
+	Hash           string `json:"hash"`
+	BlockHash      string `json:"blockHash"`
+	BlockTimestamp uint64 `json:"block_timestamp"`
+	BlockNumber    uint64 `json:"blockNumber"`
+	FromAddress    string `json:"from"`
+	ToAddress      string `json:"to"`
+	Gas            string `json:"gas"`
+	GasPrice       string `json:"gasPrice"`
+	Input          string `json:"input"`
+	Nonce          string `json:"nonce"`
+	Value          string `json:"value"`
+
+	// Optional fields that might be zero/empty
+	MaxFeePerGas         string `json:"maxFeePerGas,omitempty"`
+	MaxPriorityFeePerGas string `json:"maxPriorityFeePerGas,omitempty"`
+	TransactionIndex     uint64 `json:"transactionIndex"`
+	TransactionType      uint64 `json:"transactionType,omitempty"`
+
+	// Chain-specific optional fields
+	L1BlockNumber *uint64 `json:"l1BlockNumber,omitempty"` // L2 chains only
+}

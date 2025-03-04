@@ -10,12 +10,12 @@ var (
 	SeerDefaultBlockShift    int64  = 100
 	SeerCrawlerStoragePrefix string = "dev"
 
-	BlockchainURLs map[string]string
-
 	SEER_CRAWLER_DEBUG = false
 )
 
+// CheckVariablesForCrawler checks required environment variables but only for the specified chain.
 func CheckVariablesForCrawler() error {
+	// 1. Check the storage prefix environment
 	SeerCrawlerStoragePrefixEnvVar := os.Getenv("SEER_CRAWLER_STORAGE_PREFIX")
 	switch SeerCrawlerStoragePrefixEnvVar {
 	case "dev":
@@ -26,96 +26,17 @@ func CheckVariablesForCrawler() error {
 		return fmt.Errorf("unknown storage prefix set: %s", SeerCrawlerStoragePrefixEnvVar)
 	}
 
-	MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI environment variable is required")
-	}
-	MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI environment variable is required")
-	}
-	MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI environment variable is required")
-	}
-	MOONSTREAM_NODE_ARBITRUM_ONE_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_ARBITRUM_ONE_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_ARBITRUM_ONE_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_ARBITRUM_ONE_A_EXTERNAL_URI environment variable is required")
-	}
-	MOONSTREAM_NODE_ARBITRUM_SEPOLIA_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_ARBITRUM_SEPOLIA_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_ARBITRUM_SEPOLIA_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_ARBITRUM_SEPOLIA_A_EXTERNAL_URI environment variable is required")
-	}
-	MOONSTREAM_NODE_GAME7_ORBIT_ARBITRUM_SEPOLIA_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_GAME7_ORBIT_ARBITRUM_SEPOLIA_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_GAME7_ORBIT_ARBITRUM_SEPOLIA_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_GAME7_ORBIT_ARBITRUM_SEPOLIA_A_EXTERNAL_URI environment variable is required")
-	}
-	MOONSTREAM_NODE_XAI_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_XAI_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_XAI_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_XAI_A_EXTERNAL_URI environment variable is required")
-	}
-	MOONSTREAM_NODE_XAI_SEPOLIA_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_XAI_SEPOLIA_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_XAI_SEPOLIA_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_XAI_SEPOLIA_A_EXTERNAL_URI environment variable is required")
-	}
-	MOONSTREAM_NODE_MANTLE_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_MANTLE_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_MANTLE_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_MANTLE_A_EXTERNAL_URI environment variable is required")
-	}
-	MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI environment variable is required")
-	}
-	MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI environment variable is required")
-	}
-	MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI environment variable is required")
-	}
-
-	MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI environment variable is required")
-	}
-
-	MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI environment variable is required")
-	}
-
-	MOONSTREAM_NODE_B3_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_B3_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_B3_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_B3_A_EXTERNAL_URI environment variable is required")
-	}
-
-	MOONSTREAM_NODE_B3_SEPOLIA_A_EXTERNAL_URI := os.Getenv("MOONSTREAM_NODE_B3_SEPOLIA_A_EXTERNAL_URI")
-	if MOONSTREAM_NODE_B3_SEPOLIA_A_EXTERNAL_URI == "" {
-		return fmt.Errorf("MOONSTREAM_NODE_B3_SEPOLIA_A_EXTERNAL_URI environment variable is required")
-	}
-
+	// 2. Set the debug mode if requested
 	SEER_CRAWLER_DEBUG_RAW := os.Getenv("SEER_CRAWLER_DEBUG")
 	SEER_CRAWLER_DEBUG, _ = strconv.ParseBool(SEER_CRAWLER_DEBUG_RAW)
 
-	BlockchainURLs = map[string]string{
-		"ethereum":                     MOONSTREAM_NODE_ETHEREUM_A_EXTERNAL_URI,
-		"sepolia":                      MOONSTREAM_NODE_SEPOLIA_A_EXTERNAL_URI,
-		"polygon":                      MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI,
-		"arbitrum_one":                 MOONSTREAM_NODE_ARBITRUM_ONE_A_EXTERNAL_URI,
-		"arbitrum_sepolia":             MOONSTREAM_NODE_ARBITRUM_SEPOLIA_A_EXTERNAL_URI,
-		"game7_orbit_arbitrum_sepolia": MOONSTREAM_NODE_GAME7_ORBIT_ARBITRUM_SEPOLIA_A_EXTERNAL_URI,
-		"game7_testnet":                MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI,
-		"game7":                        MOONSTREAM_NODE_GAME7_A_EXTERNAL_URI,
-		"xai":                          MOONSTREAM_NODE_XAI_A_EXTERNAL_URI,
-		"xai_sepolia":                  MOONSTREAM_NODE_XAI_SEPOLIA_A_EXTERNAL_URI,
-		"mantle":                       MOONSTREAM_NODE_MANTLE_A_EXTERNAL_URI,
-		"mantle_sepolia":               MOONSTREAM_NODE_MANTLE_SEPOLIA_A_EXTERNAL_URI,
-		"imx_zkevm":                    MOONSTREAM_NODE_IMX_ZKEVM_A_EXTERNAL_URI,
-		"imx_zkevm_sepolia":            MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI,
-		"b3":                           MOONSTREAM_NODE_B3_A_EXTERNAL_URI,
-		"b3_sepolia":                   MOONSTREAM_NODE_B3_SEPOLIA_A_EXTERNAL_URI,
-	}
+	return nil
+}
 
+// checkEnv is a tiny helper verifying that an environment variable is non-empty
+func checkEnv(envVar string) error {
+	if os.Getenv(envVar) == "" {
+		return fmt.Errorf("%s environment variable is required", envVar)
+	}
 	return nil
 }

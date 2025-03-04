@@ -7,7 +7,7 @@ on:
 
 jobs:
   create_release:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/create-release@v1
         id: create_release
@@ -23,7 +23,7 @@ jobs:
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
   upload_assets:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     needs: create_release
     strategy:
       fail-fast: true

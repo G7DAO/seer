@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer crawler --chain game7_testnet --confirmations 0 --threads 2 --proto-time-limit 1 --retry-wait 1000 --retry-multiplier 1 --batch-size 0
+ExecStart=/home/ubuntu/seer/seer crawler --chain game7_testnet --confirmations 0 --threads 2 --proto-time-limit 1 --retry-wait 1000 --retry-multiplier 1 --batch-size 0 --rpc-url $MOONSTREAM_NODE_GAME7_TESTNET_A_EXTERNAL_URI
 SyslogIdentifier=seer-crawler-game7-testnet
 
 [Install]

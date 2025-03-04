@@ -11,7 +11,7 @@ import (
 	"log"
 	"math/big"
 	"os"
-	"strconv"
+	"reflect"
 	"strings"
 	"time"
 
@@ -113,17 +113,27 @@ func TransactionsTableName(blockchain string) (string, error) {
 	}
 }
 
-func hexStringToInt(hexString string) (int64, error) {
-	// Remove the "0x" prefix from the hexadecimal string
-	hexString = strings.TrimPrefix(hexString, "0x")
+func CustomerDBTransactionsTableName(blockchain string) string {
+	return fmt.Sprintf(blockchain + "_transactions")
+}
 
-	// Parse the hexadecimal string to an integer
-	intValue, err := strconv.ParseInt(hexString, 16, 64)
-	if err != nil {
-		return 0, err
+// Helper function to convert hex string to nullable big.Int
+func hexStringToBigInt(hexString string) (*big.Int, error) {
+	if hexString == "" {
+		return nil, nil
 	}
 
-	return intValue, nil
+	// Remove the "0x" prefix
+	hexString = strings.TrimPrefix(hexString, "0x")
+
+	// Parse hex string to big.Int
+	value := new(big.Int)
+	value, success := value.SetString(hexString, 16)
+	if !success {
+		return nil, fmt.Errorf("failed to parse hex string: %s", hexString)
+	}
+
+	return value, nil
 }
 
 // https://klotzandrew.com/blog/postgres-passing-65535-parameter-limit/ insted of batching
@@ -341,10 +351,32 @@ func decodeAddress(address string) ([]byte, error) {
 }
 
 // updateValues updates the values in the map for a given key
-func updateValues(valuesMap map[string]UnnestInsertValueStruct, key string, value interface{}) {
-	tmp := valuesMap[key]
-	tmp.Values = append(tmp.Values, value)
-	valuesMap[key] = tmp
+func updateValues(valuesMap map[string]UnnestInsertValueStruct, key string, val interface{}) {
+	entry, ok := valuesMap[key]
+	if !ok {
+		return
+	}
+
+	value := determineValue(val)
+	entry.Values = append(entry.Values, value)
+	valuesMap[key] = entry
+}
+
+// determineValue handles type checking and conversion logic
+func determineValue(val interface{}) interface{} {
+	// Handle nil interface
+	if val == nil {
+		return nil
+	}
+
+	rv := reflect.ValueOf(val)
+
+	// Handle typed nil pointer
+	if rv.Kind() == reflect.Ptr && rv.IsNil() {
+		return nil
+	}
+	// Return value as-is for other types
+	return val
 }
 
 func (p *PostgreSQLpgx) WriteIndexes(blockchain string, blocksIndexPack []BlockIndex) error {
@@ -363,9 +395,9 @@ func (p *PostgreSQLpgx) WriteIndexes(blockchain string, blocksIndexPack []BlockI
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() {
-		if err := recover(); err != nil {
+		if r := recover(); r != nil {
 			tx.Rollback(ctx)
-			panic(err)
+			panic(r)
 		} else if err != nil {
 			tx.Rollback(ctx)
 		} else {
@@ -886,10 +918,11 @@ func (p *PostgreSQLpgx) EnsureCorrectSelectors(blockchain string, WriteToDB bool
 	return nil
 }
 
-func (p *PostgreSQLpgx) WriteLabes(
+func (p *PostgreSQLpgx) WriteDataToCustomerDB(
 	blockchain string,
-	transactions []TransactionLabel,
+	txCalls []TransactionLabel,
 	events []EventLabel,
+	rawTransactions []RawTransaction,
 ) error {
 
 	pool := p.GetPool()
@@ -923,8 +956,8 @@ func (p *PostgreSQLpgx) WriteLabes(
 		}
 	}()
 
-	if len(transactions) > 0 {
-		err := p.WriteTransactions(tx, blockchain, transactions)
+	if len(txCalls) > 0 {
+		err := p.WriteTransactions(tx, blockchain, txCalls)
 		if err != nil {
 			log.Println("Error writing transactions:", err)
 			return err
@@ -935,6 +968,14 @@ func (p *PostgreSQLpgx) WriteLabes(
 		err := p.WriteEvents(tx, blockchain, events)
 		if err != nil {
 			log.Println("Error writing events:", err)
+			return err
+		}
+	}
+
+	if len(rawTransactions) > 0 {
+		err := p.WriteRawTransactions(tx, blockchain, rawTransactions)
+		if err != nil {
+			log.Println("Error writing raw transactions:", err)
 			return err
 		}
 	}
@@ -1383,6 +1424,187 @@ func (p *PostgreSQLpgx) WriteTransactions(tx pgx.Tx, blockchain string, transact
 	return nil
 }
 
+func (p *PostgreSQLpgx) WriteRawTransactions(tx pgx.Tx, blockchain string, rawTransactions []RawTransaction) error {
+	tableName := CustomerDBTransactionsTableName(blockchain)
+	isBlockchainWithL1Chain := IsBlockchainWithL1Chain(blockchain)
+
+	columns := []string{"hash", "block_hash", "block_timestamp", "block_number",
+		"from_address", "to_address", "gas", "gas_price", "input", "nonce",
+		"max_fee_per_gas", "max_priority_fee_per_gas", "transaction_index",
+		"transaction_type", "value"}
+
+	if isBlockchainWithL1Chain {
+		columns = append(columns, "l1_block_number")
+	}
+
+	var valuesMap = make(map[string]UnnestInsertValueStruct)
+
+	valuesMap["hash"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["block_hash"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["block_timestamp"] = UnnestInsertValueStruct{
+		Type:   "BIGINT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["block_number"] = UnnestInsertValueStruct{
+		Type:   "BIGINT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["from_address"] = UnnestInsertValueStruct{
+		Type:   "BYTEA",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["to_address"] = UnnestInsertValueStruct{
+		Type:   "BYTEA",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["gas"] = UnnestInsertValueStruct{
+		Type:   "NUMERIC",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["gas_price"] = UnnestInsertValueStruct{
+		Type:   "NUMERIC",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["input"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["nonce"] = UnnestInsertValueStruct{
+		Type:   "TEXT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["max_fee_per_gas"] = UnnestInsertValueStruct{
+		Type:   "NUMERIC",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["max_priority_fee_per_gas"] = UnnestInsertValueStruct{
+		Type:   "NUMERIC",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["transaction_index"] = UnnestInsertValueStruct{
+		Type:   "BIGINT",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["transaction_type"] = UnnestInsertValueStruct{
+		Type:   "INTEGER",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["value"] = UnnestInsertValueStruct{
+		Type:   "NUMERIC",
+		Values: make([]interface{}, 0),
+	}
+
+	valuesMap["indexed_at"] = UnnestInsertValueStruct{
+		Type:   "TIMESTAMP WITH TIME ZONE",
+		Values: make([]interface{}, 0),
+	}
+
+	if isBlockchainWithL1Chain {
+		valuesMap["l1_block_number"] = UnnestInsertValueStruct{
+			Type:   "BIGINT",
+			Values: make([]interface{}, 0),
+		}
+	}
+
+	// Now appending to the Values slice works without errors.
+	for _, rawTransaction := range rawTransactions {
+		fromAddress, err := decodeAddress(rawTransaction.FromAddress)
+		if err != nil {
+			return err
+		}
+
+		toAddress, err := decodeAddress(rawTransaction.ToAddress)
+		if err != nil {
+			return err
+		}
+
+		gas, err := hexStringToBigInt(rawTransaction.Gas)
+		if err != nil {
+			log.Printf("error parsing gas for transaction %s: %v", rawTransaction.Hash, err)
+			return err
+		}
+		gasPrice, err := hexStringToBigInt(rawTransaction.GasPrice)
+		if err != nil {
+			log.Printf("error parsing gas price for transaction %s: %v", rawTransaction.Hash, err)
+			return err
+		}
+
+		maxFeePerGas, err := hexStringToBigInt(rawTransaction.MaxFeePerGas)
+		if err != nil {
+			log.Printf("error parsing max fee per gas for transaction %s: %v", rawTransaction.Hash, err)
+			return err
+		}
+
+		maxPriorityFeePerGas, err := hexStringToBigInt(rawTransaction.MaxPriorityFeePerGas)
+		if err != nil {
+			log.Printf("error parsing max priority fee per gas for transaction %s: %v", rawTransaction.Hash, err)
+			return err
+		}
+
+		value, err := hexStringToBigInt(rawTransaction.Value)
+		if err != nil {
+			log.Printf("error parsing value for transaction %s: %v", rawTransaction.Hash, err)
+			return err
+		}
+
+		updateValues(valuesMap, "hash", rawTransaction.Hash)
+		updateValues(valuesMap, "block_hash", rawTransaction.BlockHash)
+		updateValues(valuesMap, "block_timestamp", rawTransaction.BlockTimestamp)
+		updateValues(valuesMap, "block_number", rawTransaction.BlockNumber)
+		updateValues(valuesMap, "from_address", fromAddress)
+		updateValues(valuesMap, "to_address", toAddress)
+		updateValues(valuesMap, "gas", gas)
+		updateValues(valuesMap, "gas_price", gasPrice)
+		updateValues(valuesMap, "input", rawTransaction.Input)
+		updateValues(valuesMap, "nonce", rawTransaction.Nonce)
+		updateValues(valuesMap, "max_fee_per_gas", maxFeePerGas)
+		updateValues(valuesMap, "max_priority_fee_per_gas", maxPriorityFeePerGas)
+		updateValues(valuesMap, "transaction_index", rawTransaction.TransactionIndex)
+		updateValues(valuesMap, "transaction_type", rawTransaction.TransactionType)
+		updateValues(valuesMap, "value", value)
+		if isBlockchainWithL1Chain {
+			var l1Bn interface{}
+			if rawTransaction.L1BlockNumber != nil {
+				l1Bn = *rawTransaction.L1BlockNumber
+			} else {
+				l1Bn = nil
+			}
+			updateValues(valuesMap, "l1_block_number", l1Bn)
+		}
+	}
+
+	ctx := context.Background()
+
+	// Insert them in batch
+	err := p.executeBatchInsert(tx, ctx, tableName, columns, valuesMap, "ON CONFLICT DO NOTHING")
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Saved %d transactions records into %s table", len(rawTransactions), tableName)
+	return nil
+}
+
 func (p *PostgreSQLpgx) CleanIndexes(blockchain string, batchLimit uint64, sleepTime int) error {
 	pool := p.GetPool()
 
@@ -1756,9 +1978,9 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 
 	var paths []string
 
-	var minBlockNumber uint64
+	var minBlockNumber sql.NullInt64
 
-	var maxBlockNumber uint64
+	var maxBlockNumber sql.NullInt64
 
 	blocksTableName, blocksTableErr := BlocksTableName(blockchain)
 	if blocksTableErr != nil {
@@ -1808,7 +2030,7 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 			err
 	}
 
-	return paths, minBlockNumber, maxBlockNumber, nil
+	return paths, uint64(minBlockNumber.Int64), uint64(maxBlockNumber.Int64), nil
 
 }
 

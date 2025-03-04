@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer crawler --chain ronin_saigon --confirmations 10
+ExecStart=/home/ubuntu/seer/seer crawler --chain ronin_saigon --confirmations 10 --rpc-url $MOONSTREAM_NODE_RONIN_SAIGON_A_EXTERNAL_URI
 SyslogIdentifier=seer-crawler-ronin-saigon
 
 [Install]

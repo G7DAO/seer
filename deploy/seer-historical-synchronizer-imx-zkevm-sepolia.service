@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer historical-sync --auto --chain imx_zkevm_sepolia
+ExecStart=/home/ubuntu/seer/seer historical-sync --auto --chain imx_zkevm_sepolia --rpc-url $MOONSTREAM_NODE_IMX_ZKEVM_SEPOLIA_A_EXTERNAL_URI
 SyslogIdentifier=seer-historical-synchronizer-imx-zkevm-sepolia
 
 [Install]

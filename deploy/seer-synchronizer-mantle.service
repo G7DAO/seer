@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer synchronizer --chain mantle
+ExecStart=/home/ubuntu/seer/seer synchronizer --chain mantle --rpc-url $MOONSTREAM_NODE_MANTLE_A_EXTERNAL_URI
 SyslogIdentifier=seer-synchronizer-mantle
 
 [Install]

@@ -32,10 +32,37 @@ import (
 	"github.com/G7DAO/seer/indexer"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"google.golang.org/protobuf/proto"
 )
 
+var BlockchainChainIDs = map[string]int64{
+	"ethereum":                     1,
+	"sepolia":                      11155111,
+	"polygon":                      137,
+	"arbitrum_one":                 42161,
+	"arbitrum_sepolia":             421614,
+	"game7":                        2187,
+	"game7_orbit_arbitrum_sepolia": 32321,
+	"game7_testnet":                13746,
+	"mantle":                       5000,
+	"mantle_sepolia":               5003,
+	"xai":                          660279,
+	"xai_sepolia":                  37714555429,
+	"imx_zkevm":                    13371,
+	"imx_zkevm_sepolia":            13473,
+	"b3":                           8333,
+	"b3_sepolia":                   1993,
+	"ronin":                        2020,
+	"ronin_saigon":                 2021,
+}
+
 func NewClient(chain, url string, timeout int) (BlockchainClient, error) {
+	verifyErr := VerifyChainID(chain, url)
+	if verifyErr != nil {
+		return nil, verifyErr
+	}
+
 	fmt.Printf("Chain: %s\n", chain)
 	fmt.Printf("URL: %s\n", url)
 	if chain == "ethereum" {
@@ -110,7 +137,7 @@ type BlockchainClient interface {
 	FetchAsProtoBlocksWithEvents(*big.Int, *big.Int, bool, int) ([]proto.Message, []indexer.BlockIndex, uint64, error)
 	ProcessBlocksToBatch([]proto.Message) (proto.Message, error)
 	DecodeProtoEntireBlockToJson(*bytes.Buffer) (*seer_common.BlocksBatchJson, error)
-	DecodeProtoEntireBlockToLabels(*bytes.Buffer, map[string]map[string]*indexer.AbiEntry, int) ([]indexer.EventLabel, []indexer.TransactionLabel, error)
+	DecodeProtoEntireBlockToLabels(*bytes.Buffer, map[string]map[string]*indexer.AbiEntry, bool, int) ([]indexer.EventLabel, []indexer.TransactionLabel, []indexer.RawTransaction, error)
 	DecodeProtoTransactionsToLabels([]string, map[uint64]uint64, map[string]map[string]*indexer.AbiEntry) ([]indexer.TransactionLabel, error)
 	ChainType() string
 	GetCode(context.Context, common.Address, uint64) ([]byte, error)
@@ -165,7 +192,7 @@ func DecodeTransactionInputData(contractABI *abi.ABI, data []byte) {
 	fmt.Printf("Method inputs: %v\n", inputsMap)
 }
 
-func DeployBlocksLookUpAndUpdate(blockchain string) error {
+func DeployBlocksLookUpAndUpdate(blockchain string, rpcUrl string, rpcTimeout int) error {
 
 	// get all abi jobs without deployed block
 
@@ -198,7 +225,7 @@ func DeployBlocksLookUpAndUpdate(blockchain string) error {
 				sem <- struct{}{}
 				defer func() { <-sem }()
 
-				client, err := NewClient(chain, BlockchainURLs[chain], 4)
+				client, err := NewClient(chain, rpcUrl, rpcTimeout)
 
 				if err != nil {
 					errChan <- err
@@ -287,4 +314,50 @@ func FindDeployedBlock(client BlockchainClient, address string) (uint64, error) 
 	}
 
 	return left, nil
+}
+
+func VerifyChainID(chainName string, rpcURL string) error {
+	consent := "y"
+	expectedChainID, exists := BlockchainChainIDs[chainName]
+	if !exists {
+		log.Printf("Unknown blockchain: %s", chainName)
+		fmt.Printf("Do you want to continue? (y/n): ")
+		fmt.Scanln(&consent)
+		if consent != "y" {
+			return fmt.Errorf("unknown blockchain: %s", chainName)
+		}
+		return nil
+	}
+
+	// Create a temporary client to query chain ID if it possible
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client, err := ethclient.DialContext(ctx, rpcURL)
+	if err != nil {
+		log.Printf("Failed to connect to RPC URL: %v", err)
+		return fmt.Errorf("failed to connect to RPC URL: %w", err)
+	}
+	defer client.Close()
+
+	RPCChainID, err := client.ChainID(ctx)
+	if err != nil {
+		log.Printf("Failed to retrieve chain ID: %v", err)
+		return fmt.Errorf("failed to retrieve chain ID: %w", err)
+	}
+
+	log.Printf("RPC chain ID: %d", RPCChainID.Int64())
+
+	if RPCChainID.Int64() != expectedChainID {
+		log.Printf("Chain ID mismatch: expected %d for %s but got %d from RPC endpoint",
+			expectedChainID, chainName, RPCChainID.Int64())
+		fmt.Printf("Do you want to continue? (y/n): ")
+		fmt.Scanln(&consent)
+		if consent != "y" {
+			return fmt.Errorf("chain ID mismatch: expected %d for %s but got %d from RPC endpoint",
+				expectedChainID, chainName, RPCChainID.Int64())
+		}
+	}
+
+	return nil
 }

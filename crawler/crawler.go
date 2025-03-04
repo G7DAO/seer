@@ -98,7 +98,7 @@ type Crawler struct {
 }
 
 // NewCrawler creates a new crawler instance with the given blockchain handler.
-func NewCrawler(blockchain string, startBlock, finalBlock, confirmations, batchSize int64, timeout int, baseDir string, protoSizeLimit uint64, protoTimeLimit, retryWait, retryMultiplier int) (*Crawler, error) {
+func NewCrawler(blockchain, rpcUrl string, startBlock, finalBlock, confirmations, batchSize int64, timeout int, baseDir string, protoSizeLimit uint64, protoTimeLimit, retryWait, retryMultiplier int) (*Crawler, error) {
 	var crawler Crawler
 
 	basePath := filepath.Join(baseDir, SeerCrawlerStoragePrefix, "data", blockchain)
@@ -108,7 +108,7 @@ func NewCrawler(blockchain string, startBlock, finalBlock, confirmations, batchS
 		panic(err)
 	}
 
-	client, err := seer_blockchain.NewClient(blockchain, seer_blockchain.BlockchainURLs[blockchain], timeout)
+	client, err := seer_blockchain.NewClient(blockchain, rpcUrl, timeout)
 	if err != nil {
 		log.Fatal(err)
 	}

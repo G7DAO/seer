@@ -1300,6 +1300,31 @@ func CalculateSafeTxHash(safeAddress common.Address, txData SafeTransactionData,
 
 	return common.BytesToHash(typedDataHash), nil
 }
+
+func PrintStruct(cmd *cobra.Command, name string, rv reflect.Value, depth int) {
+    indent := strings.Repeat("  ", depth)
+    cmd.Printf("%s%s:\n", indent, name)
+    
+    rt := rv.Type()
+    for i := 0; i < rv.NumField(); i++ {
+        field := rv.Field(i)
+        fieldName := rt.Field(i).Name
+        
+        switch f := field.Interface().(type) {
+        case common.Address:
+            cmd.Printf("%s  %s: %s\n", indent, fieldName, f.Hex())
+        case *big.Int:
+            cmd.Printf("%s  %s: %s\n", indent, fieldName, f.String())
+        default:
+            // Check if field is a nested struct
+            if field.Kind() == reflect.Struct {
+                PrintStruct(cmd, fieldName, field, depth+1)
+            } else {
+                cmd.Printf("%s  %s: %v\n", indent, fieldName, f)
+            }
+        }
+    }
+}
 `
 
 // This template generates the handler for smart contract deployment. It is intended to be used with a
@@ -1673,6 +1698,7 @@ func {{.HandlerName}}() *cobra.Command {
 	var safeOperationType uint8
 	var safeNonce *big.Int
 	var calldata bool
+	var staticCall bool
 
     {{range .MethodArgs}}
     var {{.CLIVar}} {{.CLIType}}
@@ -1762,6 +1788,76 @@ func {{.HandlerName}}() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+
+			if staticCall {
+                client, clientErr := NewClient(rpc)
+                if clientErr != nil {
+                    return clientErr
+                }
+
+                // Create the call message
+                msg := ethereum.CallMsg{
+                    To:   &contractAddress,
+                    Data: txCalldata,
+                }
+
+                // Create context with timeout
+                ctx, cancel := NewChainContext(timeout)
+                defer cancel()
+
+                // Perform static call
+                output, err := client.CallContract(ctx, msg, nil)
+                if err != nil {
+                    return fmt.Errorf("static call failed: %v", err)
+                }
+
+                // Unpack the result
+                result, err := abi.Unpack(methodName, output)
+                if err != nil {
+                    return fmt.Errorf("failed to unpack result: %v", err)
+                }
+
+                if len(result) > 0 {
+                    // Get method outputs from ABI to access parameter names
+                    method, exists := abi.Methods[methodName]
+                    if !exists {
+                        return fmt.Errorf("method %s not found in ABI", methodName)
+                    }
+
+                    // Print each return value
+                    for i, val := range result {
+                        // Get parameter name if available
+                        paramName := fmt.Sprintf("output%d", i)
+                        if i < len(method.Outputs) {
+                            if method.Outputs[i].Name != "" {
+                                paramName = method.Outputs[i].Name
+                            }
+                        }
+                        switch v := val.(type) {
+                        case bool:
+                            cmd.Printf("%s: %t\n", paramName, v)
+                        case string:
+                            cmd.Printf("%s: %s\n", paramName, v)
+                        case *big.Int:
+                            cmd.Printf("%s: %s\n", paramName, v.String())
+                        case common.Address:
+                            cmd.Printf("%s: %s\n", paramName, v.Hex())
+                        default:
+							rv := reflect.ValueOf(v)
+							if rv.Kind() == reflect.Struct {
+								PrintStruct(cmd, paramName, rv, 0)
+							} else {
+								cmd.Printf("%s: %v\n", paramName, v)
+							}
+                        }
+                    }
+                }  else {
+                    return fmt.Errorf("no result returned from static call")
+                }
+
+                return nil
+            }
 
 			if calldata {
 				txCalldataHex := hex.EncodeToString(txCalldata)
@@ -1876,6 +1972,7 @@ func {{.HandlerName}}() *cobra.Command {
 	cmd.Flags().StringVar(&safeFunction, "safe-function", "", "Safe function overrider to use for the transaction (optional)")
 	cmd.Flags().StringVar(&safeNonceRaw, "safe-nonce", "", "Safe nonce overrider for the transaction (optional)")
 	cmd.Flags().BoolVar(&calldata, "calldata", false, "Set this flag if want to return the calldata instead of sending the transaction")
+	cmd.Flags().BoolVar(&staticCall, "static-call", false, "Set this flag if want to call the method without sending a transaction")
 
     {{range .MethodArgs}}
     cmd.Flags().{{.Flag}}

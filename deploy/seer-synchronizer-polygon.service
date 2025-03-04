@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/seer
 EnvironmentFile=/home/ubuntu/seer-secrets/app.env
 Restart=on-failure
 RestartSec=15s
-ExecStart=/home/ubuntu/seer/seer synchronizer --chain polygon
+ExecStart=/home/ubuntu/seer/seer synchronizer --chain polygon --rpc-url $MOONSTREAM_NODE_POLYGON_A_EXTERNAL_URI
 SyslogIdentifier=seer-synchronizer-polygon
 
 [Install]
