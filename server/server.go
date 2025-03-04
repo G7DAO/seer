@@ -124,7 +124,7 @@ type TransactionsVolumeResponse struct {
 	TxsCount       uint64 `json:"txs_count"`
 }
 
-func (server *Server) graphsV2VolumeRoute(w http.ResponseWriter, r *http.Request) {
+func (server *Server) graphsVolumeRoute(w http.ResponseWriter, r *http.Request) {
 	fromAddressQe := r.URL.Query().Get("from_address")
 	if fromAddressQe == "" {
 		http.Error(w, "from_address is required", http.StatusBadRequest)
@@ -165,7 +165,7 @@ func (server *Server) graphsV2VolumeRoute(w http.ResponseWriter, r *http.Request
 	}
 
 	limitTxs := 1000000
-	txsVol, txsErr := server.DbPool.GetTransactionsVolumeV2(blockchainQe, fromAddressQe, toAddressQe, limitTxs, lowestBlockNumQeUint, false)
+	txsVol, txsErr := server.DbPool.GetTransactionsVolume(blockchainQe, fromAddressQe, toAddressQe, limitTxs, lowestBlockNumQeUint, false)
 	if txsErr != nil {
 		if txsErr.Error() == "not found" {
 			http.Error(w, "No transactions found", http.StatusNotFound)
@@ -188,7 +188,7 @@ func (server *Server) graphsV2VolumeRoute(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(response)
 }
 
-func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
+func (server *Server) graphsTxsRoute(w http.ResponseWriter, r *http.Request) {
 	sourceAddressQe := r.URL.Query().Get("source_address")
 	if sourceAddressQe == "" {
 		http.Error(w, "source_address is required", http.StatusBadRequest)
@@ -225,7 +225,7 @@ func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
 	// Also it gives us lowest block_number for this address, so we do not
 	// query transactions for subnodes which were executed this address
 	// appeared in blockchain
-	txs, txsErr := server.DbPool.GetTransactionsV2(blockchainQe, []string{sourceAddressQe}, limitTxs, lowestBlockNumQeUint, true)
+	txs, txsErr := server.DbPool.GetTransactions(blockchainQe, []string{sourceAddressQe}, limitTxs, lowestBlockNumQeUint, true)
 	if txsErr != nil {
 		log.Printf("Unable to query rows, err: %v", txsErr)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -255,7 +255,7 @@ func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
 
 	// Second iteration of parse depth equal 2
 	// Query subnodes for source address with txs greater then first tx of source address
-	subTxs, subTxsErr := server.DbPool.GetTransactionsV2(blockchainQe, subAddressSls, limitTxs, lowestBlockNum, true)
+	subTxs, subTxsErr := server.DbPool.GetTransactions(blockchainQe, subAddressSls, limitTxs, lowestBlockNum, true)
 	if subTxsErr != nil {
 		log.Printf("Unable to query rows, err: %v", subTxsErr)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -280,8 +280,8 @@ func (server *Server) graphsV2TxsRoute(w http.ResponseWriter, r *http.Request) {
 
 func (server *Server) Run(host string, port int, corsWhitelist map[string]bool) {
 	serveMux := http.NewServeMux()
-	serveMux.HandleFunc("/graphs/v2/txs", server.graphsV2TxsRoute)
-	serveMux.HandleFunc("/graphs/v2/volume", server.graphsV2VolumeRoute)
+	serveMux.HandleFunc("/graphs/txs", server.graphsTxsRoute)
+	serveMux.HandleFunc("/graphs/volume", server.graphsVolumeRoute)
 	serveMux.HandleFunc("/now", server.nowRoute)
 	serveMux.HandleFunc("/ping", server.pingRoute)
 	serveMux.HandleFunc("/version", server.versionRoute)

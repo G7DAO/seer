@@ -1149,6 +1149,79 @@ func getWhereBidiVolClause(isBidirectional bool) string {
 	return "WHERE from_address = $1 AND to_address = $2 "
 }
 
+func (p *PostgreSQLpgx) GetTransactionsVolume(blockchain, fromAddress, toAddress string, limit int, lowestBlockNum uint64, isBidirectional bool) (*TransactionsVolume, error) {
+	txTableName, txTableErr := TransactionsTableName(blockchain)
+	if txTableErr != nil {
+		return nil, txTableErr
+	}
+
+	fromAddressBytes, fDecErr := decodeAddress(fromAddress)
+	if fDecErr != nil {
+		log.Printf("Error decoding address %s, err: %v", fDecErr, fromAddress)
+		return nil, fDecErr
+	}
+
+	toAddressBytes, tDecErr := decodeAddress(toAddress)
+	if tDecErr != nil {
+		log.Printf("Error decoding address %s, err: %v", tDecErr, toAddress)
+		return nil, tDecErr
+	}
+
+	pool := p.GetPool()
+
+	ctx := context.Background()
+	conn, acquireErr := pool.Acquire(ctx)
+	if acquireErr != nil {
+		return nil, acquireErr
+	}
+	defer conn.Release()
+
+	query := fmt.Sprintf(`
+		SELECT 
+			MIN(block_number) AS min_block_number,
+			MAX(block_number) AS max_block_number,
+			SUM(value) AS volume,
+			COUNT(*) AS txs_count
+		FROM (
+			SELECT block_number, from_address, to_address, value
+			FROM %s
+			%s
+			%s
+			ORDER BY block_number
+			LIMIT $3
+		) AS limited_transactions;
+	`, txTableName, getWhereBidiVolClause(isBidirectional), getAndBlockNumClause(lowestBlockNum))
+
+	row := conn.QueryRow(context.Background(), query, fromAddressBytes, toAddressBytes, limit)
+
+	var minBlockNum, maxBlockNum sql.NullInt64
+	var volStr sql.NullString
+	var txsCount uint64
+
+	qErr := row.Scan(&minBlockNum, &maxBlockNum, &volStr, &txsCount)
+	if qErr != nil {
+		return nil, qErr
+	}
+
+	if txsCount == 0 {
+		return nil, fmt.Errorf("not found")
+	}
+
+	if !minBlockNum.Valid || !maxBlockNum.Valid || !volStr.Valid {
+		return nil, fmt.Errorf("Not correct results for %s %s address pair: %v %v %v", fromAddress, toAddress, minBlockNum.Valid, maxBlockNum.Valid, volStr.Valid)
+	}
+
+	vol := new(big.Int)
+	vol.SetString(volStr.String, 10)
+
+	return &TransactionsVolume{
+		MinBlockNumber: uint64(minBlockNum.Int64),
+		MaxBlockNumber: uint64(maxBlockNum.Int64),
+		Volume:         vol,
+		TxsCount:       txsCount,
+	}, nil
+}
+
 func (p *PostgreSQLpgx) GetTransactionsVolumeV2(blockchain, fromAddress, toAddress string, limit int, lowestBlockNum uint64, isBidirectional bool) (*TransactionsVolume, error) {
 	txTableName, txTableErr := TransactionsTableName(blockchain)
 	if txTableErr != nil {
@@ -1254,6 +1327,68 @@ func (p *PostgreSQLpgx) GetTransactionsVolumeBidirectionalV2(blockchain, fromAdd
 	txsVol.Volume.SetString(volStr, 10)
 
 	return &txsVol, nil
+}
+
+func (p *PostgreSQLpgx) GetTransactions(blockchain string, sourceAddress []string, limit int, lowestBlockNum uint64, toAddrDistinct bool) ([]Transaction, error) {
+	txTableName, txTableErr := TransactionsTableName(blockchain)
+	if txTableErr != nil {
+		return nil, txTableErr
+	}
+
+	var addressesBytes [][]byte
+	for _, address := range sourceAddress {
+		addressBytes, err := decodeAddress(address)
+		if err != nil {
+			log.Printf("Error decoding address %s, err: %v", err, address)
+			continue
+		}
+		addressesBytes = append(addressesBytes, addressBytes)
+	}
+
+	pool := p.GetPool()
+
+	ctx := context.Background()
+	conn, acquireErr := pool.Acquire(ctx)
+	if acquireErr != nil {
+		return nil, acquireErr
+	}
+	defer conn.Release()
+
+	query := fmt.Sprintf(`
+		SELECT %s
+			block_number,
+			'0x' || encode(from_address, 'hex'),
+			'0x' || encode(to_address, 'hex'),
+			value
+		FROM %s 
+		WHERE from_address = ANY($1)
+		%s
+		ORDER BY %s
+		LIMIT $2`, getSelectClause(toAddrDistinct), txTableName, getAndBlockNumClause(lowestBlockNum), getOrderClause(toAddrDistinct))
+
+	rows, qErr := conn.Query(context.Background(), query, addressesBytes, limit)
+	if qErr != nil {
+		return nil, qErr
+	}
+
+	var txs []Transaction
+	for rows.Next() {
+		var tx Transaction
+		var valueStr string
+
+		err = rows.Scan(&tx.BlockNumber, &tx.FromAddress, &tx.ToAddress, &valueStr)
+		if err != nil {
+			log.Printf("Unable to scan row, err: %v", err)
+		}
+
+		tx.Value = new(big.Int)
+		tx.Value.SetString(valueStr, 10)
+
+		// Append the transaction to the slice
+		txs = append(txs, tx)
+	}
+
+	return txs, nil
 }
 
 func (p *PostgreSQLpgx) GetTransactionsV2(blockchain string, sourceAddress []string, limit int, lowestBlockNum uint64, toAddrDistinct bool) ([]Transaction, error) {

@@ -113,19 +113,21 @@ type CustomerInstance struct {
 	Credentials []interface{} `json:"credentials"`
 }
 
-func GetDBConnection(uuid string, id int) (string, error) {
+func GetDBConnection(uuid string, id int, dbUsername string) (string, error) {
 	// Define timeout duration
 	ctx, cancel := context.WithTimeout(context.Background(), SEER_MDB_V3_CONTROLLER_API_TIMEOUT)
 	defer cancel()
 
+	uri := fmt.Sprintf("%s/customers/%s/instances/%s/creds/%s/url", MOONSTREAM_DB_V3_CONTROLLER_API, uuid, strconv.Itoa(id), dbUsername)
+
 	// Create the request with the context
-	req, err := http.NewRequestWithContext(ctx, "GET", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid+"/instances/"+strconv.Itoa(id)+"/creds/seer/url", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", uri, nil)
 	if err != nil {
 		return "", err
 	}
 
 	// Set the authorization header
-	req.Header.Set("Authorization", "Bearer "+MOONSTREAM_DB_V3_CONTROLLER_SEER_ACCESS_TOKEN)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", MOONSTREAM_DB_V3_CONTROLLER_SEER_ACCESS_TOKEN))
 
 	// Perform the request
 	resp, err := http.DefaultClient.Do(req)
@@ -138,7 +140,7 @@ func GetDBConnection(uuid string, id int) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Println("Failed to get connection string for id", uuid, ":", MOONSTREAM_DB_V3_CONTROLLER_API+"/customers/"+uuid+"/instances/"+strconv.Itoa(id)+"/creds/seer/url")
+		log.Printf("Failed to get connection from uri %s", uri)
 		return "", fmt.Errorf("failed to get connection string for id %s: %s", uuid, resp.Status)
 	}
 
@@ -351,7 +353,7 @@ func (d *Synchronizer) getCustomers(customerDbUriFlag string, customerIds []stri
 		for _, instance := range instances {
 
 			if customerDbUriFlag == "" {
-				connectionString, dbConnErr = GetDBConnection(id, instance)
+				connectionString, dbConnErr = GetDBConnection(id, instance, "seer")
 				if dbConnErr != nil {
 					log.Printf("Unable to get connection database URI for customer %s, err: %v", id, dbConnErr)
 					continue
