@@ -3,6 +3,7 @@ package indexer
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -1138,18 +1139,34 @@ func (p *PostgreSQLpgx) GetTransactionsVolumeV2(blockchain, fromAddress, toAddre
 		) AS limited_transactions;
 	`, txTableName, getWhereBidiVolClause(isBidirectional), getAndBlockNumClause(lowestBlockNum))
 
-	var txsVol TransactionsVolume
-	var volStr string
+	row := conn.QueryRow(context.Background(), query, fromAddress, toAddress, limit)
 
-	qErr := conn.QueryRow(context.Background(), query, fromAddress, toAddress, limit).Scan(&txsVol.MinBlockNumber, &txsVol.MaxBlockNumber, &volStr, &txsVol.TxsCount)
+	var minBlockNum, maxBlockNum sql.NullInt64
+	var volStr sql.NullString
+	var txsCount uint64
+
+	qErr := row.Scan(&minBlockNum, &maxBlockNum, &volStr, &txsCount)
 	if qErr != nil {
 		return nil, qErr
 	}
 
-	txsVol.Volume = new(big.Int)
-	txsVol.Volume.SetString(volStr, 10)
+	if txsCount == 0 {
+		return nil, fmt.Errorf("not found")
+	}
 
-	return &txsVol, nil
+	if !minBlockNum.Valid || !maxBlockNum.Valid || !volStr.Valid {
+		return nil, fmt.Errorf("Not correct results for %s %s address pair: %v %v %v", fromAddress, toAddress, minBlockNum.Valid, maxBlockNum.Valid, volStr.Valid)
+	}
+
+	vol := new(big.Int)
+	vol.SetString(volStr.String, 10)
+
+	return &TransactionsVolume{
+		MinBlockNumber: uint64(minBlockNum.Int64),
+		MaxBlockNumber: uint64(maxBlockNum.Int64),
+		Volume:         vol,
+		TxsCount:       txsCount,
+	}, nil
 }
 
 func (p *PostgreSQLpgx) GetTransactionsVolumeBidirectionalV2(blockchain, fromAddress, toAddress string, limit int, lowestBlockNum uint64) (*TransactionsVolume, error) {

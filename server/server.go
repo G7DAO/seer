@@ -167,7 +167,11 @@ func (server *Server) graphsV2VolumeRoute(w http.ResponseWriter, r *http.Request
 	limitTxs := 1000000
 	txsVol, txsErr := server.DbPool.GetTransactionsVolumeV2(blockchainQe, fromAddressQe, toAddressQe, limitTxs, lowestBlockNumQeUint, false)
 	if txsErr != nil {
-		log.Printf("Unable to row, err: %v", txsErr)
+		if txsErr.Error() == "not found" {
+			http.Error(w, "No transactions found", http.StatusNotFound)
+			return
+		}
+		log.Printf("Unable to query the row, err: %v", txsErr)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
