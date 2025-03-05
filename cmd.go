@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -49,7 +50,8 @@ func CreateRootCommand() *cobra.Command {
 	abiCmd := CreateAbiCommand()
 	dbCmd := CreateDatabaseOperationCommand()
 	historicalSyncCmd := CreateHistoricalSyncCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd, historicalSyncCmd)
+	generateJSONCmd := CreateGenerateJSONCommand() // Added generateJSON command here
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd, historicalSyncCmd, generateJSONCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -1280,4 +1282,197 @@ func checkSpaceSeparatedAddresses(addrs []string) error {
 		)
 	}
 	return nil
+}
+
+// Define a regex pattern to match Solidity struct definitions.
+var solidityStructPattern = regexp.MustCompile(`struct\s+(\w+)\s*{([^}]+)}`)
+
+// Field represents a field in a Solidity struct.
+type Field struct {
+	Name string
+	Type string
+}
+
+// parseSolidityStructs reads a Solidity file and extracts struct definitions with field order preserved.
+func parseSolidityStructs(filePath string) (map[string][]Field, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	structs := make(map[string][]Field) // Struct name -> Slice of fields (in order)
+
+	matches := solidityStructPattern.FindAllStringSubmatch(string(content), -1)
+
+	for _, match := range matches {
+		structName := match[1]
+		structBody := match[2]
+
+		fieldPattern := regexp.MustCompile(`(\w+)\s+(\w+);`)
+		fieldMatches := fieldPattern.FindAllStringSubmatch(structBody, -1)
+
+		fields := []Field{}
+		for _, fieldMatch := range fieldMatches {
+			fieldType, fieldName := fieldMatch[1], fieldMatch[2]
+			fields = append(fields, Field{Name: fieldName, Type: fieldType})
+		}
+
+		structs[structName] = fields
+	}
+
+	return structs, nil
+}
+
+// generateDynamicJSON generates JSON using the field order from the Solidity struct.
+func generateDynamicJSON(structName string, structMap map[string][]Field) (string, error) {
+	fields, exists := structMap[structName]
+	if !exists {
+		return "", fmt.Errorf("struct %s not found", structName)
+	}
+
+	data := make(map[string]interface{})
+	reader := bufio.NewReader(os.Stdin)
+
+	// Iterate over fields in the order defined in the Solidity struct.
+	for _, field := range fields {
+		for {
+			fmt.Printf("Enter %s (%s): ", field.Name, field.Type)
+			input, _ := reader.ReadString('\n')
+			input = strings.TrimSpace(input) // Trim whitespace
+
+			var err error
+			switch field.Type {
+			case "string", "address":
+				if input == "" {
+					fmt.Println("Invalid input, expected a non-empty string.")
+					continue
+				}
+				data[field.Name] = input
+
+			case "int", "int24", "int32", "int64":
+				var val int64
+				val, err = strconv.ParseInt(input, 10, 64)
+				if err != nil {
+					fmt.Println("Invalid input, expected an integer.")
+					continue
+				}
+				data[field.Name] = val
+
+			case "uint", "uint256", "uint32", "uint64":
+				// Treat uint256 as a string to avoid overflow issues.
+				if field.Type == "uint256" {
+					if input == "" {
+						fmt.Println("Invalid input, expected a non-empty string.")
+						continue
+					}
+					data[field.Name] = input
+				} else {
+					var val uint64
+					val, err = strconv.ParseUint(input, 10, 64)
+					if err != nil {
+						fmt.Println("Invalid input, expected a positive integer.")
+						continue
+					}
+					data[field.Name] = val
+				}
+
+			case "bool":
+				var val bool
+				val, err = strconv.ParseBool(input)
+				if err != nil {
+					fmt.Println("Invalid input, expected a boolean (true/false).")
+					continue
+				}
+				data[field.Name] = val
+
+			default:
+				fmt.Printf("Unsupported field type: %s\n", field.Type)
+			}
+			break
+		}
+	}
+
+	// Wrap the data in an array to match the expected structure.
+	jsonData, err := json.MarshalIndent([]map[string]interface{}{data}, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+
+	return string(jsonData), nil
+}
+
+// saveJSONToFile saves the generated JSON to a file.
+func saveJSONToFile(fileName, jsonStr string) error {
+	var existingData []map[string]interface{}
+	var newData []map[string]interface{}
+
+	// Parse the new JSON data.
+	if err := json.Unmarshal([]byte(jsonStr), &newData); err != nil {
+		return fmt.Errorf("failed to parse new JSON data: %w", err)
+	}
+
+	// Check if the file already exists.
+	if _, err := os.Stat(fileName); err == nil {
+		file, err := os.ReadFile(fileName)
+		if err != nil {
+			return fmt.Errorf("failed to read existing file: %w", err)
+		}
+
+		// If the file is not empty, parse its content.
+		if len(file) > 0 {
+			if err := json.Unmarshal(file, &existingData); err != nil {
+				return fmt.Errorf("failed to parse existing JSON data: %w", err)
+			}
+		}
+	}
+
+	// Append the new data to the existing data.
+	existingData = append(existingData, newData...)
+
+	// Convert the combined data to a JSON string with indentation.
+	jsonData, err := json.MarshalIndent(existingData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON data: %w", err)
+	}
+
+	// Write the JSON data to the file.
+	if err := os.WriteFile(fileName, jsonData, 0644); err != nil {
+		return fmt.Errorf("failed to write to file: %w", err)
+	}
+
+	fmt.Printf("Data successfully saved to %s\n", fileName)
+	return nil
+}
+
+// CreateGenerateJSONCommand returns a new command for generating JSON from structs.
+func CreateGenerateJSONCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "generate-json [solFilePath] [structName]",
+		Short: "Generate a JSON representation of a struct from a Solidity file",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			solFilePath, structName := args[0], args[1]
+
+			structMap, err := parseSolidityStructs(solFilePath)
+			if err != nil {
+				return fmt.Errorf("failed to parse Solidity structs: %w", err)
+			}
+
+			jsonStr, err := generateDynamicJSON(structName, structMap)
+			if err != nil {
+				return fmt.Errorf("failed to generate JSON: %w", err)
+			}
+
+			fmt.Println("Generated JSON:")
+			fmt.Println(jsonStr)
+
+			outputFileName := structName + ".json"
+			if err := saveJSONToFile(outputFileName, jsonStr); err != nil {
+				return fmt.Errorf("failed to save JSON to file: %w", err)
+			}
+
+			fmt.Printf("JSON saved to %s\n", outputFileName)
+			return nil
+		},
+	}
 }
