@@ -7,6 +7,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
+
+	"github.com/google/uuid"
 )
 
 // CORS middleware
@@ -87,6 +90,59 @@ func (server *Server) panicMiddleware(next http.Handler) http.Handler {
 		}()
 
 		// There will be a defer with panic handler in each next function
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (server *Server) accessMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		// Extract auth token
+		var authToken string
+		authHeaders := r.Header["Authorization"]
+		for _, h := range authHeaders {
+			if !strings.HasPrefix(h, "Bearer ") {
+				http.Error(w, "Invalid authorization token provided", http.StatusForbidden)
+				return
+			}
+
+			hSlice := strings.Split(h, " ")
+			if len(hSlice) != 2 {
+				http.Error(w, "Invalid authorization token provided", http.StatusForbidden)
+				return
+			}
+
+			uuidErr := uuid.Validate(hSlice[1])
+			if uuidErr != nil {
+				http.Error(w, "Invalid authorization token provided", http.StatusForbidden)
+				return
+			}
+
+			authToken = hSlice[1]
+		}
+
+		if authToken == "" {
+			http.Error(w, "No authorization token was passed with the request", http.StatusForbidden)
+			return
+		}
+
+		// Verify auth token
+		userAuth, auErr := server.BugoutClient.Brood.Auth(authToken)
+		if auErr != nil {
+			if auErr.Error() == "Invalid status code in HTTP response: 404" {
+				http.Error(w, "User not found", http.StatusNotFound)
+				return
+			}
+			log.Printf("Failed to fetch bugout user, err: %v", auErr)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		if userAuth.ApplicationId != MOONSTREAM_APPLICATION_ID {
+			http.Error(w, "Invalid user token provided. Use a valid Moonstream token", http.StatusForbidden)
+			return
+		}
+
 		next.ServeHTTP(w, r)
 	})
 }

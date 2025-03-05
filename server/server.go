@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	bugout "github.com/bugout-dev/bugout-go/pkg"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -24,6 +25,7 @@ type Server struct {
 	Port          int
 	CORSWhitelist map[string]bool
 	DbPool        *indexer.PostgreSQLpgx
+	BugoutClient  *bugout.BugoutClient
 }
 
 type PingResponse struct {
@@ -280,8 +282,8 @@ func (server *Server) graphsTxsRoute(w http.ResponseWriter, r *http.Request) {
 
 func (server *Server) Run(host string, port int, corsWhitelist map[string]bool) {
 	serveMux := http.NewServeMux()
-	serveMux.HandleFunc("/graphs/txs", server.graphsTxsRoute)
-	serveMux.HandleFunc("/graphs/volume", server.graphsVolumeRoute)
+	serveMux.Handle("/graphs/txs", server.accessMiddleware(http.HandlerFunc(server.graphsTxsRoute)))
+	serveMux.Handle("/graphs/volume", server.accessMiddleware(http.HandlerFunc(server.graphsVolumeRoute)))
 	serveMux.HandleFunc("/now", server.nowRoute)
 	serveMux.HandleFunc("/ping", server.pingRoute)
 	serveMux.HandleFunc("/version", server.versionRoute)

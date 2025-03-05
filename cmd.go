@@ -16,6 +16,7 @@ import (
 	"strings"
 	"text/template"
 
+	bugout "github.com/bugout-dev/bugout-go/pkg"
 	"github.com/spf13/cobra"
 
 	"github.com/G7DAO/seer/blockchain"
@@ -1243,6 +1244,7 @@ func CreateServerCommand() *cobra.Command {
 		Short: "API server related functionality",
 	}
 
+	var bugoutClient *bugout.BugoutClient
 	var hostFlag, corsFlag, dbUriFlag, customerIdFlag string
 	var portFlag, instanceIdFlag int
 
@@ -1258,6 +1260,21 @@ func CreateServerCommand() *cobra.Command {
 
 			if err := synchronizer.CheckVariablesForSynchronizer(); err != nil {
 				return err
+			}
+
+			if err := server.CheckVariablesForServer(); err != nil {
+				return err
+			}
+
+			var bcErr error
+			bugoutClient, bcErr = server.InitBugoutClient()
+			if bcErr != nil {
+				return errors.New(fmt.Sprintf("Unable to set bugout client, err: %v", bcErr))
+			}
+
+			_, pingErr := bugoutClient.Brood.Ping()
+			if pingErr != nil {
+				return errors.New(fmt.Sprintf("Unable to ping bugout brood server, err: %v", pingErr))
 			}
 
 			return nil
@@ -1307,6 +1324,7 @@ func CreateServerCommand() *cobra.Command {
 				Port:          portFlag,
 				CORSWhitelist: corsWhitelist,
 				DbPool:        dbConn,
+				BugoutClient:  bugoutClient,
 			}
 
 			log.Printf("Starting API HTTP server at %s:%d and whitelisted CORS %v", hostFlag, portFlag, corsSlice)
