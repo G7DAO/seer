@@ -14,7 +14,7 @@ var err error
 // init initializes the DBConnection variable with a new PostgreSQLpgx instance.
 func InitDBConnection() {
 
-	DBConnection, err = NewPostgreSQLpgx()
+	DBConnection, err = NewPostgreSQLpgx(MOONSTREAM_DB_V3_INDEXES_URI)
 
 	if err != nil {
 		fmt.Println("Error initializing DBConnection: ", err)

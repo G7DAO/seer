@@ -27,12 +27,90 @@ func LabelsTableName(blockchain string) string {
 	return fmt.Sprintf(blockchain + "_labels")
 }
 
-func BlocksTableName(blockchain string) string {
-	return fmt.Sprintf(blockchain + "_blocks")
+func BlocksTableName(blockchain string) (string, error) {
+	switch blockchain {
+	case "arbitrum_one":
+		return "arbitrum_one_blocks", nil
+	case "arbitrum_sepolia":
+		return "arbitrum_sepolia_blocks", nil
+	case "b3":
+		return "b3_blocks", nil
+	case "b3_sepolia":
+		return "b3_sepolia_blocks", nil
+	case "ethereum":
+		return "ethereum_blocks", nil
+	case "game7":
+		return "game7_blocks", nil
+	case "game7_orbit_arbitrum_sepolia":
+		return "game7_orbit_arbitrum_sepolia_blocks", nil
+	case "game7_testnet":
+		return "game7_testnet_blocks", nil
+	case "imx_zkevm":
+		return "imx_zkevm_blocks", nil
+	case "imx_zkevm_sepolia":
+		return "imx_zkevm_sepolia_blocks", nil
+	case "mantle":
+		return "mantle_blocks", nil
+	case "mantle_sepolia":
+		return "mantle_sepolia_blocks", nil
+	case "polygon":
+		return "polygon_blocks", nil
+	case "ronin":
+		return "ronin_blocks", nil
+	case "ronin_saigon":
+		return "ronin_saigon_blocks", nil
+	case "sepolia":
+		return "sepolia_blocks", nil
+	case "xai":
+		return "xai_blocks", nil
+	case "xai_sepolia":
+		return "xai_sepolia_blocks", nil
+	default:
+		return "", fmt.Errorf("Unsupported blockchain")
+	}
 }
 
-func TransactionsTableName(blockchain string) string {
-	return fmt.Sprintf(blockchain + "_transactions")
+func TransactionsTableName(blockchain string) (string, error) {
+	switch blockchain {
+	case "arbitrum_one":
+		return "arbitrum_one_transactions", nil
+	case "arbitrum_sepolia":
+		return "arbitrum_sepolia_transactions", nil
+	case "b3":
+		return "b3_transactions", nil
+	case "b3_sepolia":
+		return "b3_sepolia_transactions", nil
+	case "ethereum":
+		return "ethereum_transactions", nil
+	case "game7":
+		return "game7_transactions", nil
+	case "game7_orbit_arbitrum_sepolia":
+		return "game7_orbit_arbitrum_sepolia_transactions", nil
+	case "game7_testnet":
+		return "game7_testnet_transactions", nil
+	case "imx_zkevm":
+		return "imx_zkevm_transactions", nil
+	case "imx_zkevm_sepolia":
+		return "imx_zkevm_sepolia_transactions", nil
+	case "mantle":
+		return "mantle_transactions", nil
+	case "mantle_sepolia":
+		return "mantle_sepolia_transactions", nil
+	case "polygon":
+		return "polygon_transactions", nil
+	case "ronin":
+		return "ronin_transactions", nil
+	case "ronin_saigon":
+		return "ronin_saigon_transactions", nil
+	case "sepolia":
+		return "sepolia_transactions", nil
+	case "xai":
+		return "xai_transactions", nil
+	case "xai_sepolia":
+		return "xai_sepolia_transactions", nil
+	default:
+		return "", fmt.Errorf("Unsupported blockchain")
+	}
 }
 
 func CustomerDBTransactionsTableName(blockchain string) string {
@@ -119,13 +197,13 @@ type PostgreSQLpgx struct {
 	pool *pgxpool.Pool
 }
 
-func NewPostgreSQLpgx() (*PostgreSQLpgx, error) {
+func NewPostgreSQLpgx(dbUri string) (*PostgreSQLpgx, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 
 	defer cancel()
 
-	newURL := fmt.Sprintf("%s?pool_max_conns=10&pool_min_conns=10&pool_max_conn_lifetime=10m&pool_max_conn_idle_time=10m", MOONSTREAM_DB_V3_INDEXES_URI)
+	newURL := fmt.Sprintf("%s?pool_max_conns=10&pool_min_conns=10&pool_max_conn_lifetime=10m&pool_max_conn_idle_time=10m", dbUri)
 
 	config, err := pgxpool.ParseConfig(newURL)
 
@@ -369,7 +447,10 @@ func (p *PostgreSQLpgx) executeBatchInsert(tx pgx.Tx, ctx context.Context, table
 }
 
 func (p *PostgreSQLpgx) writeBlockIndexToDB(tx pgx.Tx, blockchain string, indexes []BlockIndex) error {
-	tableName := BlocksTableName(blockchain)
+	tableName, blocksTableErr := BlocksTableName(blockchain)
+	if blocksTableErr != nil {
+		return blocksTableErr
+	}
 	isBlockchainWithL1Chain := IsBlockchainWithL1Chain(blockchain)
 	columns := []string{"block_number", "block_hash", "block_timestamp", "parent_hash", "row_id", "path", "transactions_indexed_at", "logs_indexed_at"}
 
@@ -464,7 +545,12 @@ func (p *PostgreSQLpgx) GetEdgeDBBlock(ctx context.Context, blockchain, side str
 
 	defer conn.Release()
 
-	query := fmt.Sprintf("SELECT block_number,block_hash,block_timestamp,parent_hash,row_id,path,l1_block_number FROM %s ORDER BY block_number", BlocksTableName(blockchain))
+	tableName, blocksTableErr := BlocksTableName(blockchain)
+	if blocksTableErr != nil {
+		return blockIndex, blocksTableErr
+	}
+
+	query := fmt.Sprintf("SELECT block_number,block_hash,block_timestamp,parent_hash,row_id,path,l1_block_number FROM %s ORDER BY block_number", tableName)
 
 	switch side {
 	case "first":
@@ -507,7 +593,10 @@ func (p *PostgreSQLpgx) GetLatestDBBlockNumber(blockchain string, reverse ...boo
 
 	var blockNumber uint64
 
-	blocksTableName := BlocksTableName(blockchain)
+	blocksTableName, blocksTableErr := BlocksTableName(blockchain)
+	if blocksTableErr != nil {
+		return 0, blocksTableErr
+	}
 	// Check if reverse is provided, if not, default to false (DESC order)
 	orderDirection := "DESC"
 	if len(reverse) > 0 && reverse[0] {
@@ -610,7 +699,10 @@ func (p *PostgreSQLpgx) ReadUpdates(blockchain string, fromBlock uint64, custome
 
 	defer conn.Release()
 
-	blocksTableName := BlocksTableName(blockchain)
+	blocksTableName, blocksTableErr := BlocksTableName(blockchain)
+	if blocksTableErr != nil {
+		return 0, 0, paths, nil, blocksTableErr
+	}
 
 	query := fmt.Sprintf(`WITH path as (
         SELECT
@@ -1013,6 +1105,344 @@ func (p *PostgreSQLpgx) WriteEvents(tx pgx.Tx, blockchain string, events []Event
 	return nil
 }
 
+type Transaction struct {
+	BlockNumber uint64   `json:"block_number"`
+	FromAddress string   `json:"from_address"`
+	ToAddress   string   `json:"to_address"`
+	Value       *big.Int `json:"value"`
+}
+
+type TransactionsVolume struct {
+	MinBlockNumber uint64   `json:"min_block_number"`
+	MaxBlockNumber uint64   `json:"max_block_number"`
+	Volume         *big.Int `json:"volume"`
+	TxsCount       uint64   `json:"txs_count"`
+}
+
+// Fetch all unique nodes
+// It does not return all transactions between nodes, but only first
+func getSelectClause(toAddrDistinct bool) string {
+	if toAddrDistinct {
+		return "DISTINCT ON (to_address) "
+	}
+	return ""
+}
+
+func getOrderClause(toAddrDistinct bool) string {
+	if toAddrDistinct {
+		return "to_address, block_number"
+	}
+	return "block_number"
+}
+
+func getAndBlockNumClause(lowestBlockNum uint64) string {
+	if lowestBlockNum > 0 {
+		return fmt.Sprintf("AND block_number >= %d ", lowestBlockNum)
+	}
+	return ""
+}
+
+func getWhereBidiVolClause(isBidirectional bool) string {
+	if isBidirectional {
+		return fmt.Sprintf("WHERE from_address IN ($1, $2) AND to_address IN ($1, $2) ")
+	}
+	return "WHERE from_address = $1 AND to_address = $2 "
+}
+
+func (p *PostgreSQLpgx) GetTransactionsVolume(blockchain, fromAddress, toAddress string, limit int, lowestBlockNum uint64, isBidirectional bool) (*TransactionsVolume, error) {
+	txTableName, txTableErr := TransactionsTableName(blockchain)
+	if txTableErr != nil {
+		return nil, txTableErr
+	}
+
+	fromAddressBytes, fDecErr := decodeAddress(fromAddress)
+	if fDecErr != nil {
+		log.Printf("Error decoding address %s, err: %v", fDecErr, fromAddress)
+		return nil, fDecErr
+	}
+
+	toAddressBytes, tDecErr := decodeAddress(toAddress)
+	if tDecErr != nil {
+		log.Printf("Error decoding address %s, err: %v", tDecErr, toAddress)
+		return nil, tDecErr
+	}
+
+	pool := p.GetPool()
+
+	ctx := context.Background()
+	conn, acquireErr := pool.Acquire(ctx)
+	if acquireErr != nil {
+		return nil, acquireErr
+	}
+	defer conn.Release()
+
+	query := fmt.Sprintf(`
+		SELECT 
+			MIN(block_number) AS min_block_number,
+			MAX(block_number) AS max_block_number,
+			SUM(value) AS volume,
+			COUNT(*) AS txs_count
+		FROM (
+			SELECT block_number, from_address, to_address, value
+			FROM %s
+			%s
+			%s
+			ORDER BY block_number
+			LIMIT $3
+		) AS limited_transactions;
+	`, txTableName, getWhereBidiVolClause(isBidirectional), getAndBlockNumClause(lowestBlockNum))
+
+	row := conn.QueryRow(context.Background(), query, fromAddressBytes, toAddressBytes, limit)
+
+	var minBlockNum, maxBlockNum sql.NullInt64
+	var volStr sql.NullString
+	var txsCount uint64
+
+	qErr := row.Scan(&minBlockNum, &maxBlockNum, &volStr, &txsCount)
+	if qErr != nil {
+		return nil, qErr
+	}
+
+	if txsCount == 0 {
+		return nil, fmt.Errorf("not found")
+	}
+
+	if !minBlockNum.Valid || !maxBlockNum.Valid || !volStr.Valid {
+		return nil, fmt.Errorf("Not correct results for %s %s address pair: %v %v %v", fromAddress, toAddress, minBlockNum.Valid, maxBlockNum.Valid, volStr.Valid)
+	}
+
+	vol := new(big.Int)
+	vol.SetString(volStr.String, 10)
+
+	return &TransactionsVolume{
+		MinBlockNumber: uint64(minBlockNum.Int64),
+		MaxBlockNumber: uint64(maxBlockNum.Int64),
+		Volume:         vol,
+		TxsCount:       txsCount,
+	}, nil
+}
+
+func (p *PostgreSQLpgx) GetTransactionsVolumeV2(blockchain, fromAddress, toAddress string, limit int, lowestBlockNum uint64, isBidirectional bool) (*TransactionsVolume, error) {
+	txTableName, txTableErr := TransactionsTableName(blockchain)
+	if txTableErr != nil {
+		return nil, txTableErr
+	}
+
+	pool := p.GetPool()
+
+	ctx := context.Background()
+	conn, acquireErr := pool.Acquire(ctx)
+	if acquireErr != nil {
+		return nil, acquireErr
+	}
+	defer conn.Release()
+
+	query := fmt.Sprintf(`
+		SELECT 
+			MIN(block_number) AS min_block_number,
+			MAX(block_number) AS max_block_number,
+			SUM(value) AS volume,
+			COUNT(*) AS txs_count
+		FROM (
+			SELECT block_number, from_address, to_address, value
+			FROM %s
+			%s
+			%s
+			ORDER BY block_number
+			LIMIT $3
+		) AS limited_transactions;
+	`, txTableName, getWhereBidiVolClause(isBidirectional), getAndBlockNumClause(lowestBlockNum))
+
+	row := conn.QueryRow(context.Background(), query, fromAddress, toAddress, limit)
+
+	var minBlockNum, maxBlockNum sql.NullInt64
+	var volStr sql.NullString
+	var txsCount uint64
+
+	qErr := row.Scan(&minBlockNum, &maxBlockNum, &volStr, &txsCount)
+	if qErr != nil {
+		return nil, qErr
+	}
+
+	if txsCount == 0 {
+		return nil, fmt.Errorf("not found")
+	}
+
+	if !minBlockNum.Valid || !maxBlockNum.Valid || !volStr.Valid {
+		return nil, fmt.Errorf("Not correct results for %s %s address pair: %v %v %v", fromAddress, toAddress, minBlockNum.Valid, maxBlockNum.Valid, volStr.Valid)
+	}
+
+	vol := new(big.Int)
+	vol.SetString(volStr.String, 10)
+
+	return &TransactionsVolume{
+		MinBlockNumber: uint64(minBlockNum.Int64),
+		MaxBlockNumber: uint64(maxBlockNum.Int64),
+		Volume:         vol,
+		TxsCount:       txsCount,
+	}, nil
+}
+
+func (p *PostgreSQLpgx) GetTransactionsVolumeBidirectionalV2(blockchain, fromAddress, toAddress string, limit int, lowestBlockNum uint64) (*TransactionsVolume, error) {
+	txTableName, txTableErr := TransactionsTableName(blockchain)
+	if txTableErr != nil {
+		return nil, txTableErr
+	}
+
+	pool := p.GetPool()
+
+	ctx := context.Background()
+	conn, acquireErr := pool.Acquire(ctx)
+	if acquireErr != nil {
+		return nil, acquireErr
+	}
+	defer conn.Release()
+
+	query := fmt.Sprintf(`
+		SELECT 
+			MIN(block_number) AS min_block_number,
+			MAX(block_number) AS max_block_number,
+			SUM(value) AS volume,
+			COUNT(*) AS txs_count
+		FROM (
+			SELECT block_number, from_address, to_address, value
+			FROM %s
+			WHERE from_address IN ($1, $2)
+			AND to_address IN ($1, $2)
+			%s
+			ORDER BY block_number
+			LIMIT $3
+		) AS limited_transactions;
+	`, txTableName, getAndBlockNumClause(lowestBlockNum))
+
+	var txsVol TransactionsVolume
+	var volStr string
+
+	qErr := conn.QueryRow(context.Background(), query, fromAddress, toAddress, limit).Scan(&txsVol.MinBlockNumber, &txsVol.MaxBlockNumber, &volStr, &txsVol.TxsCount)
+	if qErr != nil {
+		return nil, qErr
+	}
+
+	txsVol.Volume = new(big.Int)
+	txsVol.Volume.SetString(volStr, 10)
+
+	return &txsVol, nil
+}
+
+func (p *PostgreSQLpgx) GetTransactions(blockchain string, sourceAddress []string, limit int, lowestBlockNum uint64, toAddrDistinct bool) ([]Transaction, error) {
+	txTableName, txTableErr := TransactionsTableName(blockchain)
+	if txTableErr != nil {
+		return nil, txTableErr
+	}
+
+	var addressesBytes [][]byte
+	for _, address := range sourceAddress {
+		addressBytes, err := decodeAddress(address)
+		if err != nil {
+			log.Printf("Error decoding address %s, err: %v", err, address)
+			continue
+		}
+		addressesBytes = append(addressesBytes, addressBytes)
+	}
+
+	pool := p.GetPool()
+
+	ctx := context.Background()
+	conn, acquireErr := pool.Acquire(ctx)
+	if acquireErr != nil {
+		return nil, acquireErr
+	}
+	defer conn.Release()
+
+	query := fmt.Sprintf(`
+		SELECT %s
+			block_number,
+			'0x' || encode(from_address, 'hex'),
+			'0x' || encode(to_address, 'hex'),
+			value
+		FROM %s 
+		WHERE from_address = ANY($1)
+		%s
+		ORDER BY %s
+		LIMIT $2`, getSelectClause(toAddrDistinct), txTableName, getAndBlockNumClause(lowestBlockNum), getOrderClause(toAddrDistinct))
+
+	rows, qErr := conn.Query(context.Background(), query, addressesBytes, limit)
+	if qErr != nil {
+		return nil, qErr
+	}
+
+	var txs []Transaction
+	for rows.Next() {
+		var tx Transaction
+		var valueStr string
+
+		err = rows.Scan(&tx.BlockNumber, &tx.FromAddress, &tx.ToAddress, &valueStr)
+		if err != nil {
+			log.Printf("Unable to scan row, err: %v", err)
+		}
+
+		tx.Value = new(big.Int)
+		tx.Value.SetString(valueStr, 10)
+
+		// Append the transaction to the slice
+		txs = append(txs, tx)
+	}
+
+	return txs, nil
+}
+
+func (p *PostgreSQLpgx) GetTransactionsV2(blockchain string, sourceAddress []string, limit int, lowestBlockNum uint64, toAddrDistinct bool) ([]Transaction, error) {
+	txTableName, txTableErr := TransactionsTableName(blockchain)
+	if txTableErr != nil {
+		return nil, txTableErr
+	}
+
+	pool := p.GetPool()
+
+	ctx := context.Background()
+	conn, acquireErr := pool.Acquire(ctx)
+	if acquireErr != nil {
+		return nil, acquireErr
+	}
+	defer conn.Release()
+
+	query := fmt.Sprintf(`
+		SELECT %s
+			block_number, 
+			from_address, 
+			to_address, 
+			value
+		FROM %s 
+		WHERE from_address = ANY($1)
+		%s
+		ORDER BY %s
+		LIMIT $2`, getSelectClause(toAddrDistinct), txTableName, getAndBlockNumClause(lowestBlockNum), getOrderClause(toAddrDistinct))
+
+	rows, qErr := conn.Query(context.Background(), query, sourceAddress, limit)
+	if qErr != nil {
+		return nil, qErr
+	}
+
+	var txs []Transaction
+	for rows.Next() {
+		var tx Transaction
+		var valueStr string
+
+		err = rows.Scan(&tx.BlockNumber, &tx.FromAddress, &tx.ToAddress, &valueStr)
+		if err != nil {
+			log.Printf("Unable to scan row, err: %v", err)
+		}
+
+		tx.Value = new(big.Int)
+		tx.Value.SetString(valueStr, 10)
+
+		// Append the transaction to the slice
+		txs = append(txs, tx)
+	}
+
+	return txs, nil
+}
+
 func (p *PostgreSQLpgx) WriteTransactions(tx pgx.Tx, blockchain string, transactions []TransactionLabel) error {
 	tableName := LabelsTableName(blockchain)
 	columns := []string{"id", "address", "block_number", "block_hash", "caller_address", "label_name", "label_type", "origin_address", "label", "transaction_hash", "label_data", "block_timestamp"}
@@ -1326,7 +1756,12 @@ func (p *PostgreSQLpgx) CleanIndexes(blockchain string, batchLimit uint64, sleep
 	var minBlockNumber uint64
 	var maxBlockNumber uint64
 
-	query := fmt.Sprintf("SELECT min(block_number), max(block_number) FROM %s", TransactionsTableName(blockchain))
+	txTableName, txTableErr := TransactionsTableName(blockchain)
+	if txTableErr != nil {
+		return txTableErr
+	}
+
+	query := fmt.Sprintf("SELECT min(block_number), max(block_number) FROM %s", txTableName)
 
 	err = conn.QueryRow(context.Background(), query).Scan(&minBlockNumber, &maxBlockNumber)
 
@@ -1340,7 +1775,7 @@ func (p *PostgreSQLpgx) CleanIndexes(blockchain string, batchLimit uint64, sleep
 
 	for i := minBlockNumber; i <= maxBlockNumber; i += batchLimit {
 
-		commandTag, err := conn.Exec(context.Background(), fmt.Sprintf("DELETE FROM %s WHERE block_number >= $1 AND block_number < $2", TransactionsTableName(blockchain)), i, i+batchLimit)
+		commandTag, err := conn.Exec(context.Background(), fmt.Sprintf("DELETE FROM %s WHERE block_number >= $1 AND block_number < $2", txTableName), i, i+batchLimit)
 		if err != nil {
 			return err
 		}
@@ -1633,6 +2068,11 @@ func (p *PostgreSQLpgx) FindBatchPath(blockchain string, blockNumber uint64) (st
 
 	var minBlockNumber uint64
 
+	blocksTableName, blocksTableErr := BlocksTableName(blockchain)
+	if blocksTableErr != nil {
+		return "", 0, 0, blocksTableErr
+	}
+
 	var maxBlockNumber uint64
 	query := fmt.Sprintf(`WITH path as (
         SELECT
@@ -1641,7 +2081,7 @@ func (p *PostgreSQLpgx) FindBatchPath(blockchain string, blockNumber uint64) (st
             %s
         WHERE
             block_number = $1
-    ) SELECT path, min(block_number), max(block_number) FROM %s WHERE path = (SELECT path from path) group by path`, BlocksTableName(blockchain), BlocksTableName(blockchain))
+    ) SELECT path, min(block_number), max(block_number) FROM %s WHERE path = (SELECT path from path) group by path`, blocksTableName, blocksTableName)
 
 	err = conn.QueryRow(context.Background(), query, blockNumber).Scan(&path, &minBlockNumber, &maxBlockNumber)
 
@@ -1677,6 +2117,11 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 
 	var maxBlockNumber sql.NullInt64
 
+	blocksTableName, blocksTableErr := BlocksTableName(blockchain)
+	if blocksTableErr != nil {
+		return nil, 0, 0, blocksTableErr
+	}
+
 	query := fmt.Sprintf(`WITH path as (
         SELECT
             path,
@@ -1705,7 +2150,7 @@ func (p *PostgreSQLpgx) RetrievePathsAndBlockBounds(blockchain string, blockNumb
 		limit 1
 	)
 	select  ARRAY_AGG( DISTINCT path) as paths, (SELECT first_block_number FROM earliest_block_of_path) as min_block_number, (SELECT latest_block_number FROM latest_block_of_path) as max_block_number from path
-	`, BlocksTableName(blockchain), BlocksTableName(blockchain), BlocksTableName(blockchain))
+	`, blocksTableName, blocksTableName, blocksTableName)
 
 	err = conn.QueryRow(context.Background(), query, blockNumber, blockNumber-uint64(minBlocksToSync)).Scan(&paths, &minBlockNumber, &maxBlockNumber)
 

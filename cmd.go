@@ -9,12 +9,14 @@ import (
 	"go/format"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"text/template"
 
+	bugout "github.com/bugout-dev/bugout-go/pkg"
 	"github.com/spf13/cobra"
 
 	"github.com/G7DAO/seer/blockchain"
@@ -22,6 +24,7 @@ import (
 	"github.com/G7DAO/seer/crawler"
 	"github.com/G7DAO/seer/evm"
 	"github.com/G7DAO/seer/indexer"
+	"github.com/G7DAO/seer/server"
 	"github.com/G7DAO/seer/starknet"
 	"github.com/G7DAO/seer/storage"
 	"github.com/G7DAO/seer/synchronizer"
@@ -49,7 +52,8 @@ func CreateRootCommand() *cobra.Command {
 	abiCmd := CreateAbiCommand()
 	dbCmd := CreateDatabaseOperationCommand()
 	historicalSyncCmd := CreateHistoricalSyncCommand()
-	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd, historicalSyncCmd)
+	serverCmd := CreateServerCommand()
+	rootCmd.AddCommand(completionCmd, versionCmd, blockchainCmd, starknetCmd, evmCmd, crawlerCmd, inspectorCmd, synchronizerCmd, abiCmd, dbCmd, historicalSyncCmd, serverCmd)
 
 	// By default, cobra Command objects write to stderr. We have to forcibly set them to output to
 	// stdout.
@@ -1232,6 +1236,115 @@ func CreateEVMGenerateCommand() *cobra.Command {
 	evmGenerateCmd.Flags().StringToStringVar(&aliases, "alias", nil, "A map of identifier aliases (e.g. --alias name=somename)")
 
 	return evmGenerateCmd
+}
+
+func CreateServerCommand() *cobra.Command {
+	inspectorCmd := &cobra.Command{
+		Use:   "server",
+		Short: "API server related functionality",
+	}
+
+	var bugoutClient *bugout.BugoutClient
+	var hostFlag, corsFlag, dbUriFlag, customerIdFlag string
+	var portFlag, instanceIdFlag int
+
+	runCommand := &cobra.Command{
+		Use:   "run",
+		Short: "Run API HTTP server",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if dbUriFlag == "" {
+				if customerIdFlag == "" && instanceIdFlag == 0 {
+					return errors.New("database uri is required via --db-uri flag or customer --customer-id with --instance-id setup")
+				}
+			}
+
+			if err := synchronizer.CheckVariablesForSynchronizer(); err != nil {
+				return err
+			}
+
+			if err := server.CheckVariablesForServer(); err != nil {
+				return err
+			}
+
+			var bcErr error
+			bugoutClient, bcErr = server.InitBugoutClient()
+			if bcErr != nil {
+				return errors.New(fmt.Sprintf("Unable to set bugout client, err: %v", bcErr))
+			}
+
+			_, pingErr := bugoutClient.Brood.Ping()
+			if pingErr != nil {
+				return errors.New(fmt.Sprintf("Unable to ping bugout brood server, err: %v", pingErr))
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dbUri := dbUriFlag
+			if dbUri == "" {
+				connectionString, dbConnErr := synchronizer.GetDBConnection(customerIdFlag, instanceIdFlag, "customer")
+				if dbConnErr != nil {
+					log.Printf("Unable to get connection database URI for customer %s instance %d, err: %v", customerIdFlag, instanceIdFlag, dbConnErr)
+					return dbConnErr
+				}
+				log.Printf("Fetched db connection string for customer %s instance %d", customerIdFlag, instanceIdFlag)
+				dbUri = connectionString
+			}
+
+			dbConn, dbErr := indexer.NewPostgreSQLpgx(dbUri)
+			if dbErr != nil {
+				log.Println("Error creating database pool", dbErr)
+				return dbErr
+			}
+
+			// Parse CORS whitelist
+			corsWhitelistRaw := strings.Split(strings.ReplaceAll(corsFlag, " ", ""), ",")
+
+			corsWhitelist := make(map[string]bool)
+			for _, uri := range corsWhitelistRaw {
+				if uri == "*" {
+					corsWhitelist["*"] = true
+					break
+				}
+				valid, err := url.ParseRequestURI(uri)
+				if err != nil {
+					log.Printf("Ignoring incorrect URI %s", uri)
+					continue
+				}
+				corsWhitelist[valid.String()] = true
+			}
+
+			corsSlice := make([]string, 0, len(corsWhitelist))
+			for k := range corsWhitelist {
+				corsSlice = append(corsSlice, k)
+			}
+
+			serverInst := server.Server{
+				Host:          hostFlag,
+				Port:          portFlag,
+				CORSWhitelist: corsWhitelist,
+				DbPool:        dbConn,
+				BugoutClient:  bugoutClient,
+			}
+
+			log.Printf("Starting API HTTP server at %s:%d and whitelisted CORS %v", hostFlag, portFlag, corsSlice)
+
+			serverInst.Run(hostFlag, portFlag, corsWhitelist)
+
+			return nil
+		},
+	}
+
+	runCommand.Flags().StringVar(&hostFlag, "host", "127.0.0.1", "Server host")
+	runCommand.Flags().IntVar(&portFlag, "base-dir", 9322, "Server port")
+	runCommand.Flags().StringVar(&corsFlag, "cors", "*", "List of comma separated domains for CORS")
+	runCommand.Flags().StringVar(&customerIdFlag, "customer-id", "", "MDB V3 customer ID")
+	runCommand.Flags().IntVar(&instanceIdFlag, "instance-id", 0, "MDB V3 customer instance ID")
+	runCommand.Flags().StringVar(&dbUriFlag, "db-uri", "", "Set database URI")
+
+	inspectorCmd.AddCommand(runCommand)
+
+	return inspectorCmd
 }
 
 func StringPrompt(label string) (string, error) {
