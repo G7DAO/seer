@@ -4,16 +4,9 @@ os: linux
 files:
   - source: /
     destination: /home/ubuntu/seer
-    owner: ubuntu
-    group: ubuntu
 
 hooks:
-  BeforeInstall:
-    - location: deploy/fetch-ssm-scripts.bash
-      timeout: 300
-      runas: ubuntu
-
   ApplicationStart:
-    - location: deploy/deploy-script.bash
+    - location: deploy/deploy-api.bash
       timeout: 600
       runas: ubuntu
