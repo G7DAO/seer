@@ -246,4 +246,3 @@ Find first and last blocks indexed in database and verify it's batch at storage:
 ```bash
 ./seer inspector db --chain polygon --storage-verify
 ```
-
