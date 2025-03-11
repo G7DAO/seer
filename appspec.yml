@@ -2,11 +2,9 @@ version: 0.0
 os: linux
 
 files:
-  - source: /deploy.bash
-    destination: /home/ubuntu/
-    owner: ubuntu
-    group: ubuntu
-    mode: 0755
+  - source: /
+    destination: /home/ubuntu/seer
+    overwrite: true
 
 hooks:
   BeforeInstall:
