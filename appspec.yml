@@ -13,6 +13,6 @@ hooks:
       runas: ubuntu
 
   ApplicationStart:
-    - location: /home/ubuntu/deploy.bash
+    - location: deploy/deploy-scripts.bash
       timeout: 600
       runas: ubuntu
