@@ -183,7 +183,7 @@ func (server *Server) graphsVolumeRoute(w http.ResponseWriter, r *http.Request) 
 		ToAddress:      toAddressQe,
 		MinBlockNumber: txsVol.MinBlockNumber,
 		MaxBlockNumber: txsVol.MaxBlockNumber,
-		Volume:         fmt.Sprintf("%.2f ETH", weiToEther(txsVol.Volume)),
+		Volume:         fmt.Sprintf("%.2f", weiToEther(txsVol.Volume)),
 		TxsCount:       txsVol.TxsCount,
 	}
 
@@ -274,7 +274,7 @@ func (server *Server) graphsTxsRoute(w http.ResponseWriter, r *http.Request) {
 	for link, value := range graphLinks {
 		linkSls := strings.Split(link, "-")
 		valueEth := weiToEther(value)
-		graphResponse.Links = append(graphResponse.Links, GraphLinks{Source: linkSls[0], Target: linkSls[1], Value: fmt.Sprintf("%.2f ETH", valueEth)})
+		graphResponse.Links = append(graphResponse.Links, GraphLinks{Source: linkSls[0], Target: linkSls[1], Value: fmt.Sprintf("%.2f", valueEth)})
 	}
 
 	json.NewEncoder(w).Encode(graphResponse)

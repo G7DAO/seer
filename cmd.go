@@ -1336,7 +1336,7 @@ func CreateServerCommand() *cobra.Command {
 	}
 
 	runCommand.Flags().StringVar(&hostFlag, "host", "127.0.0.1", "Server host")
-	runCommand.Flags().IntVar(&portFlag, "base-dir", 9322, "Server port")
+	runCommand.Flags().IntVar(&portFlag, "port", 9322, "Server port")
 	runCommand.Flags().StringVar(&corsFlag, "cors", "*", "List of comma separated domains for CORS")
 	runCommand.Flags().StringVar(&customerIdFlag, "customer-id", "", "MDB V3 customer ID")
 	runCommand.Flags().IntVar(&instanceIdFlag, "instance-id", 0, "MDB V3 customer instance ID")

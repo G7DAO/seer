@@ -3,7 +3,6 @@
 `seer` is blockchain-adjacent tooling for crawling data and performing
 smart contract interactions.
 
-
 ## Build
 
 You can use `make` to build `seer`. From the root of this project, run:
@@ -31,9 +30,7 @@ seer starknet generate --abi $ABI_FILE --package $GO_PACKAGE_NAME
 ```
 
 1. `$ABI_FILE` should be the path to the JSON file containing the Starknet contract ABI.
-2. `$GO_PACKAGE_NAME` should be the name of the Go package that the generated code will belong to. If specified,
-the line `package $GO_PACKAGE_NAME` will be emitted at the top of the generated code. If not specified, no
-such line is emitted.
+2. `$GO_PACKAGE_NAME` should be the name of the Go package that the generated code will belong to. If specified, the line `package $GO_PACKAGE_NAME` will be emitted at the top of the generated code. If not specified, no such line is emitted.
 
 You can also pipe the ABI JSON into this command rather than specifying the `--abi` argument. For example:
 
@@ -55,8 +52,7 @@ seer evm generate \
 ```
 
 1. `$ABI_FILE` should be the path to a JSON file containing the contract's ABI.
-2. `$BIN_FILE` should be a path to the file containing the compiled contract bytecode. If the `--bytecode` is not provided,
-the bindings are generated with no deployment method.
+2. `$BIN_FILE` should be a path to the file containing the compiled contract bytecode. If the `--bytecode` is not provided, the bindings are generated with no deployment method.
 3. `$GO_PACKAGE_NAME` should be the name of the Go package that the generated code will fall under.
 4. `$GO_STRUCT_NAME` should be the name of the struct that you would like to represent an instance of the contract with the given ABI.
 
@@ -163,15 +159,15 @@ That part of seer responsible for crawling raw blocks,tx_calls and events from t
 
 List of supported blockchains:
 
-- arbitrum_one
-- arbitrum_sepolia
-- ethereum
-- game7_orbit_arbitrum_sepolia
-- mantle
-- mantle_sepolia
-- polygon
-- xai
-- xai_sepolia
+-   arbitrum_one
+-   arbitrum_sepolia
+-   ethereum
+-   game7_orbit_arbitrum_sepolia
+-   mantle
+-   mantle_sepolia
+-   polygon
+-   xai
+-   xai_sepolia
 
 ## Build
 
