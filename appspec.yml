@@ -4,7 +4,8 @@ os: linux
 files:
   - source: /
     destination: /home/ubuntu/seer
-    overwrite: true
+    owner: ubuntu
+    group: ubuntu
 
 hooks:
   BeforeInstall:
@@ -13,6 +14,6 @@ hooks:
       runas: ubuntu
 
   ApplicationStart:
-    - location: deploy/deploy-scripts.bash
+    - location: deploy/deploy-script.bash
       timeout: 600
       runas: ubuntu
