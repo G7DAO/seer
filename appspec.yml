@@ -1,11 +1,20 @@
 version: 0.0
 os: linux
+
 files:
   - source: /deploy.bash
     destination: /home/ubuntu/
+    owner: ubuntu
+    group: ubuntu
+    mode: 0755
 
 hooks:
   BeforeInstall:
     - location: deploy/fetch-ssm-scripts.bash
       timeout: 300
+      runas: ubuntu
+
+  ApplicationStart:
+    - location: /home/ubuntu/deploy.bash
+      timeout: 600
       runas: ubuntu
