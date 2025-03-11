@@ -9,4 +9,3 @@ hooks:
   ApplicationStart:
     - location: deploy/deploy-api.bash
       timeout: 600
-      runas: ubuntu
