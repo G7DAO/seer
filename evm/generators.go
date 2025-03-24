@@ -276,6 +276,7 @@ for i{{.Index}}, v{{.Index}} := range v{{(minusOne .Index)}} {{ "{" }}
 {{end}}
 {{end}}
 
+{{.TargetVar}}{{.FinalAccessor}} = make([]byte, len({{.IntermediateVar}}{{.FinalAccessor}}))
 copy({{.TargetVar}}{{.FinalAccessor}}[:], {{.IntermediateVar}}{{.FinalAccessor}})
 
 {{range .Levels}}
