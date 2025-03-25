@@ -93,6 +93,7 @@ Usage:
 
 Commands which deploy contracts
   deploy               Deploy a new OwnableERC721 contract
+  verify               Verify a new OwnableERC721 contract
 
 Commands which view contract state
   balance-of           Call the BalanceOf view method on a OwnableERC721 contract
