@@ -1415,9 +1415,6 @@ func CreateOwnableERC721DeploymentCommand() *cobra.Command {
 				if apiURL == "" {
 					return fmt.Errorf("--api not specified")
 				}
-				if apiKey == "" {
-					return fmt.Errorf("--api-key not specified")
-				}
 			}
 
 			if ownerRaw == "" {
@@ -5299,6 +5296,37 @@ func VerifyContractCode(
 	)
 	if err != nil {
 		return fmt.Errorf("failed to pack constructor arguments: %v", err)
+	}
+
+	// If no API key is provided, assume it's a Blockscout-compatible API
+	if apiKey == "" {
+		// Blockscout verification
+		formData := url.Values{}
+		formData.Set("module", "contract")
+		formData.Set("action", "verify")
+		formData.Set("addressHash", contractAddress.Hex())
+		formData.Set("name", contractName)
+		formData.Set("compilerVersion", compilerVersion)
+		formData.Set("optimization", fmt.Sprintf("%t", runs > 0))
+		formData.Set("optimizationRuns", fmt.Sprintf("%d", runs))
+		formData.Set("evmVersion", evmVersion)
+		formData.Set("contractSourceCode", contractCode)
+		formData.Set("constructorArguments", hex.EncodeToString(constructorArguments))
+
+		// Send verification request
+		client := &http.Client{Timeout: time.Second * 30}
+		resp, err := client.PostForm(apiURL, formData)
+		if err != nil {
+			return fmt.Errorf("network request error: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("Blockscout API returned status %d", resp.StatusCode)
+		}
+
+		fmt.Println("Contract verification submitted successfully to Blockscout")
+		return nil
 	}
 
 	fullCompilerVersion, err := GetFullCompilerVersion(compilerVersion)
