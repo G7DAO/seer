@@ -1964,9 +1964,6 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				if apiURL == "" {
 					return fmt.Errorf("--api not specified")
 				}
-				if apiKey == "" {
-					return fmt.Errorf("--api-key not specified")
-				}
 			}
 
 			{{range .DeployHandler.MethodArgs}}
