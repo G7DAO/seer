@@ -12,6 +12,8 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -125,13 +127,14 @@ type HeaderParameters struct {
 	Foundry     string
 	ABI         string
 	Bytecode    string
+	SourceCode  string
 	StructName  string
 	OutputFile  string
 	NoFormat    bool
 }
 
 // Generates the header comment for the generated code.
-func GenerateHeader(packageName string, cli bool, includeMain bool, foundry string, abi string, bytecode string, structname string, outputfile string, noformat bool) (string, error) {
+func GenerateHeader(packageName string, cli bool, includeMain bool, foundry string, abi string, bytecode string, sourceCode string, structname string, outputfile string, noformat bool) (string, error) {
 	headerTemplate, headerTemplateParseErr := template.New("header").Parse(HeaderTemplate)
 	if headerTemplateParseErr != nil {
 		return "", headerTemplateParseErr
@@ -145,6 +148,7 @@ func GenerateHeader(packageName string, cli bool, includeMain bool, foundry stri
 		Foundry:     foundry,
 		ABI:         abi,
 		Bytecode:    bytecode,
+		SourceCode:  sourceCode,
 		StructName:  structname,
 		OutputFile:  outputfile,
 		NoFormat:    noformat,
@@ -157,6 +161,103 @@ func GenerateHeader(packageName string, cli bool, includeMain bool, foundry stri
 	}
 
 	return b.String(), nil
+}
+
+// Get a flattened source code from a solidity file
+func GetFlattenedContractCode(sourceCodePath string) (string, error) {
+	// Read the main source file
+	sourceCode, err := os.ReadFile(sourceCodePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read source file: %v", err)
+	}
+
+	// Get the directory containing the main source file
+	baseDir := filepath.Dir(sourceCodePath)
+
+	// Initialize a map to track processed files
+	processedFiles := make(map[string]bool)
+
+	// Process the main file and its imports
+	flattened, err := flattenSourceCode(string(sourceCode), baseDir, processedFiles)
+	if err != nil {
+		return "", err
+	}
+
+	// Escape any backticks in the source code
+	sourceCodeString := strings.ReplaceAll(flattened, "`", "` + \"`\" + `")
+
+	// Simply wrap the flattened source in a constant declaration
+	return sourceCodeString, nil
+}
+
+func flattenSourceCode(content, baseDir string, processedFiles map[string]bool) (string, error) {
+	// Find all import statements
+	importRegex := regexp.MustCompile(`import\s+(?:{[^}]+}\s+from\s+)?["']([^"']+)["'];`)
+	imports := importRegex.FindAllStringSubmatch(content, -1)
+
+	// Process each import
+	for _, match := range imports {
+		importPath := match[1]
+		fullPath := ""
+
+		// Handle different types of imports
+		if strings.HasPrefix(importPath, "@") {
+			// Node modules import - search up the directory tree
+			currentDir := baseDir
+			for {
+				possiblePath := filepath.Join(currentDir, "node_modules", importPath)
+				if _, err := os.Stat(possiblePath); err == nil {
+					fullPath = possiblePath
+					break
+				}
+				parentDir := filepath.Dir(currentDir)
+				if parentDir == currentDir {
+					return "", fmt.Errorf("could not find node_modules containing %s", importPath)
+				}
+				currentDir = parentDir
+			}
+		} else {
+			// Relative import
+			fullPath = filepath.Join(baseDir, importPath)
+		}
+
+		// Skip if already processed
+		if processedFiles[fullPath] {
+			// Replace the import statement with empty string since we've already included this file
+			content = strings.Replace(content, match[0], "", 1)
+			continue
+		}
+
+		// Read and process the imported file
+		importedContent, err := os.ReadFile(fullPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read imported file %s: %v", fullPath, err)
+		}
+
+		// Process the imported content recursively
+		importedDir := filepath.Dir(fullPath)
+		flattenedImport, err := flattenSourceCode(string(importedContent), importedDir, processedFiles)
+		if err != nil {
+			return "", err
+		}
+
+		// Clean up SPDX only for imported files
+		flattenedImport = regexp.MustCompile(`//\s*SPDX-License-Identifier:.*\n`).ReplaceAllString(flattenedImport, "")
+
+		// Clean up redundant empty lines while preserving contract headers
+		flattenedImport = regexp.MustCompile(`\n\s*\n\s*\n+`).ReplaceAllString(flattenedImport, "\n\n")
+
+		// Mark as processed
+		processedFiles[fullPath] = true
+
+		// Add a newline before the flattened import for better readability
+		flattenedImport = "\n" + flattenedImport
+
+		// Replace the import statement with the flattened content
+		content = strings.Replace(content, match[0], flattenedImport, 1)
+	}
+
+	return content, nil
 }
 
 // ParseBoundParameter parses an ast.Node representing a method parameter (or return value). It inspects
@@ -760,7 +861,7 @@ func ParseCLISpecification(structName string, deployMethod *ast.FuncDecl, viewMe
 // GenerateTypes function. The output of this function *contains* the input, with enrichments (some of
 // then inline). It should not be concatenated with the output of GenerateTypes, but rather be used as
 // part of a chain.
-func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, error) {
+func AddCLI(sourceCode, structName string, noformat, includemain bool, contractCode string) (string, error) {
 	fileset := token.NewFileSet()
 	filename := ""
 	sourceAST, sourceASTErr := parser.ParseFile(fileset, filename, sourceCode, parser.ParseComments)
@@ -813,6 +914,7 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 					&ast.ImportSpec{Path: &ast.BasicLit{Value: `"github.com/ethereum/go-ethereum/crypto"`}},
 				)
 			}
+
 			return true
 		case *ast.FuncDecl:
 			if t.Recv != nil {
@@ -863,6 +965,11 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 		return code, transactionMethodsCommandsTemplateErr
 	}
 
+	verifyCommandTemplate, verifyCommandTemplateErr := template.New("verify").Funcs(templateFuncs).Parse(VerifyContractCodeCommandTemplate)
+	if verifyCommandTemplateErr != nil {
+		return code, verifyCommandTemplateErr
+	}
+
 	cliSpec, cliSpecErr := ParseCLISpecification(structName, deployMethod, structViewMethods, structTransactionMethods)
 	if cliSpecErr != nil {
 		return code, cliSpecErr
@@ -896,6 +1003,13 @@ func AddCLI(sourceCode, structName string, noformat, includemain bool) (string, 
 		return code, cliTemplateErr
 	}
 	code = code + "\n\n" + b.String()
+
+	b.Reset()
+	verifyTemplateErr := verifyCommandTemplate.Execute(&b, cliSpec)
+	if verifyTemplateErr != nil {
+		return code, verifyTemplateErr
+	}
+	code = code + "\n\n" + b.String() + "\n\n" + fmt.Sprintf("const %sContractCode = `%s`\n", structName, contractCode)
 
 	if includemain {
 		mainFormatString := `func main() {
@@ -1057,6 +1171,12 @@ func Create{{.StructName}}Command() *cobra.Command {
 	}
 	cmd.AddGroup(DeployGroup)
 	{{- end}}
+
+	VerifyGroup := &cobra.Group{
+		ID: "verify", Title: "Commands which verify contract code",
+	}
+	cmd.AddGroup(VerifyGroup)
+
 	ViewGroup := &cobra.Group{
 		ID: "view", Title: "Commands which view contract state",
 	}
@@ -1070,6 +1190,10 @@ func Create{{.StructName}}Command() *cobra.Command {
 	cmd{{.DeployHandler.MethodName}}.GroupID = DeployGroup.ID
 	cmd.AddCommand(cmd{{.DeployHandler.MethodName}})
 	{{- end}}
+
+	cmdVerify := VerifyContractCodeCommand()
+	cmdVerify.GroupID = VerifyGroup.ID
+	cmd.AddCommand(cmdVerify)
 
 	{{range .ViewHandlers}}
 	cmdView{{.MethodName}} := {{.HandlerName}}()
@@ -1330,6 +1454,410 @@ func PrintStruct(cmd *cobra.Command, name string, rv reflect.Value, depth int) {
 }
 `
 
+var VerifyContractCodeCommandTemplate string = `
+type CompilerInfo struct {
+    SolidityVersion string
+    EVMVersion      string
+}
+
+func ExtractCompilerInfo(bytecode string) (*CompilerInfo, error) {
+	// Remove "0x" prefix if present
+	bytecode = strings.TrimPrefix(bytecode, "0x")
+
+	if len(bytecode) < 20 {
+		return nil, fmt.Errorf("bytecode too short (length: %d)", len(bytecode))
+	}
+
+	// Get the last bytes that contain version info
+	versionData := bytecode[len(bytecode)-20:]
+
+	// Check for solc identifier '736f6c6343' (which is 'solcC' in hex)
+	if !strings.HasPrefix(versionData, "736f6c6343") {
+		return nil, fmt.Errorf("no solidity version identifier found in version data: %s", versionData)
+	}
+
+	// Skip first 10 chars (736f6c6343)
+	versionHex := versionData[10:18]
+
+	// Parse major, minor, and patch versions
+	major := int64(0)
+	minor, err := strconv.ParseInt(versionHex[2:4], 16, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse minor version: %v", err)
+	}
+	patch, err := strconv.ParseInt(versionHex[4:6], 16, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse patch version: %v", err)
+	}
+
+	// Determine EVM version based on Solidity version
+	evmVersion := determineEVMVersion(major, minor, patch)
+
+	return &CompilerInfo{
+		SolidityVersion: fmt.Sprintf("v0.%d.%d", minor, patch), // Changed format string
+		EVMVersion:      evmVersion,
+	}, nil
+}
+
+func determineEVMVersion(major, minor, patch int64) string {
+    // This mapping is based on Solidity's default EVM version per compiler version
+    // Reference: https://docs.soliditylang.org/en/latest/using-the-compiler.html#target-options
+    switch {
+    case minor >= 8 && patch >= 24:
+        return "cancun"    // Solidity 0.8.24+ defaults to Cancun
+    case minor >= 8:
+        return "london"    // Solidity 0.8.0-0.8.23 defaults to London
+    case minor == 7:
+        return "istanbul"  // Solidity 0.7.x defaults to Istanbul
+    case minor == 6:
+        return "istanbul"  // Solidity 0.6.x defaults to Istanbul
+    case minor == 5 && patch >= 5:
+        return "petersburg" // Solidity 0.5.5+ defaults to Petersburg
+    case minor == 5:
+        return "byzantium" // Solidity 0.5.0-0.5.4 defaults to Byzantium
+    default:
+        return "homestead" // Earlier versions defaulted to Homestead
+    }
+}
+
+type EtherscanResponse struct {
+    Status  string ` + "`" + `json:"status"` + "`" + `
+    Message string ` + "`" + `json:"message"` + "`" + `
+    Result  string ` + "`" + `json:"result"` + "`" + `
+}
+
+func (r *EtherscanResponse) IsOk() bool {
+    return r.Status == "1"
+}
+
+func (r *EtherscanResponse) IsBytecodeMissingInNetworkError() bool {
+    return strings.Contains(strings.ToLower(r.Message), "missing bytecode")
+}
+
+func (r *EtherscanResponse) IsAlreadyVerified() bool {
+    return strings.Contains(strings.ToLower(r.Message), "already verified")
+}
+
+// SolidityTag represents a tag in the Solidity repository
+type SolidityTag struct {
+    Object struct {
+        SHA string ` + "`" + `json:"sha"` + "`" + `
+    } ` + "`" + `json:"object"` + "`" + `
+}
+
+// GetSolidityCommitHash fetches the commit hash for a specific Solidity version tag
+func GetSolidityCommitHash(version string) (string, error) {
+    // Clean version string (ensure it starts with 'v')
+    if !strings.HasPrefix(version, "v") {
+        version = "v" + version
+    }
+
+    // Create HTTP client with timeout
+    client := &http.Client{Timeout: 10 * time.Second}
+    
+    // Get tag info from GitHub API
+    url := fmt.Sprintf("https://api.github.com/repos/ethereum/solidity/git/refs/tags/%s", version)
+    req, err := http.NewRequest("GET", url, nil)
+    if err != nil {
+        return "", fmt.Errorf("failed to create request: %w", err)
+    }
+
+    // Add User-Agent header to avoid GitHub API limitations
+    req.Header.Set("User-Agent", "seer-contract-verifier")
+
+    resp, err := client.Do(req)
+    if err != nil {
+        return "", fmt.Errorf("failed to fetch tag info: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        return "", fmt.Errorf("GitHub API returned status %d for version %s", resp.StatusCode, version)
+    }
+
+    var tag SolidityTag
+    if err := json.NewDecoder(resp.Body).Decode(&tag); err != nil {
+        return "", fmt.Errorf("failed to decode GitHub response: %w", err)
+    }
+
+    // Return first 8 characters of the commit hash
+    if len(tag.Object.SHA) < 8 {
+        return "", fmt.Errorf("invalid commit hash length")
+    }
+    return tag.Object.SHA[:8], nil
+}
+
+// GetFullCompilerVersion gets the full compiler version with commit hash
+func GetFullCompilerVersion(version string) (string, error) {
+    // Get commit hash from GitHub tag
+    commitHash, err := GetSolidityCommitHash(version)
+    if err != nil {
+        return "", fmt.Errorf("failed to get commit hash: %w", err)
+    }
+
+    // Format full version string
+    fullVersion := fmt.Sprintf("%s+commit.%s", version, commitHash)
+    return fullVersion, nil
+}
+
+func VerifyContractCode(
+	contractAddress common.Address, 
+	contractCode string, 
+	apiURL string,
+	apiKey string,
+	contractName string,
+	compilerVersion string,
+	runs uint,
+	evmVersion string,
+	{{- range .DeployHandler.MethodArgs}}
+		{{.CLIVar}} {{.CLIType}},
+	{{- end}}
+	) error {
+
+	fmt.Println("Verifying contract code...")
+	fmt.Println("EVM version:", evmVersion)
+
+	// Pack constructor arguments
+	abiPacked, err := {{.StructName}}MetaData.GetAbi()
+	if err != nil {
+		return fmt.Errorf("failed to get ABI: %v", err)
+	}
+
+	constructorArguments, err := abiPacked.Pack("",
+		{{- range .DeployHandler.MethodArgs}}
+		{{.CLIVar}},
+		{{- end}}
+	)
+	if err != nil {
+		return fmt.Errorf("failed to pack constructor arguments: %v", err)
+	}
+
+	// If no API key is provided, assume it's a Blockscout-compatible API
+	if apiKey == "" {
+		// Blockscout verification
+		formData := url.Values{}
+		formData.Set("module", "contract")
+		formData.Set("action", "verify")
+			formData.Set("addressHash", contractAddress.Hex())
+		formData.Set("name", contractName)
+		formData.Set("compilerVersion", compilerVersion)
+		formData.Set("optimization", fmt.Sprintf("%t", runs > 0))
+		formData.Set("optimizationRuns", fmt.Sprintf("%d", runs))
+		formData.Set("evmVersion", evmVersion)
+		formData.Set("contractSourceCode", contractCode)
+		formData.Set("constructorArguments", hex.EncodeToString(constructorArguments))
+
+		// Send verification request
+		client := &http.Client{Timeout: time.Second * 30}
+		resp, err := client.PostForm(apiURL, formData)
+		if err != nil {
+			return fmt.Errorf("network request error: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("Blockscout API returned status %d", resp.StatusCode)
+		}
+
+		fmt.Println("Contract verification submitted successfully to Blockscout")
+		return nil
+	}
+
+	fullCompilerVersion, err := GetFullCompilerVersion(compilerVersion)
+	if err != nil {
+		return fmt.Errorf("failed to get full compiler version: %w", err)
+	}
+
+	fmt.Println("Compiler version:", fullCompilerVersion)
+
+	// Prepare the form data
+	formData := url.Values{}
+	formData.Set("apikey", apiKey)
+	formData.Set("module", "contract")
+	formData.Set("action", "verifysourcecode")
+	formData.Set("contractaddress", contractAddress.Hex())
+	formData.Set("sourceCode", contractCode)
+	formData.Set("codeformat", "solidity-single-file")
+	formData.Set("contractname", contractName)
+	formData.Set("compilerversion", fullCompilerVersion)
+	formData.Set("evmversion", evmVersion)
+	formData.Set("optimizationUsed", fmt.Sprintf("%t", runs > 0))
+	formData.Set("runs", fmt.Sprintf("%d", runs))
+	formData.Set("constructorArguments", hex.EncodeToString(constructorArguments))
+
+	// Send the verification request
+	// Create HTTP client
+	client := &http.Client{
+		Timeout: time.Second * 30,
+	}
+
+	// Send POST request
+	resp, err := client.PostForm(apiURL, formData)
+	if err != nil {
+		return fmt.Errorf("network request error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check status code
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("invalid status code: %d", resp.StatusCode)
+	}
+
+	// Read and parse response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	var response EtherscanResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return fmt.Errorf("failed to parse response: %v", err)
+	}
+
+	// Check for specific error conditions
+	if response.IsBytecodeMissingInNetworkError() {
+		return fmt.Errorf("contract bytecode not found on network for address %s", contractAddress.Hex())
+	}
+
+	if response.IsAlreadyVerified() {
+		return fmt.Errorf("contract %s at address %s is already verified", contractName, contractAddress.Hex())
+	}
+
+	if !response.IsOk() {
+		return fmt.Errorf("verification failed: %s", response.Message)
+	}
+
+	guid := response.Result
+	fmt.Printf("Contract verification submitted successfully. GUID: %s\n", guid)
+	
+	// Check verification status
+	fmt.Println("Checking verification status...")
+	for i := 0; i < 10; i++ { // Try up to 10 times
+		status, err := CheckVerificationStatus(apiURL, apiKey, guid)
+		if err != nil {
+			return fmt.Errorf("failed to check verification status: %v", err)
+		}
+
+		if status == "Pass - Verified" {
+			fmt.Println("Contract successfully verified!")
+			return nil
+		} else if status == "Fail - Unable to verify" {
+			return fmt.Errorf("contract verification failed")
+		}
+
+		fmt.Println("Verification in progress, waiting 5 seconds...")
+		time.Sleep(5 * time.Second)
+	}
+
+	return fmt.Errorf("verification status check timed out")
+}
+
+func CheckVerificationStatus(apiURL string, apiKey string, guid string) (string, error) {
+	// Prepare the query parameters
+	params := url.Values{}
+	params.Set("apikey", apiKey)
+	params.Set("module", "contract")
+	params.Set("action", "checkverifystatus")
+	params.Set("guid", guid)
+
+	// Create the full URL
+	fullURL := fmt.Sprintf("%s?%s", apiURL, params.Encode())
+
+	// Create HTTP client
+	client := &http.Client{
+		Timeout: time.Second * 10,
+	}
+
+	// Send GET request
+	resp, err := client.Get(fullURL)
+	if err != nil {
+		return "", fmt.Errorf("network request error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check status code
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("invalid status code: %d", resp.StatusCode)
+	}
+
+	// Read and parse response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	var response EtherscanResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return "", fmt.Errorf("failed to parse response: %v", err)
+	}
+
+	return response.Result, nil
+}
+
+func VerifyContractCodeCommand() *cobra.Command {
+	var contractAddressRaw, apiURL, apiKey string
+	var contractAddress common.Address
+	var runs uint
+	var evmVersion, compilerVersion string
+
+	{{range .DeployHandler.MethodArgs}}
+	var {{.CLIVar}} {{.CLIType}}
+	{{if (ne .CLIRawVar .CLIVar)}}var {{.CLIRawVar}} {{.CLIRawType}}{{end}}
+	{{- end}}
+
+	cmd := &cobra.Command{
+		Use: "verify",
+		Short: "Verify a contract code on a block explorer",
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if {{.StructName}}ContractCode == "" {
+				return fmt.Errorf("contract code is empty, please re-run evm generate passing the --source-code flag")
+			}
+
+			if contractAddressRaw == "" {
+				return fmt.Errorf("--contract not specified")
+			} else if !common.IsHexAddress(contractAddressRaw) {
+				return fmt.Errorf("--contract is not a valid Ethereum address")
+			}
+			contractAddress = common.HexToAddress(contractAddressRaw)
+
+			{{range .DeployHandler.MethodArgs}}
+			{{.PreRunE}}
+			{{- end}}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			compilerInfo, err := ExtractCompilerInfo({{.StructName}}Bin)
+			if err != nil {
+				return fmt.Errorf("failed to extract compiler info: %v", err)
+			}
+
+			if compilerVersion != "" {
+				compilerInfo.SolidityVersion = compilerVersion
+			}
+			if evmVersion != "" {
+				compilerInfo.EVMVersion = evmVersion
+			}
+
+			return VerifyContractCode(contractAddress, {{.StructName}}ContractCode, apiURL, apiKey, "{{.StructName}}", compilerInfo.SolidityVersion, runs, compilerInfo.EVMVersion, {{- range .DeployHandler.MethodArgs}}{{.CLIVar}},{{- end}})
+		},
+	}
+
+	cmd.Flags().StringVar(&contractAddressRaw, "contract", "c", "The address of the contract to verify")
+	cmd.Flags().StringVar(&apiURL, "api", "a", "The block explorer API to use")
+	cmd.Flags().StringVar(&apiKey, "api-key", "k", "The API key to use for the block explorer")
+	cmd.Flags().UintVar(&runs, "runs", 0, "The number of runs to use for optimization")
+	cmd.Flags().StringVar(&evmVersion, "evm-version", "", "Override the EVM version to use for the contract")
+	cmd.Flags().StringVar(&compilerVersion, "compiler-version", "", "Override the compiler version to use for the contract")
+
+	{{range .DeployHandler.MethodArgs}}
+	cmd.Flags().{{.Flag}}
+	{{- end}}
+
+	return cmd
+}
+`
+
 // This template generates the handler for smart contract deployment. It is intended to be used with a
 // CLISpecification struct.
 var DeployCommandTemplate string = `
@@ -1345,6 +1873,10 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	var predictAddress bool
 	var safeNonce *big.Int
 	var calldata bool
+	var verify bool
+	var apiURL, apiKey string
+	var runs uint
+	var evmVersion, compilerVersion string
 
 	{{range .DeployHandler.MethodArgs}}
 	var {{.CLIVar}} {{.CLIType}}
@@ -1426,6 +1958,16 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				}
 			}
 
+			if verify {
+				if {{.StructName}}ContractCode == "" {
+					return fmt.Errorf("Cannot use --verify flag when contract code is empty, please re-run evm generate passing the --source-code flag")
+				}
+
+				if apiURL == "" {
+					return fmt.Errorf("--api not specified")
+				}
+			}
+
 			{{range .DeployHandler.MethodArgs}}
 			{{.PreRunE}}
 			{{- end}}
@@ -1442,7 +1984,6 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to generate deploy bytecode: %v", err)
 			}
-
 			if calldata {
 				deployCalldataHex := hex.EncodeToString(deployCalldata)
 				cmd.Println(deployCalldataHex)
@@ -1540,6 +2081,27 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 				cmd.Println("Transaction submitted")
 			}
 
+			if verify {
+				compilerInfo, err := ExtractCompilerInfo({{.StructName}}Bin)
+				if err != nil {
+					return fmt.Errorf("failed to extract compiler info: %v", err)
+				}
+
+				if compilerVersion != "" {
+					compilerInfo.SolidityVersion = compilerVersion
+				}
+				if evmVersion != "" {
+					compilerInfo.EVMVersion = evmVersion
+				}
+
+				err = VerifyContractCode(address, {{.StructName}}ContractCode, apiURL, apiKey, "{{.StructName}}", compilerInfo.SolidityVersion, runs, compilerInfo.EVMVersion, {{- range .DeployHandler.MethodArgs}}{{.CLIVar}},{{- end}})
+				if err != nil {
+					fmt.Println("Failed to verify contract code:", err)
+				} else {
+					fmt.Println("Contract code verified successfully")
+				}
+			}
+
 			return nil
 		},
 	}
@@ -1563,7 +2125,13 @@ func {{.DeployHandler.HandlerName}}() *cobra.Command {
 	cmd.Flags().BoolVar(&predictAddress, "safe-predict-address", false, "Predict the deployment address (only works for Safe transactions)")
 	cmd.Flags().StringVar(&safeNonceRaw, "safe-nonce", "", "Safe nonce overrider for the transaction (optional)")
 	cmd.Flags().BoolVar(&calldata, "calldata", false, "Set this flag if want to return the calldata instead of sending the transaction")
-	
+	cmd.Flags().BoolVar(&verify, "verify", false, "Verify the contract code on a block explorer")
+	cmd.Flags().StringVar(&apiURL, "api", "", "Block explorer API URL")
+	cmd.Flags().StringVar(&apiKey, "api-key", "", "Block explorer API key")
+	cmd.Flags().UintVar(&runs, "runs", 0, "The number of runs to use for optimization")
+	cmd.Flags().StringVar(&evmVersion, "evm-version", "", "Override the EVM version to use for the contract")
+	cmd.Flags().StringVar(&compilerVersion, "compiler-version", "", "Override the compiler version to use for the contract")
+
 	{{range .DeployHandler.MethodArgs}}
 	cmd.Flags().{{.Flag}}
 	{{- end}}
@@ -1991,5 +2559,5 @@ func {{.HandlerName}}() *cobra.Command {
 // This template should be applied to a EVMHeaderParameters struct.
 var HeaderTemplate string = `// This file was generated by seer: https://github.com/G7DAO/seer.
 // seer version: {{.Version}}
-// seer command: seer evm generate{{if .PackageName}} --package {{.PackageName}}{{end}}{{if .CLI}} --cli{{end}}{{if .IncludeMain}} --includemain{{end}}{{if (ne .Foundry "")}} --foundry {{.Foundry}}{{end}}{{if (ne .ABI "")}} --abi {{.ABI}}{{end}}{{if (ne .Bytecode "")}} --bytecode {{.Bytecode}}{{end}} --struct {{.StructName}}{{if (ne .OutputFile "")}} --output {{.OutputFile}}{{end}}{{if .NoFormat}} --noformat{{end}}
+// seer command: seer evm generate{{if .PackageName}} --package {{.PackageName}}{{end}}{{if .CLI}} --cli{{end}}{{if .IncludeMain}} --includemain{{end}}{{if (ne .Foundry "")}} --foundry {{.Foundry}}{{end}}{{if (ne .ABI "")}} --abi {{.ABI}}{{end}}{{if (ne .Bytecode "")}} --bytecode {{.Bytecode}}{{end}}{{if (ne .SourceCode "")}} --source-code {{.SourceCode}}{{end}} --struct {{.StructName}}{{if (ne .OutputFile "")}} --output {{.OutputFile}}{{end}}{{if .NoFormat}} --noformat{{end}}
 `
