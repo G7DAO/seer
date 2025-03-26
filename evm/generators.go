@@ -1503,8 +1503,10 @@ func determineEVMVersion(major, minor, patch int64) string {
     // This mapping is based on Solidity's default EVM version per compiler version
     // Reference: https://docs.soliditylang.org/en/latest/using-the-compiler.html#target-options
     switch {
+    case minor >= 8 && patch >= 24:
+        return "cancun"    // Solidity 0.8.24+ defaults to Cancun
     case minor >= 8:
-        return "london"    // Solidity 0.8.0+ defaults to London
+        return "london"    // Solidity 0.8.0-0.8.23 defaults to London
     case minor == 7:
         return "istanbul"  // Solidity 0.7.x defaults to Istanbul
     case minor == 6:
